@@ -108,13 +108,16 @@
 
   /* Whiteboard control bar */
   #wb-controls{display:none;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px;}
-  .wb-img-row{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);}
-  .wb-img-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;}
-  .wb-img-preview{width:48px;height:32px;object-fit:contain;border:1px solid var(--border);border-radius:4px;background:#f8fafc;display:none;}
-  #wb-img-input{display:none;}
   .btn-img-upload{padding:5px 10px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--text);transition:all 0.2s;}
   .btn-img-upload:hover{background:var(--border);}
-  .btn-img-clear{padding:5px 8px;font-size:11px;background:transparent;border:1px solid var(--red);border-radius:6px;cursor:pointer;color:var(--red);display:none;}
+  #img-controls{display:none;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px;}
+  .dist-img-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;}
+  .dist-img-card-header{padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);background:var(--surface2);}
+  .dist-img-card-body{padding:10px;display:flex;justify-content:center;align-items:center;min-height:80px;background:#f8fafc;}
+  .dist-img-card-body img{max-width:100%;max-height:120px;object-fit:contain;border-radius:4px;}
+  .dist-img-card-ph{text-align:center;color:var(--muted);font-size:11px;}
+  .dist-card-opened{font-size:10px;color:var(--green);font-weight:600;}
+  .dist-card-closed{font-size:10px;color:var(--muted);}
   .wb-ctrl-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
   .wb-input{padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;flex:1;min-width:200px;}
   .wb-input:focus{border-color:var(--accent);}
@@ -241,6 +244,7 @@
       <div class="view-tabs">
         <button class="view-tab active" id="tab-monitor" onclick="switchView('monitor')">🖥 モニタリング</button>
         <button class="view-tab" id="tab-wb" onclick="switchView('wb')">📋 ホワイトボード</button>
+        <button class="view-tab" id="tab-img" onclick="switchView('img')">🖼 画像</button>
       </div>
       <select id="grid-size" onchange="updateGridSize()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:7px;font-family:inherit;font-size:11px;outline:none;">
         <option value="2">2列</option><option value="3">3列</option><option value="4" selected>4列</option><option value="5">5列</option>
@@ -266,18 +270,35 @@
       <button class="btn btn-outline" onclick="sendWbCommand('collect')">📥 回収</button>
       <button class="btn btn-danger" onclick="sendWbCommand('clear')">🗑️ 全消去</button>
     </div>
-    <div class="wb-img-row">
-      <span class="wb-img-label">📎 背景画像</span>
-      <img id="wb-img-preview" class="wb-img-preview" alt="preview"/>
-      <input type="file" id="wb-img-input" accept="image/*" onchange="wbImageSelected(this)"/>
-      <button class="btn-img-upload" onclick="document.getElementById('wb-img-input').click()">🖼️ 画像を選択</button>
-      <button class="btn btn-wb" onclick="sendWbImage()" id="wb-img-send-btn" style="display:none;">📤 配布</button>
-      <button class="btn-img-clear" id="wb-img-clear-btn" onclick="clearWbImage()">✕ 削除</button>
-    </div>
+
     <div class="wb-stats">
       <div class="wb-stat">配布中: <span id="wb-stat-open">0</span>人</div>
       <div class="wb-stat">提出済: <span id="wb-stat-sub">0</span>人</div>
       <div class="wb-stat">描画中: <span id="wb-stat-drawing">0</span>人</div>
+    </div>
+  </div>
+
+  <!-- Image view controls -->
+  <div id="img-controls">
+    <div class="wb-ctrl-row" style="flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px;">
+        <span style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:0.05em;text-transform:uppercase;">配布する画像</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="file" id="dist-img-input" accept="image/*" onchange="distImgSelected(this)" style="display:none;"/>
+          <button class="btn-img-upload" onclick="document.getElementById('dist-img-input').click()">🖼️ 画像を選択</button>
+          <img id="dist-img-preview" style="width:64px;height:42px;object-fit:contain;border:1px solid var(--border);border-radius:4px;background:#f8fafc;display:none;"/>
+          <span id="dist-img-name" style="font-size:11px;color:var(--muted);display:none;"></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <button class="btn btn-wb" id="dist-img-send-btn" onclick="distImgSend()" disabled style="opacity:0.4;">📤 全員に配布</button>
+        <button class="btn btn-outline" id="dist-img-collect-btn" onclick="distImgCollect()">📥 回収</button>
+        <button class="btn btn-danger" id="dist-img-clear-btn" onclick="distImgClearAll()">🗑️ 削除</button>
+      </div>
+    </div>
+    <div class="wb-stats" id="dist-img-stats" style="margin-top:8px;">
+      <div class="wb-stat">配布中: <span id="dist-stat-active">−</span></div>
+      <div class="wb-stat" style="color:var(--muted);font-size:10px;" id="dist-img-status">画像未選択</div>
     </div>
   </div>
 
@@ -438,10 +459,13 @@ window.switchView=function(v){
   currentView=v;
   document.getElementById('tab-monitor').classList.toggle('active',v==='monitor');
   document.getElementById('tab-wb').classList.toggle('active',v==='wb');
+  document.getElementById('tab-img').classList.toggle('active',v==='img');
   document.getElementById('wb-controls').style.display=v==='wb'?'block':'none';
-  // Re-render all cards
+  document.getElementById('img-controls').style.display=v==='img'?'block':'none';
+  document.getElementById('grid').style.display=v==='img'?'none':'';
   Object.keys(students).forEach(sid=>updateCardContent(sid));
   if(v==='wb') listenWbData();
+  if(v==='img') distImgRefreshUI();
 };
 
 // ===== WHITEBOARD =====
@@ -454,49 +478,76 @@ window.sendWbInstruction=async function(){
   toast('📤 指示を送りました');
 };
 
-// ===== WB画像アップロード =====
-let wbImageDataUrl = null;
+// ===== 画像配布（img view）=====
+let distImgDataUrl = null;
+let distImgActive = false;
 
-window.wbImageSelected = function(input) {
+window.distImgSelected = function(input) {
   const file = input.files[0];
   if (!file) return;
-  // 5MB上限チェック
   if (file.size > 5 * 1024 * 1024) { toast('⚠️ 画像は5MB以下にしてください'); input.value=''; return; }
   const reader = new FileReader();
   reader.onload = e => {
-    wbImageDataUrl = e.target.result;
-    const preview = document.getElementById('wb-img-preview');
-    preview.src = wbImageDataUrl;
-    preview.style.display = 'block';
-    document.getElementById('wb-img-send-btn').style.display = '';
-    document.getElementById('wb-img-clear-btn').style.display = '';
-    toast('🖼️ 画像を選択しました。「配布」で生徒に送ります');
+    distImgDataUrl = e.target.result;
+    const preview = document.getElementById('dist-img-preview');
+    preview.src = distImgDataUrl; preview.style.display = 'block';
+    const nameEl = document.getElementById('dist-img-name');
+    nameEl.textContent = file.name; nameEl.style.display = '';
+    const sendBtn = document.getElementById('dist-img-send-btn');
+    sendBtn.disabled = false; sendBtn.style.opacity = '1';
+    document.getElementById('dist-img-status').textContent = '配布準備完了';
+    toast('🖼️ 画像を選択しました');
   };
   reader.readAsDataURL(file);
 };
 
-window.sendWbImage = async function() {
-  if (!wbImageDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+window.distImgSend = async function() {
+  if (!distImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
   if (!db) { toast('⚠️ セッションを開始してください'); return; }
   const {ref, set} = window.FB;
-  toast('📤 画像を送信中...');
-  await set(ref(db, `sessions/${sessionId}/wb/bgImage`), wbImageDataUrl);
-  toast('🖼️ 背景画像を配布しました');
+  toast('📤 画像を配布中...');
+  await set(ref(db, `sessions/${sessionId}/distImg`), { dataUrl: distImgDataUrl, active: true, ts: Date.now() });
+  distImgActive = true;
+  document.getElementById('dist-img-status').textContent = '配布中';
+  document.getElementById('dist-stat-active').textContent = Object.keys(students).length + '人';
+  toast('🖼️ 画像を全員に配布しました');
 };
 
-window.clearWbImage = async function() {
-  wbImageDataUrl = null;
-  document.getElementById('wb-img-preview').style.display = 'none';
-  document.getElementById('wb-img-preview').src = '';
-  document.getElementById('wb-img-send-btn').style.display = 'none';
-  document.getElementById('wb-img-clear-btn').style.display = 'none';
-  document.getElementById('wb-img-input').value = '';
-  if (db) {
-    const {ref} = window.FB;
-    await window.FB.remove(ref(db, `sessions/${sessionId}/wb/bgImage`));
-  }
-  toast('🗑️ 背景画像を削除しました');
+window.distImgCollect = async function() {
+  if (!db) return;
+  // 回収と同時にデータも削除（Firebaseに画像を残さない）
+  await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}/distImg`));
+  distImgActive = false;
+  document.getElementById('dist-img-status').textContent = '回収済み（削除済み）';
+  document.getElementById('dist-stat-active').textContent = '0人';
+  toast('📥 画像を回収・削除しました');
 };
+
+window.distImgClearAll = async function() {
+  if (!confirm('配布中の画像を削除しますか？')) return;
+  if (db) await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}/distImg`));
+  distImgDataUrl = null; distImgActive = false;
+  document.getElementById('dist-img-preview').style.display = 'none';
+  document.getElementById('dist-img-preview').src = '';
+  document.getElementById('dist-img-name').style.display = 'none';
+  document.getElementById('dist-img-send-btn').disabled = true;
+  document.getElementById('dist-img-send-btn').style.opacity = '0.4';
+  document.getElementById('dist-img-status').textContent = '画像未選択';
+  document.getElementById('dist-stat-active').textContent = '−';
+  document.getElementById('dist-img-input').value = '';
+  toast('🗑️ 画像を削除しました');
+};
+
+function renderDistImgView() {
+  distImgRefreshUI();
+}
+function distImgRefreshUI() {
+  const statusEl = document.getElementById('dist-img-status');
+  const statEl = document.getElementById('dist-stat-active');
+  if (!statusEl) return;
+  statusEl.textContent = distImgActive ? '📡 配布中' : distImgDataUrl ? '✅ 配布準備完了' : '画像未選択';
+  statEl.textContent = distImgActive ? Object.keys(students).length + '人' : '−';
+}
 
 window.sendWbCommand=async function(cmd){
   const{ref,set}=window.FB;
@@ -504,33 +555,18 @@ window.sendWbCommand=async function(cmd){
     wbActive=true;
     const instr=document.getElementById('wb-instruction').value.trim();
     if(instr) await set(ref(db,`sessions/${sessionId}/wb/instruction`),instr);
-    // 背景画像があれば同時に配布
-    if(wbImageDataUrl) await set(ref(db,`sessions/${sessionId}/wb/bgImage`),wbImageDataUrl);
     await set(ref(db,`sessions/${sessionId}/wb/active`),true);
     toast('📋 ホワイトボードを配布しました');
   }
   else if(cmd==='collect'){
     await set(ref(db,`sessions/${sessionId}/wb/active`),false);
     wbActive=false;
-    // 背景画像も削除（Firebase に残さない）
-    await window.FB.remove(ref(db,`sessions/${sessionId}/wb/bgImage`));
-    wbImageDataUrl=null;
-    document.getElementById('wb-img-preview').style.display='none';
-    document.getElementById('wb-img-preview').src='';
-    document.getElementById('wb-img-send-btn').style.display='none';
-    document.getElementById('wb-img-clear-btn').style.display='none';
     toast('📥 ホワイトボードを回収しました');
   }
   else if(cmd==='clear'){
     if(!confirm('全員のホワイトボードを消去しますか？'))return;
     await set(ref(db,`sessions/${sessionId}/wb/resetTs`),Date.now());
     await window.FB.remove(ref(db,`sessions/${sessionId}/wb/submissions`));
-    await window.FB.remove(ref(db,`sessions/${sessionId}/wb/bgImage`));
-    wbImageDataUrl=null;
-    document.getElementById('wb-img-preview').style.display='none';
-    document.getElementById('wb-img-preview').src='';
-    document.getElementById('wb-img-send-btn').style.display='none';
-    document.getElementById('wb-img-clear-btn').style.display='none';
     wbSubmissions={};updateWbStats();toast('🗑️ 全員のホワイトボードを消去しました');
   }
 };

@@ -7,18 +7,9 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
   :root {
-    --bg: #0a0e1a;
-    --surface: #111827;
-    --surface2: #1a2236;
-    --border: #1e293b;
-    --accent: #3b82f6;
-    --accent2: #06b6d4;
-    --green: #10b981;
-    --red: #ef4444;
-    --yellow: #f59e0b;
-    --orange: #f97316;
-    --text: #e2e8f0;
-    --text-muted: #64748b;
+    --bg:#0a0e1a; --surface:#111827; --surface2:#1a2236; --border:#1e293b;
+    --accent:#3b82f6; --accent2:#06b6d4; --green:#10b981; --red:#ef4444;
+    --yellow:#f59e0b; --purple:#7c3aed; --text:#e2e8f0; --text-muted:#64748b;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Noto Sans JP',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
@@ -27,23 +18,22 @@
   header { position:sticky; top:0; z-index:100; background:rgba(10,14,26,0.95); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); padding:0 20px; height:60px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
   .logo { display:flex; align-items:center; gap:8px; font-weight:700; font-size:16px; white-space:nowrap; }
   .logo-icon { width:30px; height:30px; background:linear-gradient(135deg,var(--accent),var(--accent2)); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:15px; }
-  .header-center { display:flex; gap:8px; flex-wrap:wrap; }
   .header-right { display:flex; align-items:center; gap:10px; }
   .status-bar { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; white-space:nowrap; }
   .dot { width:8px; height:8px; border-radius:50%; background:var(--text-muted); }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
 
-  .btn { padding:7px 14px; border-radius:8px; border:none; cursor:pointer; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; transition:all 0.2s; display:inline-flex; align-items:center; gap:5px; }
+  .btn { padding:7px 14px; border-radius:8px; border:none; cursor:pointer; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; transition:all 0.2s; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
   .btn-primary { background:var(--accent); color:white; }
   .btn-primary:hover { background:#2563eb; }
   .btn-outline { background:transparent; color:var(--text-muted); border:1px solid var(--border); }
   .btn-outline:hover { border-color:var(--accent); color:var(--accent); }
   .btn-danger { background:var(--red); color:white; }
   .btn-danger:hover { background:#dc2626; }
-  .btn-warning { background:var(--orange); color:white; }
-  .btn-warning:hover { background:#ea580c; }
   .btn-focus { background:linear-gradient(135deg,#7c3aed,#6d28d9); color:white; }
-  .btn-focus:hover { background:linear-gradient(135deg,#6d28d9,#5b21b6); }
+  .btn-focus:hover { opacity:0.9; }
+  .btn-share { background:linear-gradient(135deg,#0891b2,#0e7490); color:white; }
+  .btn-share:hover { opacity:0.9; }
 
   .main { position:relative; z-index:1; padding:20px; max-width:1600px; margin:0 auto; }
 
@@ -56,6 +46,20 @@
   .input-group input { width:100%; padding:11px 14px; background:var(--surface2); border:1px solid var(--border); border-radius:9px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:13px; outline:none; transition:border-color 0.2s; }
   .input-group input:focus { border-color:var(--accent); }
 
+  /* Broadcast bar */
+  #broadcast-bar { display:none; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 16px; margin-bottom:16px; }
+  .broadcast-inner { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .broadcast-label { font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); }
+
+  /* Share URL */
+  #share-box { display:none; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 18px; margin-bottom:16px; }
+  .share-title { font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; }
+  .url-row { display:flex; gap:8px; align-items:center; }
+  .url-display { flex:1; padding:8px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .copy-btn { padding:8px 14px; background:var(--accent); color:white; border:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; white-space:nowrap; transition:all 0.2s; }
+  .copy-btn:hover { background:#2563eb; }
+  .copy-btn.copied { background:var(--green); }
+
   /* Control bar */
   #control-bar { display:none; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
   .stats { display:flex; gap:16px; }
@@ -63,39 +67,24 @@
   .stat-value { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; color:var(--accent); }
   .stat-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; }
 
-  /* Broadcast toolbar */
-  #broadcast-bar { display:none; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 18px; margin-bottom:16px; }
-  .broadcast-title { font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:10px; }
-  .broadcast-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .broadcast-actions .divider { width:1px; height:28px; background:var(--border); }
-
-  /* Share URL */
-  #share-box { display:none; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }
-  .share-title { font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; }
-  .url-row { display:flex; gap:8px; align-items:center; }
-  .url-display { flex:1; padding:9px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .copy-btn { padding:9px 14px; background:var(--accent); color:white; border:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; white-space:nowrap; transition:all 0.2s; }
-  .copy-btn:hover { background:#2563eb; }
-  .copy-btn.copied { background:var(--green); }
-
   /* Grid */
   #grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
   .student-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; transition:transform 0.2s,box-shadow 0.2s,border-color 0.2s; }
-  .student-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.4); border-color:rgba(59,130,246,0.3); }
-  .student-card.locked { border-color:var(--red); box-shadow:0 0 0 1px var(--red); }
-  .student-card.focused { border-color:#7c3aed; box-shadow:0 0 0 1px #7c3aed; }
+  .student-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+  .student-card.focused { border-color:var(--purple); box-shadow:0 0 0 1px var(--purple); }
+  .student-card.broadcasting { border-color:var(--accent2); box-shadow:0 0 0 1px var(--accent2); }
 
   .card-header { padding:10px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); }
-  .student-info { display:flex; align-items:center; gap:8px; }
-  .avatar { width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
-  .student-name { font-size:13px; font-weight:600; }
-  .student-id { font-size:10px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
-  .badge { padding:2px 7px; border-radius:20px; font-size:10px; font-weight:600; }
+  .student-info { display:flex; align-items:center; gap:8px; min-width:0; }
+  .avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0; }
+  .avatar-placeholder { width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+  .student-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .student-email { font-size:10px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .badge { padding:2px 7px; border-radius:20px; font-size:10px; font-weight:600; flex-shrink:0; }
   .badge-live { background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
   .badge-waiting { background:rgba(245,158,11,0.15); color:var(--yellow); border:1px solid rgba(245,158,11,0.3); }
-  .badge-disconnected { background:rgba(239,68,68,0.1); color:var(--red); border:1px solid rgba(239,68,68,0.2); }
-  .badge-locked { background:rgba(239,68,68,0.2); color:var(--red); border:1px solid rgba(239,68,68,0.4); }
   .badge-focused { background:rgba(124,58,237,0.2); color:#a78bfa; border:1px solid rgba(124,58,237,0.4); }
+  .badge-broadcasting { background:rgba(6,182,212,0.15); color:var(--accent2); border:1px solid rgba(6,182,212,0.3); }
 
   .screen-area { position:relative; background:#000; aspect-ratio:16/9; overflow:hidden; cursor:pointer; }
   .screen-area video { width:100%; height:100%; object-fit:contain; display:none; }
@@ -103,42 +92,41 @@
   .screen-placeholder-icon { font-size:28px; opacity:0.3; }
   .screen-placeholder-text { font-size:12px; color:var(--text-muted); }
 
-  .card-footer { padding:8px 12px; display:flex; align-items:center; justify-content:space-between; }
-  .joined-time { font-size:10px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
-  .card-actions { display:flex; gap:4px; }
-  .icon-btn { width:26px; height:26px; border-radius:6px; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; transition:all 0.2s; }
+  .card-footer { padding:8px 12px; display:flex; align-items:center; justify-content:space-between; gap:4px; }
+  .joined-time { font-size:10px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+  .card-actions { display:flex; gap:4px; flex-wrap:wrap; }
+  .icon-btn { height:26px; padding:0 8px; border-radius:6px; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); cursor:pointer; display:flex; align-items:center; gap:3px; font-size:11px; font-family:'Noto Sans JP',sans-serif; font-weight:600; transition:all 0.2s; white-space:nowrap; }
   .icon-btn:hover { border-color:var(--accent); color:var(--accent); }
-  .icon-btn.active-lock { border-color:var(--red); color:var(--red); background:rgba(239,68,68,0.1); }
-  .icon-btn.active-focus { border-color:#7c3aed; color:#a78bfa; background:rgba(124,58,237,0.1); }
+  .icon-btn.active-focus { border-color:var(--purple); color:#a78bfa; background:rgba(124,58,237,0.1); }
+  .icon-btn.active-broadcast { border-color:var(--accent2); color:var(--accent2); background:rgba(6,182,212,0.1); }
 
-  /* Empty state */
+  /* Empty */
   #empty-state { grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--text-muted); }
   #empty-state .empty-icon { font-size:40px; margin-bottom:12px; opacity:0.3; }
-  #empty-state p { font-size:14px; line-height:1.6; }
 
-  /* Fullscreen overlay */
+  /* Fullscreen */
   #fullscreen-overlay { display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.97); flex-direction:column; }
   #fullscreen-overlay.show { display:flex; }
-  .fs-header { padding:14px 20px; display:flex; align-items:center; justify-content:space-between; background:rgba(17,24,39,0.9); backdrop-filter:blur(8px); gap:12px; flex-wrap:wrap; }
-  .fs-student-name { font-size:16px; font-weight:700; }
+  .fs-header { padding:12px 20px; display:flex; align-items:center; justify-content:space-between; background:rgba(17,24,39,0.9); gap:12px; flex-wrap:wrap; }
+  .fs-student-name { font-size:15px; font-weight:700; }
   .fs-actions { display:flex; gap:8px; flex-wrap:wrap; }
   #fs-video { flex:1; width:100%; object-fit:contain; background:#000; }
 
   /* Message modal */
   #msg-modal { display:none; position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; }
   #msg-modal.show { display:flex; }
-  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:32px; width:100%; max-width:460px; margin:20px; }
-  .modal-title { font-size:18px; font-weight:700; margin-bottom:6px; }
-  .modal-sub { font-size:13px; color:var(--text-muted); margin-bottom:20px; }
-  .modal-textarea { width:100%; padding:12px 14px; background:var(--surface2); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:'Noto Sans JP',sans-serif; font-size:14px; outline:none; resize:vertical; min-height:100px; transition:border-color 0.2s; }
+  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px; width:100%; max-width:440px; margin:20px; }
+  .modal-title { font-size:17px; font-weight:700; margin-bottom:4px; }
+  .modal-sub { font-size:13px; color:var(--text-muted); margin-bottom:16px; }
+  .modal-textarea { width:100%; padding:11px 13px; background:var(--surface2); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:'Noto Sans JP',sans-serif; font-size:14px; outline:none; resize:vertical; min-height:90px; transition:border-color 0.2s; }
   .modal-textarea:focus { border-color:var(--accent); }
-  .modal-actions { display:flex; gap:8px; margin-top:16px; justify-content:flex-end; }
-  .quick-msgs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
-  .quick-msg-btn { padding:5px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:20px; color:var(--text-muted); font-size:12px; cursor:pointer; transition:all 0.2s; font-family:'Noto Sans JP',sans-serif; }
+  .modal-actions { display:flex; gap:8px; margin-top:14px; justify-content:flex-end; }
+  .quick-msgs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .quick-msg-btn { padding:4px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:20px; color:var(--text-muted); font-size:11px; cursor:pointer; transition:all 0.2s; font-family:'Noto Sans JP',sans-serif; }
   .quick-msg-btn:hover { border-color:var(--accent); color:var(--accent); }
 
   /* Toast */
-  .toast { position:fixed; bottom:20px; right:20px; z-index:3000; padding:12px 18px; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.4); transform:translateY(80px); opacity:0; transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+  .toast { position:fixed; bottom:20px; right:20px; z-index:3000; padding:11px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.4); transform:translateY(80px); opacity:0; transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1); }
   .toast.show { transform:translateY(0); opacity:1; }
 </style>
 </head>
@@ -149,15 +137,13 @@
     <div class="logo-icon">👁</div>
     <span>ClassMonitor</span>
   </div>
-  <div id="broadcast-bar-header" style="display:none;flex:1;margin:0 16px;">
+  <div id="broadcast-header" style="display:none;flex:1;margin:0 16px;">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <!-- 全体操作 -->
-      <span style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:0.05em;">全体:</span>
-      <button class="btn btn-focus" onclick="broadcastFocus()" title="全員の画面に「黒板に集中」を表示">🎯 全員集中</button>
-      <button class="btn btn-warning" onclick="broadcastLock()" title="全員の画面をロック">🔒 全員ロック</button>
-      <button class="btn btn-outline" onclick="broadcastUnlock()" title="全員のロック・集中を解除">✅ 全員解除</button>
+      <span style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:0.05em;">全体操作:</span>
+      <button class="btn btn-focus" onclick="broadcastFocus()">🎯 全員集中</button>
+      <button class="btn btn-outline" onclick="broadcastUnfocus()">✅ 集中解除</button>
       <div style="width:1px;height:24px;background:var(--border);"></div>
-      <button class="btn btn-outline" onclick="openMsgModal(null)" title="全員にメッセージを送る">💬 全員へメッセージ</button>
+      <button class="btn btn-outline" onclick="openMsgModal(null)">💬 全員へメッセージ</button>
     </div>
   </div>
   <div class="header-right">
@@ -171,7 +157,6 @@
 
 <div class="main">
 
-  <!-- Setup panel -->
   <div id="setup-panel">
     <h2>授業モニタリング</h2>
     <p>Firebase設定を入力してセッションを開始してください。</p>
@@ -182,12 +167,11 @@
     <button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;margin-top:8px;justify-content:center;" onclick="startSession()">🚀 セッション開始</button>
   </div>
 
-  <!-- Stats + controls -->
   <div id="control-bar">
     <div class="stats">
       <div class="stat"><div class="stat-value" id="stat-connected">0</div><div class="stat-label">接続中</div></div>
       <div class="stat"><div class="stat-value" id="stat-sharing">0</div><div class="stat-label">共有中</div></div>
-      <div class="stat"><div class="stat-value" id="stat-locked">0</div><div class="stat-label">ロック中</div></div>
+      <div class="stat"><div class="stat-value" id="stat-focused">0</div><div class="stat-label">集中中</div></div>
     </div>
     <select id="grid-size" onchange="updateGridSize()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:8px;font-family:inherit;font-size:12px;outline:none;">
       <option value="2">2列</option>
@@ -197,7 +181,6 @@
     </select>
   </div>
 
-  <!-- Share URL -->
   <div id="share-box">
     <div class="share-title">📎 生徒用URL — このURLを生徒に送ってください</div>
     <div class="url-row">
@@ -206,17 +189,15 @@
     </div>
   </div>
 
-  <!-- Grid -->
   <div id="grid">
     <div id="empty-state">
       <div class="empty-icon">📱</div>
-      <p>セッションを開始すると生徒用URLが表示されます。<br>生徒がURLを開いて画面共有を許可するとここに表示されます。</p>
+      <p style="font-size:14px;line-height:1.6;">セッションを開始すると生徒用URLが表示されます。</p>
     </div>
   </div>
-
 </div>
 
-<!-- Fullscreen overlay -->
+<!-- Fullscreen -->
 <div id="fullscreen-overlay">
   <div class="fs-header">
     <div>
@@ -224,10 +205,11 @@
       <div style="font-size:11px;color:var(--text-muted);" id="fs-id">-</div>
     </div>
     <div class="fs-actions">
-      <button class="btn btn-focus" onclick="focusStudent(currentFsStudentId)">🎯 集中させる</button>
-      <button class="btn btn-warning" onclick="lockStudent(currentFsStudentId)">🔒 ロック</button>
-      <button class="btn btn-outline" onclick="unlockStudent(currentFsStudentId)">✅ 解除</button>
-      <button class="btn btn-outline" onclick="openMsgModal(currentFsStudentId)">💬 メッセージ</button>
+      <button class="btn btn-focus" onclick="focusStudent(currentFsId)">🎯 集中させる</button>
+      <button class="btn btn-outline" onclick="unfocusStudent(currentFsId)">✅ 解除</button>
+      <button class="btn btn-share" onclick="broadcastStudentScreen(currentFsId)">📡 この画面を全員に共有</button>
+      <button class="btn btn-outline" onclick="stopBroadcastScreen()">⏹ 共有停止</button>
+      <button class="btn btn-outline" onclick="openMsgModal(currentFsId)">💬 メッセージ</button>
       <button class="btn btn-danger" onclick="closeFullscreen()">✕ 閉じる</button>
     </div>
   </div>
@@ -241,9 +223,9 @@
     <div class="modal-sub" id="msg-target-label">送信先: -</div>
     <div class="quick-msgs">
       <button class="quick-msg-btn" onclick="setQuickMsg('よくできました！')">👍 よくできました！</button>
-      <button class="quick-msg-btn" onclick="setQuickMsg('もう少し集中しましょう')">👀 集中しましょう</button>
-      <button class="quick-msg-btn" onclick="setQuickMsg('質問があれば手を挙げてください')">✋ 質問は手を挙げて</button>
+      <button class="quick-msg-btn" onclick="setQuickMsg('集中しましょう')">👀 集中しましょう</button>
       <button class="quick-msg-btn" onclick="setQuickMsg('正解です！')">⭐ 正解！</button>
+      <button class="quick-msg-btn" onclick="setQuickMsg('質問は手を挙げてください')">✋ 手を挙げて</button>
     </div>
     <textarea class="modal-textarea" id="msg-input" placeholder="メッセージを入力..."></textarea>
     <div class="modal-actions">
@@ -253,264 +235,230 @@
   </div>
 </div>
 
-<!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, onValue, remove, onChildAdded, onChildChanged, onChildRemoved, push } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
-  window.fbFuncs = { initializeApp, getDatabase, ref, set, onValue, remove, onChildAdded, onChildChanged, onChildRemoved, push };
+  import { getDatabase, ref, set, onValue, remove, onChildAdded, onChildChanged, onChildRemoved } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  window.fbFuncs = { initializeApp, getDatabase, ref, set, onValue, remove, onChildAdded, onChildChanged, onChildRemoved };
 </script>
 
 <script>
-  let db = null, sessionId = null;
-  let peerConnections = {}, students = {};
-  let msgTargetId = null;
-  window.currentFsStudentId = null;
+  let db=null, sessionId=null;
+  let peerConnections={}, students={};
+  let msgTargetId=null;
+  window.currentFsId=null;
+  let currentBroadcastId=null;
 
-  const ICE_SERVERS = { iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}] };
+  const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
 
-  function generateId() { return Math.random().toString(36).substr(2,8).toUpperCase(); }
-
-  function showToast(msg, duration=3000) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(()=>t.classList.remove('show'), duration);
-  }
+  function generateId(){ return Math.random().toString(36).substr(2,8).toUpperCase(); }
+  function showToast(msg,d=3000){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),d); }
 
   // ===== SESSION =====
-  window.startSession = async function() {
-    const apiKey = document.getElementById('fb-apikey').value.trim();
-    const dbUrl = document.getElementById('fb-dburl').value.trim();
-    const projectId = document.getElementById('fb-projectid').value.trim();
-    if (!apiKey || !dbUrl || !projectId) { showToast('⚠️ Firebase設定を入力してください'); return; }
+  window.startSession = async function(){
+    const apiKey=document.getElementById('fb-apikey').value.trim();
+    const dbUrl=document.getElementById('fb-dburl').value.trim();
+    const projectId=document.getElementById('fb-projectid').value.trim();
+    if(!apiKey||!dbUrl||!projectId){ showToast('⚠️ Firebase設定を入力してください'); return; }
     try {
-      const app = window.fbFuncs.initializeApp({apiKey, databaseURL:dbUrl, projectId}, 'teacher-'+Date.now());
-      db = window.fbFuncs.getDatabase(app);
-    } catch(e) { showToast('❌ Firebase接続エラー: '+e.message); return; }
-
-    sessionId = generateId();
-    const className = document.getElementById('class-name').value || 'クラス';
-    const {ref, set} = window.fbFuncs;
-    await set(ref(db, `sessions/${sessionId}`), { className, createdAt:Date.now(), active:true });
-
-    const base = location.href.replace('teacher.html','student.html');
-    const studentUrl = `${base}?session=${sessionId}&db=${encodeURIComponent(dbUrl)}&apiKey=${encodeURIComponent(apiKey)}&projectId=${encodeURIComponent(projectId)}`;
-
-    document.getElementById('setup-panel').style.display = 'none';
-    document.getElementById('control-bar').style.display = 'flex';
-    document.getElementById('share-box').style.display = 'block';
-    document.getElementById('end-btn').style.display = '';
-    document.getElementById('broadcast-bar-header').style.display = 'flex';
-    document.getElementById('share-url').textContent = studentUrl;
-    const dot = document.getElementById('connection-dot');
-    dot.style.background = 'var(--green)';
-    dot.style.animation = 'pulse 2s infinite';
-    document.getElementById('connection-status').textContent = sessionId;
+      const app=window.fbFuncs.initializeApp({apiKey,databaseURL:dbUrl,projectId},'teacher-'+Date.now());
+      db=window.fbFuncs.getDatabase(app);
+    } catch(e){ showToast('❌ '+e.message); return; }
+    sessionId=generateId();
+    const {ref,set}=window.fbFuncs;
+    await set(ref(db,`sessions/${sessionId}`),{className:document.getElementById('class-name').value||'クラス',createdAt:Date.now(),active:true});
+    const base=location.href.replace('teacher.html','student.html');
+    const url=`${base}?session=${sessionId}&db=${encodeURIComponent(dbUrl)}&apiKey=${encodeURIComponent(apiKey)}&projectId=${encodeURIComponent(projectId)}`;
+    document.getElementById('setup-panel').style.display='none';
+    document.getElementById('control-bar').style.display='flex';
+    document.getElementById('share-box').style.display='block';
+    document.getElementById('end-btn').style.display='';
+    document.getElementById('broadcast-header').style.display='flex';
+    document.getElementById('share-url').textContent=url;
+    const dot=document.getElementById('connection-dot');
+    dot.style.background='var(--green)'; dot.style.animation='pulse 2s infinite';
+    document.getElementById('connection-status').textContent=sessionId;
     listenForStudents();
     showToast('✅ セッション開始！URLを生徒に送ってください');
   };
 
-  window.endSession = async function() {
-    if (!confirm('セッションを終了しますか？')) return;
-    const {ref, remove} = window.fbFuncs;
-    await remove(ref(db, `sessions/${sessionId}`));
+  window.endSession=async function(){
+    if(!confirm('セッションを終了しますか？'))return;
+    const {ref,remove}=window.fbFuncs;
+    await remove(ref(db,`sessions/${sessionId}`));
     location.reload();
   };
 
   // ===== LISTEN =====
-  function listenForStudents() {
-    const {ref, onChildAdded, onChildChanged, onChildRemoved, onValue} = window.fbFuncs;
-    onChildAdded(ref(db, `sessions/${sessionId}/students`), snap => {
-      const sid = snap.key, data = snap.val();
-      if (!students[sid]) { students[sid] = {...data, id:sid}; addStudentCard(sid, data); setupPeerConnection(sid); }
+  function listenForStudents(){
+    const {ref,onChildAdded,onChildChanged,onChildRemoved,onValue}=window.fbFuncs;
+    onChildAdded(ref(db,`sessions/${sessionId}/students`),snap=>{
+      const sid=snap.key,data=snap.val();
+      if(!students[sid]){ students[sid]={...data,id:sid}; addStudentCard(sid,data); setupPeerConnection(sid); }
     });
-    onChildChanged(ref(db, `sessions/${sessionId}/students`), snap => {
-      const sid = snap.key, data = snap.val();
-      students[sid] = {...students[sid], ...data};
-    });
-    onChildRemoved(ref(db, `sessions/${sessionId}/students`), snap => {
-      removeStudentCard(snap.key);
-    });
-    onValue(ref(db, `sessions/${sessionId}/signals`), snap => {
-      if (!snap.exists()) return;
-      for (const [key, signal] of Object.entries(snap.val())) {
-        if (signal.to !== 'teacher') continue;
-        if (signal.type === 'answer') handleAnswer(signal.from, signal.sdp);
-        else if (signal.type === 'ice') handleRemoteIce(signal.from, signal.candidate);
+    onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeStudentCard(snap.key));
+    onValue(ref(db,`sessions/${sessionId}/signals`),snap=>{
+      if(!snap.exists())return;
+      for(const[key,signal] of Object.entries(snap.val())){
+        if(signal.to!=='teacher')continue;
+        if(signal.type==='answer') handleAnswer(signal.from,signal.sdp);
+        else if(signal.type==='ice') handleRemoteIce(signal.from,signal.candidate);
       }
     });
   }
 
   // ===== WEBRTC =====
-  async function setupPeerConnection(studentId) {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    peerConnections[studentId] = pc;
-    pc.ontrack = (event) => {
-      const video = document.getElementById(`video-${studentId}`);
-      const placeholder = document.getElementById(`placeholder-${studentId}`);
-      if (video) {
-        video.srcObject = event.streams[0];
-        video.style.display = 'block';
-        if (placeholder) placeholder.style.display = 'none';
-        updateBadge(studentId, 'live');
-        updateStats();
-      }
+  async function setupPeerConnection(sid){
+    const pc=new RTCPeerConnection(ICE);
+    peerConnections[sid]=pc;
+    pc.ontrack=event=>{
+      const video=document.getElementById(`video-${sid}`);
+      const ph=document.getElementById(`ph-${sid}`);
+      if(video){ video.srcObject=event.streams[0]; video.style.display='block'; if(ph)ph.style.display='none'; updateBadge(sid,'live'); updateStats(); }
     };
-    pc.onicecandidate = (event) => {
-      if (event.candidate) sendSignal(studentId, {type:'ice', from:'teacher', to:studentId, candidate:event.candidate.toJSON()});
+    pc.onicecandidate=event=>{
+      if(event.candidate) sendSignal(sid,{type:'ice',from:'teacher',to:sid,candidate:event.candidate.toJSON()});
     };
-    pc.onconnectionstatechange = () => {
-      if (['disconnected','failed','closed'].includes(pc.connectionState)) { updateBadge(studentId,'disconnected'); updateStats(); }
+    pc.onconnectionstatechange=()=>{
+      if(['disconnected','failed','closed'].includes(pc.connectionState)){ updateBadge(sid,'waiting'); updateStats(); }
     };
-    const offer = await pc.createOffer({offerToReceiveVideo:true, offerToReceiveAudio:false});
+    const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
     await pc.setLocalDescription(offer);
-    sendSignal(studentId, {type:'offer', from:'teacher', to:studentId, sdp:offer});
+    sendSignal(sid,{type:'offer',from:'teacher',to:sid,sdp:offer});
   }
 
-  async function handleAnswer(studentId, sdp) {
-    const pc = peerConnections[studentId];
-    if (!pc || pc.signalingState !== 'have-local-offer') return;
-    try { await pc.setRemoteDescription(new RTCSessionDescription(sdp)); } catch(e) {}
+  async function handleAnswer(sid,sdp){
+    const pc=peerConnections[sid];
+    if(!pc||pc.signalingState!=='have-local-offer')return;
+    try{ await pc.setRemoteDescription(new RTCSessionDescription(sdp)); }catch(e){}
   }
 
-  async function handleRemoteIce(studentId, candidate) {
-    const pc = peerConnections[studentId];
-    if (!pc) return;
-    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+  async function handleRemoteIce(sid,candidate){
+    const pc=peerConnections[sid];
+    if(!pc)return;
+    try{ await pc.addIceCandidate(new RTCIceCandidate(candidate)); }catch(e){}
   }
 
-  function sendSignal(to, data) {
-    const {ref, set} = window.fbFuncs;
-    set(ref(db, `sessions/${sessionId}/signals/${data.from}_${to}_${Date.now()}`), data);
+  function sendSignal(to,data){
+    const {ref,set}=window.fbFuncs;
+    set(ref(db,`sessions/${sessionId}/signals/${data.from}_${to}_${Date.now()}`),data);
   }
 
-  // ===== COMMANDS TO STUDENT =====
-  function sendCommand(studentId, command, extra={}) {
-    const {ref, set} = window.fbFuncs;
-    const key = studentId === 'all' ? 'all' : studentId;
-    set(ref(db, `sessions/${sessionId}/commands/${key}`), {command, ...extra, ts:Date.now()});
+  function sendCommand(target,command,extra={}){
+    const {ref,set}=window.fbFuncs;
+    set(ref(db,`sessions/${sessionId}/commands/${target}`),{command,...extra,ts:Date.now()});
   }
 
-  // ===== LOCK / FOCUS / UNLOCK =====
-  window.lockStudent = function(studentId) {
-    if (!studentId) return;
-    sendCommand(studentId, 'lock');
-    students[studentId].locked = true;
-    const card = document.getElementById(`card-${studentId}`);
-    if (card) { card.classList.add('locked'); card.classList.remove('focused'); }
-    updateBadge(studentId, 'locked');
+  // ===== FOCUS =====
+  window.focusStudent=function(sid){
+    if(!sid)return;
+    sendCommand(sid,'focus');
+    students[sid].focused=true;
+    document.getElementById(`card-${sid}`)?.classList.add('focused');
+    updateBadge(sid,'focused');
+    document.getElementById(`focus-btn-${sid}`)?.classList.add('active-focus');
     updateStats();
-    showToast('🔒 画面をロックしました');
-  };
-
-  window.focusStudent = function(studentId) {
-    if (!studentId) return;
-    sendCommand(studentId, 'focus');
-    students[studentId].focused = true;
-    const card = document.getElementById(`card-${studentId}`);
-    if (card) { card.classList.add('focused'); card.classList.remove('locked'); }
-    updateBadge(studentId, 'focused');
     showToast('🎯 集中画面を表示しました');
   };
 
-  window.unlockStudent = function(studentId) {
-    if (!studentId) return;
-    sendCommand(studentId, 'unlock');
-    if (students[studentId]) { students[studentId].locked = false; students[studentId].focused = false; }
-    const card = document.getElementById(`card-${studentId}`);
-    if (card) { card.classList.remove('locked','focused'); }
-    updateBadge(studentId, 'live');
+  window.unfocusStudent=function(sid){
+    if(!sid)return;
+    sendCommand(sid,'unfocus');
+    if(students[sid]) students[sid].focused=false;
+    document.getElementById(`card-${sid}`)?.classList.remove('focused');
+    updateBadge(sid,'live');
+    document.getElementById(`focus-btn-${sid}`)?.classList.remove('active-focus');
     updateStats();
-    showToast('✅ ロックを解除しました');
+    showToast('✅ 集中を解除しました');
   };
 
-  window.broadcastLock = function() {
-    sendCommand('all', 'lock');
-    Object.keys(students).forEach(sid => {
-      students[sid].locked = true;
-      const card = document.getElementById(`card-${sid}`);
-      if (card) { card.classList.add('locked'); card.classList.remove('focused'); }
-      updateBadge(sid, 'locked');
-    });
+  window.broadcastFocus=function(){
+    sendCommand('all','focus');
+    Object.keys(students).forEach(sid=>{ students[sid].focused=true; document.getElementById(`card-${sid}`)?.classList.add('focused'); updateBadge(sid,'focused'); document.getElementById(`focus-btn-${sid}`)?.classList.add('active-focus'); });
     updateStats();
-    showToast('🔒 全員の画面をロックしました');
-  };
-
-  window.broadcastFocus = function() {
-    sendCommand('all', 'focus');
-    Object.keys(students).forEach(sid => {
-      students[sid].focused = true;
-      const card = document.getElementById(`card-${sid}`);
-      if (card) { card.classList.add('focused'); card.classList.remove('locked'); }
-      updateBadge(sid, 'focused');
-    });
     showToast('🎯 全員に集中画面を表示しました');
   };
 
-  window.broadcastUnlock = function() {
-    sendCommand('all', 'unlock');
-    Object.keys(students).forEach(sid => {
-      if (students[sid]) { students[sid].locked = false; students[sid].focused = false; }
-      const card = document.getElementById(`card-${sid}`);
-      if (card) { card.classList.remove('locked','focused'); }
-      updateBadge(sid, 'live');
-    });
+  window.broadcastUnfocus=function(){
+    sendCommand('all','unfocus');
+    Object.keys(students).forEach(sid=>{ if(students[sid]) students[sid].focused=false; document.getElementById(`card-${sid}`)?.classList.remove('focused'); updateBadge(sid,'live'); document.getElementById(`focus-btn-${sid}`)?.classList.remove('active-focus'); });
     updateStats();
-    showToast('✅ 全員のロックを解除しました');
+    showToast('✅ 全員の集中を解除しました');
   };
+
+  // ===== SCREEN BROADCAST =====
+  window.broadcastStudentScreen=function(sid){
+    if(!sid){ showToast('生徒を選択してください'); return; }
+    const video=document.getElementById(`video-${sid}`);
+    if(!video||!video.srcObject){ showToast('この生徒の画面が共有されていません'); return; }
+    // 既存の共有を停止
+    if(currentBroadcastId) stopBroadcastInternal();
+    currentBroadcastId=sid;
+    // 全生徒にコマンド送信（共有元のsidを通知）
+    sendCommand('all','watchStudent',{sourceSid:sid});
+    document.getElementById(`card-${sid}`)?.classList.add('broadcasting');
+    updateBadge(sid,'broadcasting');
+    showToast(`📡 ${students[sid]?.name||'生徒'}の画面を全員に共有中`);
+  };
+
+  window.stopBroadcastScreen=function(){
+    if(!currentBroadcastId){ showToast('共有中の画面はありません'); return; }
+    stopBroadcastInternal();
+    showToast('⏹ 画面共有を停止しました');
+  };
+
+  function stopBroadcastInternal(){
+    if(!currentBroadcastId)return;
+    sendCommand('all','stopWatch');
+    document.getElementById(`card-${currentBroadcastId}`)?.classList.remove('broadcasting');
+    updateBadge(currentBroadcastId, students[currentBroadcastId]?.focused?'focused':'live');
+    currentBroadcastId=null;
+  }
 
   // ===== MESSAGES =====
-  window.openMsgModal = function(studentId) {
-    msgTargetId = studentId;
-    const label = studentId ? `送信先: ${students[studentId]?.name || '生徒'}` : '送信先: 全員';
-    document.getElementById('msg-target-label').textContent = label;
-    document.getElementById('msg-input').value = '';
+  window.openMsgModal=function(sid){
+    msgTargetId=sid;
+    document.getElementById('msg-target-label').textContent=sid?`送信先: ${students[sid]?.name||'生徒'}`:'送信先: 全員';
+    document.getElementById('msg-input').value='';
     document.getElementById('msg-modal').classList.add('show');
-    setTimeout(()=>document.getElementById('msg-input').focus(), 100);
+    setTimeout(()=>document.getElementById('msg-input').focus(),100);
   };
-
-  window.closeMsgModal = function() {
-    document.getElementById('msg-modal').classList.remove('show');
-  };
-
-  window.setQuickMsg = function(text) {
-    document.getElementById('msg-input').value = text;
-    document.getElementById('msg-input').focus();
-  };
-
-  window.sendMessage = function() {
-    const text = document.getElementById('msg-input').value.trim();
-    if (!text) { showToast('⚠️ メッセージを入力してください'); return; }
-    const target = msgTargetId || 'all';
-    sendCommand(target, 'message', {text});
+  window.closeMsgModal=function(){ document.getElementById('msg-modal').classList.remove('show'); };
+  window.setQuickMsg=function(text){ document.getElementById('msg-input').value=text; document.getElementById('msg-input').focus(); };
+  window.sendMessage=function(){
+    const text=document.getElementById('msg-input').value.trim();
+    if(!text){ showToast('⚠️ メッセージを入力してください'); return; }
+    sendCommand(msgTargetId||'all','message',{text});
     closeMsgModal();
-    showToast(msgTargetId ? '💬 メッセージを送りました' : '💬 全員にメッセージを送りました');
+    showToast(msgTargetId?'💬 メッセージを送りました':'💬 全員にメッセージを送りました');
   };
 
   // ===== CARDS =====
-  function addStudentCard(studentId, data) {
-    const grid = document.getElementById('grid');
-    const empty = document.getElementById('empty-state');
-    if (empty) empty.style.display = 'none';
-    const name = data.name || `生徒${Object.keys(students).length}`;
-    const initial = name.charAt(0);
-    const now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-    const card = document.createElement('div');
-    card.className = 'student-card';
-    card.id = `card-${studentId}`;
-    card.innerHTML = `
+  function addStudentCard(sid,data){
+    document.getElementById('empty-state').style.display='none';
+    const name=data.name||`生徒${Object.keys(students).length}`;
+    const initial=name.charAt(0);
+    const now=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    const card=document.createElement('div');
+    card.className='student-card'; card.id=`card-${sid}`;
+    const avatarHtml=data.photoURL
+      ?`<img class="avatar" src="${data.photoURL}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
+      :`<div class="avatar-placeholder">${initial}</div>`;
+    card.innerHTML=`
       <div class="card-header">
         <div class="student-info">
-          <div class="avatar">${initial}</div>
-          <div><div class="student-name">${name}</div><div class="student-id">#${studentId.slice(0,6)}</div></div>
+          ${avatarHtml}
+          <div style="min-width:0">
+            <div class="student-name">${name}</div>
+            <div class="student-email">${data.email||''}</div>
+          </div>
         </div>
-        <span class="badge badge-waiting" id="badge-${studentId}">待機中</span>
+        <span class="badge badge-waiting" id="badge-${sid}">待機中</span>
       </div>
-      <div class="screen-area" onclick="openFullscreen('${studentId}')">
-        <video id="video-${studentId}" autoplay playsinline></video>
-        <div class="screen-placeholder" id="placeholder-${studentId}">
+      <div class="screen-area" onclick="openFullscreen('${sid}')">
+        <video id="video-${sid}" autoplay playsinline></video>
+        <div class="screen-placeholder" id="ph-${sid}">
           <div class="screen-placeholder-icon">⏳</div>
           <div class="screen-placeholder-text">画面共有を待っています</div>
         </div>
@@ -518,82 +466,72 @@
       <div class="card-footer">
         <span class="joined-time">${now}</span>
         <div class="card-actions">
-          <button class="icon-btn" title="集中させる" onclick="focusStudent('${studentId}')">🎯</button>
-          <button class="icon-btn" title="ロック" onclick="lockStudent('${studentId}')">🔒</button>
-          <button class="icon-btn" title="解除" onclick="unlockStudent('${studentId}')">✅</button>
-          <button class="icon-btn" title="メッセージ" onclick="openMsgModal('${studentId}')">💬</button>
-          <button class="icon-btn" title="フルスクリーン" onclick="openFullscreen('${studentId}')">⛶</button>
+          <button class="icon-btn" id="focus-btn-${sid}" onclick="focusStudent('${sid}')">🎯 集中</button>
+          <button class="icon-btn" onclick="unfocusStudent('${sid}')">✅ 解除</button>
+          <button class="icon-btn" onclick="broadcastStudentScreen('${sid}')">📡 共有</button>
+          <button class="icon-btn" onclick="openMsgModal('${sid}')">💬</button>
+          <button class="icon-btn" onclick="openFullscreen('${sid}')">⛶</button>
         </div>
       </div>`;
-    grid.appendChild(card);
+    document.getElementById('grid').appendChild(card);
     updateStats();
   }
 
-  function removeStudentCard(studentId) {
-    document.getElementById(`card-${studentId}`)?.remove();
-    peerConnections[studentId]?.close();
-    delete peerConnections[studentId];
-    delete students[studentId];
+  function removeStudentCard(sid){
+    document.getElementById(`card-${sid}`)?.remove();
+    peerConnections[sid]?.close();
+    delete peerConnections[sid];
+    delete students[sid];
+    if(currentBroadcastId===sid) stopBroadcastInternal();
     updateStats();
-    if (Object.keys(students).length === 0) document.getElementById('empty-state').style.display = '';
+    if(Object.keys(students).length===0) document.getElementById('empty-state').style.display='';
   }
 
-  function updateBadge(studentId, status) {
-    const badge = document.getElementById(`badge-${studentId}`);
-    if (!badge) return;
-    const map = {
-      live: ['badge-live','LIVE'],
-      waiting: ['badge-waiting','待機中'],
-      disconnected: ['badge-disconnected','切断'],
-      locked: ['badge-locked','🔒 ロック中'],
-      focused: ['badge-focused','🎯 集中中'],
-    };
-    badge.className = 'badge ' + (map[status]?.[0] || 'badge-waiting');
-    badge.textContent = map[status]?.[1] || '待機中';
+  function updateBadge(sid,status){
+    const badge=document.getElementById(`badge-${sid}`);
+    if(!badge)return;
+    const map={live:['badge-live','LIVE'],waiting:['badge-waiting','待機中'],focused:['badge-focused','🎯 集中中'],broadcasting:['badge-broadcasting','📡 共有中']};
+    badge.className='badge '+(map[status]?.[0]||'badge-waiting');
+    badge.textContent=map[status]?.[1]||'待機中';
   }
 
-  function updateStats() {
-    const total = Object.keys(students).length;
-    let sharing = 0, locked = 0;
-    document.querySelectorAll('.badge-live').forEach(()=>sharing++);
-    document.querySelectorAll('.badge-locked').forEach(()=>locked++);
-    document.getElementById('stat-connected').textContent = total;
-    document.getElementById('stat-sharing').textContent = sharing;
-    document.getElementById('stat-locked').textContent = locked;
+  function updateStats(){
+    const total=Object.keys(students).length;
+    let sharing=0,focused=0;
+    document.querySelectorAll('.badge-live,.badge-broadcasting').forEach(()=>sharing++);
+    document.querySelectorAll('.badge-focused').forEach(()=>focused++);
+    document.getElementById('stat-connected').textContent=total;
+    document.getElementById('stat-sharing').textContent=sharing;
+    document.getElementById('stat-focused').textContent=focused;
   }
 
   // ===== FULLSCREEN =====
-  window.openFullscreen = function(studentId) {
-    const video = document.getElementById(`video-${studentId}`);
-    if (!video || !video.srcObject) { showToast('まだ画面共有されていません'); return; }
-    window.currentFsStudentId = studentId;
-    document.getElementById('fs-video').srcObject = video.srcObject;
-    document.getElementById('fs-name').textContent = students[studentId]?.name || '生徒';
-    document.getElementById('fs-id').textContent = '#' + studentId.slice(0,6);
+  window.openFullscreen=function(sid){
+    const video=document.getElementById(`video-${sid}`);
+    if(!video||!video.srcObject){ showToast('まだ画面共有されていません'); return; }
+    window.currentFsId=sid;
+    document.getElementById('fs-video').srcObject=video.srcObject;
+    document.getElementById('fs-name').textContent=students[sid]?.name||'生徒';
+    document.getElementById('fs-id').textContent=students[sid]?.email||'';
     document.getElementById('fullscreen-overlay').classList.add('show');
   };
-
-  window.closeFullscreen = function() {
+  window.closeFullscreen=function(){
     document.getElementById('fullscreen-overlay').classList.remove('show');
-    document.getElementById('fs-video').srcObject = null;
-    window.currentFsStudentId = null;
+    document.getElementById('fs-video').srcObject=null;
+    window.currentFsId=null;
   };
 
-  // ===== UTILS =====
-  window.copyUrl = function() {
-    navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(() => {
-      const btn = document.getElementById('copy-btn');
-      btn.textContent = '✓ コピー済';
-      btn.classList.add('copied');
-      setTimeout(()=>{ btn.textContent='コピー'; btn.classList.remove('copied'); }, 2000);
+  window.copyUrl=function(){
+    navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(()=>{
+      const btn=document.getElementById('copy-btn');
+      btn.textContent='✓ コピー済'; btn.classList.add('copied');
+      setTimeout(()=>{ btn.textContent='コピー'; btn.classList.remove('copied'); },2000);
     });
   };
-
-  window.updateGridSize = function() {
-    document.getElementById('grid').style.gridTemplateColumns = `repeat(${document.getElementById('grid-size').value},1fr)`;
+  window.updateGridSize=function(){
+    document.getElementById('grid').style.gridTemplateColumns=`repeat(${document.getElementById('grid-size').value},1fr)`;
   };
-
-  document.addEventListener('keydown', e => { if (e.key==='Escape') { window.closeFullscreen(); closeMsgModal(); } });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ window.closeFullscreen(); closeMsgModal(); } });
 </script>
 </body>
 </html>

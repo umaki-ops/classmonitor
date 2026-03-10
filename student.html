@@ -6,11 +6,7 @@
 <title>授業モニター｜生徒用</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600;700;900&family=JetBrains+Mono:wght@500&display=swap');
-  :root {
-    --bg:#f0f4ff; --surface:#ffffff; --border:#e2e8f0;
-    --accent:#3b82f6; --accent-dark:#1d4ed8;
-    --green:#10b981; --red:#ef4444; --text:#1e293b; --text-muted:#64748b;
-  }
+  :root { --bg:#f0f4ff; --surface:#fff; --border:#e2e8f0; --accent:#3b82f6; --accent-dark:#1d4ed8; --green:#10b981; --red:#ef4444; --text:#1e293b; --text-muted:#64748b; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Noto Sans JP',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
   body::before { content:''; position:fixed; inset:0; background:radial-gradient(circle at 20% 20%,rgba(59,130,246,0.08) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(6,182,212,0.06) 0%,transparent 50%); pointer-events:none; }
@@ -22,9 +18,7 @@
   .card-top h1 { position:relative; color:white; font-size:20px; font-weight:700; margin-bottom:4px; }
   .card-top p { position:relative; color:rgba(255,255,255,0.7); font-size:13px; }
   .session-badge { position:relative; display:inline-flex; align-items:center; gap:5px; margin-top:14px; padding:5px 12px; background:rgba(255,255,255,0.15); border-radius:20px; color:rgba(255,255,255,0.9); font-size:11px; font-family:'JetBrains Mono',monospace; border:1px solid rgba(255,255,255,0.2); }
-
-  /* ユーザーバッジ（ログイン後） */
-  .user-badge { position:relative; display:flex; align-items:center; gap:8px; margin-top:14px; padding:8px 14px; background:rgba(255,255,255,0.15); border-radius:20px; border:1px solid rgba(255,255,255,0.25); }
+  .user-badge { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:14px; padding:8px 14px; background:rgba(255,255,255,0.15); border-radius:20px; border:1px solid rgba(255,255,255,0.25); }
   .user-avatar { width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,0.4); object-fit:cover; }
   .user-name { color:white; font-size:13px; font-weight:600; }
   .user-email { color:rgba(255,255,255,0.6); font-size:10px; }
@@ -32,15 +26,12 @@
   .card-body { padding:32px 36px; }
   .state { display:none; }
   .state.active { display:block; }
-
   .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 16px; }
   @keyframes spin { to{transform:rotate(360deg)} }
 
-  /* Googleログインボタン */
   .google-btn { width:100%; padding:14px; background:white; color:#3c4043; border:1px solid #dadce0; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
   .google-btn:hover { background:#f8f9fa; box-shadow:0 2px 8px rgba(0,0,0,0.12); transform:translateY(-1px); }
-  .google-icon { width:20px; height:20px; }
-  .login-note { margin-top:12px; text-align:center; font-size:12px; color:var(--text-muted); line-height:1.5; }
+  .google-icon { width:20px; height:20px; flex-shrink:0; }
 
   .info-list { list-style:none; margin:20px 0; }
   .info-list li { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); font-size:13px; line-height:1.5; }
@@ -69,28 +60,27 @@
   .error-msg { font-size:12px; color:#b91c1c; line-height:1.5; }
   .retry-btn { margin-top:14px; padding:9px 22px; background:var(--accent); color:white; border:none; border-radius:8px; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
 
-  /* LOCK */
-  #lock-overlay { display:none; position:fixed; inset:0; z-index:9999; background:rgba(10,14,26,0.97); flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:40px; }
-  #lock-overlay.show { display:flex; }
-  .lock-icon { font-size:72px; margin-bottom:24px; animation:lockbounce 2s ease-in-out infinite; }
-  @keyframes lockbounce { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-  .lock-title { color:white; font-size:28px; font-weight:900; margin-bottom:10px; }
-  .lock-sub { color:rgba(255,255,255,0.5); font-size:15px; }
-
-  /* FOCUS */
+  /* ===== FOCUS OVERLAY ===== */
   #focus-overlay { display:none; position:fixed; inset:0; z-index:9999; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:40px; overflow:hidden; }
   #focus-overlay.show { display:flex; }
   #focus-overlay::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,#1e1b4b,#312e81,#1e40af); z-index:0; }
   #focus-overlay::after { content:''; position:absolute; width:600px; height:600px; border-radius:50%; background:radial-gradient(circle,rgba(99,102,241,0.3) 0%,transparent 70%); animation:focuspulse 3s ease-in-out infinite; z-index:0; }
-  @keyframes focuspulse { 0%,100%{transform:scale(1);opacity:0.6} 50%{transform:scale(1.2);opacity:1} }
+  @keyframes focuspulse { 0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.2);opacity:1} }
   .focus-content { position:relative; z-index:1; }
   .focus-emoji { font-size:80px; margin-bottom:20px; display:block; animation:focusbounce 2.5s ease-in-out infinite; }
-  @keyframes focusbounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+  @keyframes focusbounce { 0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)} }
   .focus-title { color:white; font-size:42px; font-weight:900; margin-bottom:12px; letter-spacing:0.04em; text-shadow:0 0 40px rgba(99,102,241,0.8); line-height:1.1; }
   .focus-sub { color:rgba(255,255,255,0.6); font-size:16px; line-height:1.6; }
-  .focus-deco { position:absolute; z-index:0; border-radius:50%; border:1px solid rgba(255,255,255,0.05); }
 
-  /* MESSAGE */
+  /* ===== WATCH OVERLAY (生徒画面を視聴) ===== */
+  #watch-overlay { display:none; position:fixed; inset:0; z-index:9999; background:#000; flex-direction:column; }
+  #watch-overlay.show { display:flex; }
+  .watch-header { padding:10px 20px; background:rgba(17,24,39,0.9); display:flex; align-items:center; gap:10px; }
+  .watch-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; background:rgba(6,182,212,0.2); border:1px solid rgba(6,182,212,0.4); border-radius:20px; color:#67e8f9; font-size:12px; font-weight:600; }
+  .watch-dot { width:7px; height:7px; border-radius:50%; background:#06b6d4; animation:livepulse 1.5s infinite; }
+  #watch-video { flex:1; width:100%; object-fit:contain; background:#000; }
+
+  /* ===== MESSAGE POPUP ===== */
   #msg-popup { display:none; position:fixed; top:24px; left:50%; transform:translateX(-50%) translateY(-100px); z-index:10000; background:white; border-radius:16px; padding:20px 24px; box-shadow:0 20px 60px rgba(0,0,0,0.2); max-width:380px; width:calc(100% - 40px); text-align:center; transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1),opacity 0.3s; opacity:0; }
   #msg-popup.show { display:block; transform:translateX(-50%) translateY(0); opacity:1; }
   .msg-popup-icon { font-size:32px; margin-bottom:8px; }
@@ -106,9 +96,7 @@
     <div class="school-icon">📺</div>
     <h1>授業モニター</h1>
     <p>先生が画面を確認できます</p>
-    <!-- ログイン前: セッションID表示 -->
     <div class="session-badge" id="session-badge"><span>●</span><span id="session-id-text">読み込み中...</span></div>
-    <!-- ログイン後: ユーザー情報表示 -->
     <div class="user-badge" id="user-badge" style="display:none;">
       <img class="user-avatar" id="user-avatar" src="" alt="" />
       <div>
@@ -119,7 +107,6 @@
   </div>
   <div class="card-body">
 
-    <!-- Loading -->
     <div class="state active" id="state-loading">
       <div style="text-align:center;padding:20px 0;">
         <div class="spinner"></div>
@@ -127,7 +114,6 @@
       </div>
     </div>
 
-    <!-- Googleログイン -->
     <div class="state" id="state-login">
       <div style="text-align:center;margin-bottom:24px;">
         <div style="font-size:40px;margin-bottom:12px;">👋</div>
@@ -135,29 +121,22 @@
         <div style="font-size:13px;color:var(--text-muted);line-height:1.6;">Googleアカウントでログインすると<br>先生にあなたの名前が表示されます</div>
       </div>
       <button class="google-btn" onclick="signInWithGoogle()">
-        <svg class="google-icon" viewBox="0 0 48 48">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-        </svg>
+        <svg class="google-icon" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
         Googleアカウントでログイン
       </button>
-      <div class="login-note">学校のGoogleアカウント（@...）を使用してください</div>
+      <div style="margin-top:12px;text-align:center;font-size:12px;color:var(--text-muted);">学校のGoogleアカウントを使用してください</div>
     </div>
 
-    <!-- 画面共有プロンプト -->
     <div class="state" id="state-prompt">
       <ul class="info-list">
         <li><div class="icon">👁</div><div><div class="label">内容</div>先生があなたの画面を見ることができます</div></li>
-        <li><div class="icon">🔒</div><div><div class="label">プライバシー</div>「画面全体」を選んで共有してください</div></li>
+        <li><div class="icon">🖥</div><div><div class="label">共有範囲</div>「画面全体」のみ選択可能です</div></li>
         <li><div class="icon">🛑</div><div><div class="label">停止</div>いつでも「共有を停止」ボタンで終了できます</div></li>
       </ul>
       <button class="share-btn" id="share-btn" onclick="startShare()"><span>📡</span> 画面共有を開始する</button>
       <div class="footer-note">ボタンを押すとブラウザから「画面共有の許可」を求めるダイアログが表示されます</div>
     </div>
 
-    <!-- 共有中 -->
     <div class="state" id="state-live">
       <div class="live-indicator"><div class="live-dot"></div><span class="live-text">画面共有中です</span></div>
       <div class="preview-container">
@@ -168,7 +147,6 @@
       <div class="footer-note">先生に画面が表示されています</div>
     </div>
 
-    <!-- エラー -->
     <div class="state" id="state-error">
       <div class="error-box">
         <div class="error-icon">⚠️</div>
@@ -178,7 +156,6 @@
       </div>
     </div>
 
-    <!-- 切断 -->
     <div class="state" id="state-disconnected">
       <div style="text-align:center;padding:20px 0;">
         <div style="font-size:44px;margin-bottom:14px;">🔌</div>
@@ -190,22 +167,22 @@
   </div>
 </div>
 
-<!-- Lock overlay -->
-<div id="lock-overlay">
-  <div class="lock-icon">🔒</div>
-  <div class="lock-title">画面がロックされました</div>
-  <div class="lock-sub">先生が解除するまでお待ちください</div>
-</div>
-
-<!-- Focus overlay -->
+<!-- Focus overlay（黒板に集中） -->
 <div id="focus-overlay">
-  <div class="focus-deco" style="width:300px;height:300px;top:-100px;right:-100px;"></div>
-  <div class="focus-deco" style="width:200px;height:200px;bottom:-50px;left:-50px;"></div>
   <div class="focus-content">
     <span class="focus-emoji">🎯</span>
     <div class="focus-title">黒板に集中！</div>
     <div class="focus-sub">先生の指示に従ってください<br>画面から目を離して黒板を見ましょう</div>
   </div>
+</div>
+
+<!-- Watch overlay（他の生徒の画面を視聴） -->
+<div id="watch-overlay">
+  <div class="watch-header">
+    <div class="watch-badge"><div class="watch-dot"></div>クラスメートの画面を表示中</div>
+    <span style="font-size:12px;color:rgba(255,255,255,0.4);margin-left:8px;">先生が選んだ生徒の画面です</span>
+  </div>
+  <video id="watch-video" autoplay playsinline muted></video>
 </div>
 
 <!-- Message popup -->
@@ -232,7 +209,7 @@
 
     if (!sessionId || !dbUrl || !apiKey) {
       showState('error');
-      document.getElementById('error-msg').textContent = 'URLが正しくありません。先生から送られたURLを使用してください。';
+      document.getElementById('error-msg').textContent = 'URLが正しくありません。';
       return;
     }
 
@@ -247,10 +224,9 @@
       return;
     }
 
-    let studentId = null;
-    let currentUser = null;
-    let localStream = null, pc = null;
-    const ICE_SERVERS = {iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+    let studentId = null, localStream = null, pc = null;
+    let watchPc = null; // 他の生徒の画面を受信するPC
+    const ICE = {iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
 
     // ===== GOOGLE LOGIN =====
     window.signInWithGoogle = async function() {
@@ -265,103 +241,160 @@
       }
     };
 
-    // 認証状態を監視
     onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        currentUser = user;
-        studentId = user.uid;
+      if (!user) { showState('login'); return; }
 
-        // ヘッダーのユーザー情報を更新
-        document.getElementById('session-badge').style.display = 'none';
-        document.getElementById('user-badge').style.display = 'flex';
-        document.getElementById('user-name-display').textContent = user.displayName || user.email;
-        document.getElementById('user-email-display').textContent = user.email;
-        if (user.photoURL) {
-          document.getElementById('user-avatar').src = user.photoURL;
-        } else {
-          document.getElementById('user-avatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName||user.email)}&background=3b82f6&color=fff`;
+      studentId = user.uid;
+      // ヘッダー更新
+      document.getElementById('session-badge').style.display = 'none';
+      document.getElementById('user-badge').style.display = 'flex';
+      document.getElementById('user-name-display').textContent = user.displayName || user.email;
+      document.getElementById('user-email-display').textContent = user.email;
+      document.getElementById('user-avatar').src = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName||user.email)}&background=3b82f6&color=fff`;
+
+      // セッション確認
+      onValue(ref(db, `sessions/${sessionId}/active`), snap => {
+        if (!snap.exists() || !snap.val()) { showState('disconnected'); return; }
+        set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
+          name: user.displayName || user.email,
+          email: user.email,
+          photoURL: user.photoURL || '',
+          joinedAt: Date.now(),
+          status: 'waiting'
+        });
+        showState('prompt');
+      }, {onlyOnce:true});
+
+      // セッション終了監視
+      onValue(ref(db, `sessions/${sessionId}/active`), snap => {
+        if (!snap.exists() || !snap.val()) {
+          showState('disconnected');
+          if (localStream) localStream.getTracks().forEach(t=>t.stop());
+          hideFocus(); hideWatch();
         }
+      });
 
-        // セッション確認 → 画面共有プロンプトへ
-        onValue(ref(db, `sessions/${sessionId}/active`), snap => {
-          if (!snap.exists() || !snap.val()) { showState('disconnected'); return; }
-          // 生徒情報をFirebaseに登録（名前付き）
-          set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
-            name: user.displayName || user.email,
-            email: user.email,
-            photoURL: user.photoURL || '',
-            joinedAt: Date.now(),
-            status: 'waiting'
-          });
-          showState('prompt');
-        }, {onlyOnce:true});
+      // シグナル監視
+      onValue(ref(db, `sessions/${sessionId}/signals`), snap => {
+        if (!snap.exists()) return;
+        for (const [key, signal] of Object.entries(snap.val())) {
+          if (signal.to !== studentId) continue;
+          if (signal.type === 'offer') handleOffer(signal.sdp);
+          else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
+          // 画面共有視聴用
+          else if (signal.type === 'watch-offer') handleWatchOffer(signal.from, signal.sdp, signal.sourceName);
+          else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
+          else if (signal.type === 'stop-watch') hideWatch();
+        }
+      });
 
-        // セッション終了を監視
-        onValue(ref(db, `sessions/${sessionId}/active`), snap => {
-          if (!snap.exists() || !snap.val()) {
-            showState('disconnected');
-            if (localStream) localStream.getTracks().forEach(t=>t.stop());
-            hideAllOverlays();
-          }
-        });
-
-        // シグナルを監視
-        onValue(ref(db, `sessions/${sessionId}/signals`), snap => {
+      // コマンド監視（個別 + 全体）
+      [studentId, 'all'].forEach(target => {
+        onValue(ref(db, `sessions/${sessionId}/commands/${target}`), snap => {
           if (!snap.exists()) return;
-          for (const [key, signal] of Object.entries(snap.val())) {
-            if (signal.to !== studentId) continue;
-            if (signal.type === 'offer') handleOffer(signal.sdp);
-            else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
-          }
+          const data = snap.val();
+          if (!data?.command) return;
+          handleCommand(data);
         });
-
-        // コマンドを監視（個別 + 全体）
-        listenCommands(studentId);
-        listenCommands('all');
-
-      } else {
-        // 未ログイン → ログイン画面
-        showState('login');
-      }
+      });
     });
 
-    function listenCommands(target) {
-      onValue(ref(db, `sessions/${sessionId}/commands/${target}`), snap => {
-        if (!snap.exists()) return;
-        const data = snap.val();
-        if (!data?.command) return;
-        handleCommand(data);
+    function handleCommand(data) {
+      if (data.command === 'focus') {
+        showFocus();
+      } else if (data.command === 'unfocus') {
+        hideFocus();
+      } else if (data.command === 'message') {
+        showMsgPopup(data.text);
+      } else if (data.command === 'watchStudent') {
+        // 先生から「この生徒の画面を見ろ」コマンド
+        // 先生側がWebRTCで映像を送ってくるのを待つ（シグナル経由）
+        // watch-offerシグナルで処理
+      } else if (data.command === 'stopWatch') {
+        hideWatch();
+      }
+    }
+
+    // ===== FOCUS =====
+    function showFocus() {
+      const overlay = document.getElementById('focus-overlay');
+      overlay.classList.add('show');
+      // キーボードショートカット無効化
+      document.addEventListener('keydown', blockKeys, true);
+      // フルスクリーン要求
+      try { overlay.requestFullscreen && overlay.requestFullscreen(); } catch(e) {}
+      // タブ離脱検知
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
+
+    function hideFocus() {
+      document.getElementById('focus-overlay').classList.remove('show');
+      document.removeEventListener('keydown', blockKeys, true);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      try { document.exitFullscreen && document.exitFullscreen(); } catch(e) {}
+    }
+
+    function blockKeys(e) {
+      // Ctrl+T, Ctrl+W, Ctrl+N, Ctrl+Tab, Alt+F4, F5等をブロック
+      const blocked = (e.ctrlKey && ['t','w','n','r'].includes(e.key.toLowerCase())) ||
+                      (e.altKey && e.key === 'F4') ||
+                      e.key === 'F5' ||
+                      (e.ctrlKey && e.key === 'Tab') ||
+                      (e.altKey && e.key === 'Tab');
+      if (blocked) { e.preventDefault(); e.stopPropagation(); }
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        // タブが隠れたら即座に集中オーバーレイを再表示
+        setTimeout(() => {
+          const overlay = document.getElementById('focus-overlay');
+          if (overlay.classList.contains('show')) {
+            try { overlay.requestFullscreen && overlay.requestFullscreen(); } catch(e) {}
+          }
+        }, 100);
+      }
+    }
+
+    // ===== WATCH (他の生徒の画面を視聴) =====
+    async function handleWatchOffer(from, sdp, sourceName) {
+      if (watchPc) { watchPc.close(); watchPc = null; }
+      watchPc = new RTCPeerConnection(ICE);
+      watchPc.ontrack = event => {
+        document.getElementById('watch-video').srcObject = event.streams[0];
+        showWatch();
+      };
+      watchPc.onicecandidate = event => {
+        if (event.candidate) {
+          set(ref(db, `sessions/${sessionId}/signals/watch_${studentId}_teacher_${Date.now()}`), {
+            type: 'watch-answer-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
+          });
+        }
+      };
+      await watchPc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await watchPc.createAnswer();
+      await watchPc.setLocalDescription(answer);
+      set(ref(db, `sessions/${sessionId}/signals/watchans_${studentId}_${Date.now()}`), {
+        type: 'watch-answer', from: studentId, to: 'teacher', sdp: answer
       });
     }
 
-    function handleCommand(data) {
-      if (data.command === 'lock') {
-        document.getElementById('focus-overlay').classList.remove('show');
-        document.getElementById('lock-overlay').classList.add('show');
-      } else if (data.command === 'focus') {
-        document.getElementById('lock-overlay').classList.remove('show');
-        document.getElementById('focus-overlay').classList.add('show');
-      } else if (data.command === 'unlock') {
-        hideAllOverlays();
-      } else if (data.command === 'message') {
-        showMsgPopup(data.text);
-      }
+    async function handleWatchIce(candidate) {
+      if (!watchPc) return;
+      try { await watchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
 
-    function hideAllOverlays() {
-      document.getElementById('lock-overlay').classList.remove('show');
-      document.getElementById('focus-overlay').classList.remove('show');
+    function showWatch() {
+      document.getElementById('watch-overlay').classList.add('show');
     }
 
-    function showMsgPopup(text) {
-      document.getElementById('msg-popup-text').textContent = text;
-      document.getElementById('msg-popup').classList.add('show');
+    function hideWatch() {
+      document.getElementById('watch-overlay').classList.remove('show');
+      document.getElementById('watch-video').srcObject = null;
+      if (watchPc) { watchPc.close(); watchPc = null; }
     }
 
-    window.closeMsgPopup = function() {
-      document.getElementById('msg-popup').classList.remove('show');
-    };
-
+    // ===== SHARE =====
     window.startShare = async function() {
       const btn = document.getElementById('share-btn');
       btn.classList.add('disabled');
@@ -390,7 +423,7 @@
     };
 
     function setupPeerConnection() {
-      pc = new RTCPeerConnection(ICE_SERVERS);
+      pc = new RTCPeerConnection(ICE);
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
       pc.onicecandidate = event => {
         if (event.candidate) sendSignal({type:'ice', from:studentId, to:'teacher', candidate:event.candidate.toJSON()});
@@ -426,6 +459,12 @@
       btn.classList.remove('disabled');
       btn.innerHTML = '<span>📡</span> 画面共有を再開する';
     };
+
+    function showMsgPopup(text) {
+      document.getElementById('msg-popup-text').textContent = text;
+      document.getElementById('msg-popup').classList.add('show');
+    }
+    window.closeMsgPopup = function() { document.getElementById('msg-popup').classList.remove('show'); };
 
     function showState(name) {
       document.querySelectorAll('.state').forEach(s=>s.classList.remove('active'));

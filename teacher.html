@@ -715,12 +715,16 @@ async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc
 let studentBcastPcs={};
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  const v=document.getElementById('v-'+sid);
-  if(!v||!v.srcObject){toast('この生徒の画面が共有されていません');return;}
+  const srcPc=peerConnections[sid];
+  if(!srcPc){toast('この生徒の画面が共有されていません');return;}
+  // receiver trackを使う（remote trackはaddTrack不可のため）
+  const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
+  if(tracks.length===0){toast('この生徒の映像トラックがまだ届いていません');return;}
+  const stream=new MediaStream(tracks);
   if(currentBroadcastId)stopBcast();
   currentBroadcastId=sid;
   document.getElementById('card-'+sid)?.classList.add('focused');
-  startStudentBroadcast(sid,v.srcObject);
+  startStudentBroadcast(sid,stream);
   toast(`📡 ${students[sid]?.name||'生徒'}の画面を全員に共有中`);
 };
 async function startStudentBroadcast(sourceSid,stream){

@@ -504,6 +504,9 @@
         showMsgPopup(data.text);
       } else if (data.command === 'stopWatch') {
         hideWatch();
+      } else if (data.command === 'teacherShare') {
+        // tw-offerのWebRTC接続で映像が届くので、ここでは準備のみ
+        console.log('[cmd] teacherShare received');
       } else if (data.command === 'stopTeacherShare') {
         hideTeacher();
       } else if (data.command === 'wb-open') {
@@ -587,34 +590,46 @@
 
     // ===== WATCH (他の生徒の画面を視聴) =====
     async function handleWatchOffer(from, sdp, sourceName) {
-      if (watchPc) { watchPc.close(); watchPc = null; }
-      watchPc = new RTCPeerConnection(ICE);
-      watchPc.ontrack = event => {
-        const vid = document.getElementById('watch-video');
-        // streams[0]が空のケースに対応: trackから直接MediaStreamを作る
-        if (event.streams && event.streams[0]) {
-          vid.srcObject = event.streams[0];
-        } else {
-          const ms = new MediaStream();
-          ms.addTrack(event.track);
-          vid.srcObject = ms;
-        }
-        vid.play().catch(() => {});
-        showWatch();
-      };
-      watchPc.onicecandidate = event => {
-        if (event.candidate) {
-          set(ref(db, `sessions/${sessionId}/signals/watch_${studentId}_teacher_${Date.now()}`), {
-            type: 'watch-answer-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
-          });
-        }
-      };
-      await watchPc.setRemoteDescription(new RTCSessionDescription(sdp));
-      const answer = await watchPc.createAnswer();
-      await watchPc.setLocalDescription(answer);
-      set(ref(db, `sessions/${sessionId}/signals/watchans_${studentId}_${Date.now()}`), {
-        type: 'watch-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
-      });
+      console.log('[Watch] offer received from', from, 'type:', typeof sdp);
+      try {
+        if (watchPc) { watchPc.close(); watchPc = null; }
+        watchPc = new RTCPeerConnection(ICE);
+        watchPc.ontrack = event => {
+          console.log('[Watch] ontrack', event.track.kind);
+          const vid = document.getElementById('watch-video');
+          if (event.streams && event.streams[0]) {
+            vid.srcObject = event.streams[0];
+          } else {
+            const ms = new MediaStream();
+            ms.addTrack(event.track);
+            vid.srcObject = ms;
+          }
+          vid.play().catch(() => {});
+          showWatch();
+        };
+        watchPc.onicecandidate = event => {
+          if (event.candidate) {
+            set(ref(db, `sessions/${sessionId}/signals/watch_${studentId}_teacher_${Date.now()}`), {
+              type: 'watch-answer-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
+            });
+          }
+        };
+        watchPc.onconnectionstatechange = () => {
+          console.log('[Watch] connectionState:', watchPc.connectionState);
+        };
+        const desc = (sdp && typeof sdp === 'object' && sdp.sdp)
+          ? new RTCSessionDescription(sdp)
+          : new RTCSessionDescription({type:'offer', sdp: String(sdp)});
+        await watchPc.setRemoteDescription(desc);
+        const answer = await watchPc.createAnswer();
+        await watchPc.setLocalDescription(answer);
+        set(ref(db, `sessions/${sessionId}/signals/watchans_${studentId}_${Date.now()}`), {
+          type: 'watch-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
+        });
+        console.log('[Watch] answer sent');
+      } catch(e) {
+        console.error('[Watch] handleWatchOffer error:', e);
+      }
     }
 
     async function handleWatchIce(candidate) {
@@ -792,33 +807,50 @@
     let teacherWatchPc = null;
 
     async function handleTeacherWatchOffer(sdp) {
-      if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
-      teacherWatchPc = new RTCPeerConnection(ICE);
-      teacherWatchPc.ontrack = event => {
-        const vid = document.getElementById('teacher-video');
-        if (event.streams && event.streams[0]) {
-          vid.srcObject = event.streams[0];
-        } else {
-          const ms = new MediaStream();
-          ms.addTrack(event.track);
-          vid.srcObject = ms;
-        }
-        vid.play().catch(() => {});
-        showTeacher();
-      };
-      teacherWatchPc.onicecandidate = event => {
-        if (event.candidate) {
-          set(ref(db, `sessions/${sessionId}/signals/tw_ans_ice_${studentId}_${Date.now()}`), {
-            type: 'tw-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
-          });
-        }
-      };
-      await teacherWatchPc.setRemoteDescription(new RTCSessionDescription(sdp));
-      const answer = await teacherWatchPc.createAnswer();
-      await teacherWatchPc.setLocalDescription(answer);
-      set(ref(db, `sessions/${sessionId}/signals/tw_ans_${studentId}_${Date.now()}`), {
-        type: 'tw-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
-      });
+      console.log('[TW] offer received', typeof sdp, sdp && sdp.type);
+      try {
+        if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
+        teacherWatchPc = new RTCPeerConnection(ICE);
+        teacherWatchPc.ontrack = event => {
+          console.log('[TW] ontrack', event.track.kind);
+          const vid = document.getElementById('teacher-video');
+          if (event.streams && event.streams[0]) {
+            vid.srcObject = event.streams[0];
+          } else {
+            const ms = new MediaStream();
+            ms.addTrack(event.track);
+            vid.srcObject = ms;
+          }
+          vid.play().catch(() => {});
+          showTeacher();
+        };
+        teacherWatchPc.onicecandidate = event => {
+          if (event.candidate) {
+            set(ref(db, `sessions/${sessionId}/signals/tw_ans_ice_${studentId}_${Date.now()}`), {
+              type: 'tw-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
+            });
+          }
+        };
+        teacherWatchPc.onconnectionstatechange = () => {
+          console.log('[TW] connectionState:', teacherWatchPc.connectionState);
+        };
+        teacherWatchPc.oniceconnectionstatechange = () => {
+          console.log('[TW] iceState:', teacherWatchPc.iceConnectionState);
+        };
+        // sdp は {type, sdp} のプレーンオブジェクト
+        const desc = (sdp && typeof sdp === 'object' && sdp.sdp)
+          ? new RTCSessionDescription(sdp)
+          : new RTCSessionDescription({type:'offer', sdp: String(sdp)});
+        await teacherWatchPc.setRemoteDescription(desc);
+        const answer = await teacherWatchPc.createAnswer();
+        await teacherWatchPc.setLocalDescription(answer);
+        set(ref(db, `sessions/${sessionId}/signals/tw_ans_${studentId}_${Date.now()}`), {
+          type: 'tw-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
+        });
+        console.log('[TW] answer sent');
+      } catch(e) {
+        console.error('[TW] handleTeacherWatchOffer error:', e);
+      }
     }
 
     async function handleTeacherWatchIce(candidate) {

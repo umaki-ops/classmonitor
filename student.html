@@ -527,13 +527,19 @@
       });
 
       // 配布画像の監視
-      onValue(ref(db, `sessions/${sessionId}/distImg`), snap => {
-        if (!snap.exists()) { hideDistImg(); return; }
-        const d = snap.val();
-        if (d.active && d.dataUrl) {
-          showDistImg(d.dataUrl);
-        } else {
+      let _lastDistImgUrl = null;
+      onValue(ref(db, `sessions/${sessionId}/distImg/active`), snap => {
+        if (!snap.exists() || !snap.val()) {
+          _lastDistImgUrl = null;
           hideDistImg();
+        }
+      });
+      onValue(ref(db, `sessions/${sessionId}/distImg/dataUrl`), snap => {
+        if (!snap.exists()) { _lastDistImgUrl = null; hideDistImg(); return; }
+        const url = snap.val();
+        if (url && url !== _lastDistImgUrl) {
+          _lastDistImgUrl = url;
+          showDistImg(url);
         }
       });
 

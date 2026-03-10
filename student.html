@@ -461,6 +461,12 @@
         if (!localStream) { btn.classList.remove('disabled'); btn.innerHTML = '<span>📡</span> 画面共有を開始する'; return; }
         document.getElementById('preview-video').srcObject = localStream;
         showState('live');
+        // 共有タイプを記録
+        const track = localStream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        const surfaceType = settings.displaySurface || 'unknown';
+        const surfaceLabel = surfaceType === 'monitor' ? '画面全体' : surfaceType === 'browser' ? 'タブ' : surfaceType === 'window' ? 'ウィンドウ' : '不明';
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), surfaceLabel);
         set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
         localStream.getVideoTracks()[0].onended = () => stopShare();
         if (!pc) setupPeerConnection();

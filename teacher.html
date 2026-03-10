@@ -125,6 +125,11 @@
   .quick-msg-btn { padding:4px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:20px; color:var(--text-muted); font-size:11px; cursor:pointer; transition:all 0.2s; font-family:'Noto Sans JP',sans-serif; }
   .quick-msg-btn:hover { border-color:var(--accent); color:var(--accent); }
 
+  /* Share type indicator */
+  .share-type { font-size:10px; font-weight:600; padding:1px 6px; border-radius:10px; margin-left:4px; }
+  .share-type-ok { background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
+  .share-type-warn { background:rgba(239,68,68,0.15); color:var(--red); border:1px solid rgba(239,68,68,0.3); }
+
   /* Toast */
   .toast { position:fixed; bottom:20px; right:20px; z-index:3000; padding:11px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.4); transform:translateY(80px); opacity:0; transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1); }
   .toast.show { transform:translateY(0); opacity:1; }
@@ -297,6 +302,12 @@
       const sid=snap.key,data=snap.val();
       if(!students[sid]){ students[sid]={...data,id:sid}; addStudentCard(sid,data); setupPeerConnection(sid); }
     });
+    onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
+      const sid=snap.key, data=snap.val();
+      if(students[sid]) students[sid]={...students[sid],...data};
+      // 共有タイプ表示を更新
+      if(data.shareType) updateShareType(sid, data.shareType);
+    });
     onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeStudentCard(snap.key));
     onValue(ref(db,`sessions/${sessionId}/signals`),snap=>{
       if(!snap.exists())return;
@@ -450,7 +461,10 @@
         <div class="student-info">
           ${avatarHtml}
           <div style="min-width:0">
-            <div class="student-name">${name}</div>
+            <div class="student-name" style="display:flex;align-items:center;gap:4px;">
+              <span>${name}</span>
+              <span class="share-type" id="sharetype-${sid}" style="display:none;"></span>
+            </div>
             <div class="student-email">${data.email||''}</div>
           </div>
         </div>
@@ -493,6 +507,15 @@
     const map={live:['badge-live','LIVE'],waiting:['badge-waiting','待機中'],focused:['badge-focused','🎯 集中中'],broadcasting:['badge-broadcasting','📡 共有中']};
     badge.className='badge '+(map[status]?.[0]||'badge-waiting');
     badge.textContent=map[status]?.[1]||'待機中';
+  }
+
+  function updateShareType(sid, shareType) {
+    const el = document.getElementById(`sharetype-${sid}`);
+    if (!el) return;
+    el.style.display = '';
+    const isOk = shareType === '画面全体';
+    el.textContent = shareType;
+    el.className = 'share-type ' + (isOk ? 'share-type-ok' : 'share-type-warn');
   }
 
   function updateStats(){

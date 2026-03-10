@@ -359,8 +359,19 @@
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
   import{getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   window.FB={initializeApp,getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved};
+
+  // Firebase読み込み完了を通知
+  window.dispatchEvent(new Event('fb-ready'));
 </script>
 <script>
+// Firebase が読み込まれるまでセッション開始ボタンを無効化
+(function(){
+  const btn = document.querySelector('button[onclick="startSession()"]');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ 読み込み中...'; }
+  window.addEventListener('fb-ready', function(){
+    if(btn){ btn.disabled = false; btn.textContent = '🚀 セッション開始'; }
+  }, {once: true});
+})();
 let db=null,sessionId=null,peerConnections={},students={},msgTargetId=null;
 window.currentFsId=null;
 let currentBroadcastId=null,teacherStream=null,teacherSharing=false;
@@ -381,6 +392,7 @@ window.startSession=async function(){
   const du=document.getElementById('fb-dburl').value.trim();
   const pi=document.getElementById('fb-projectid').value.trim();
   if(!ak||!du||!pi){toast('⚠️ Firebase設定を入力してください');return;}
+  if(!window.FB){toast('⚠️ Firebase SDKの読み込み中です。しばらく待ってから再度お試しください');return;}
   try{const app=window.FB.initializeApp({apiKey:ak,databaseURL:du,projectId:pi},'t-'+Date.now());db=window.FB.getDatabase(app);}catch(e){toast('❌ '+e.message);return;}
   sessionId=gid();
   const{ref,set}=window.FB;
@@ -694,10 +706,7 @@ async function setupTWPc(sid){
   };
   const offer=await pc.createOffer();
   // SDPにb=AS帯域指定を埋め込む（setParametersが効かない環境の保険）
-  const twSdp = offer.sdp.replace(/(m=video[^
-]*
-)/g, '$1b=AS:4000
-');
+  const twSdp = offer.sdp.replace(/m=video /g, 'b=AS:4000\r\nm=video ');
   await pc.setLocalDescription({type:offer.type, sdp:twSdp});
   sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:twSdp}});
 }
@@ -731,10 +740,7 @@ async function setupStudentBcastPc(sid,stream){
     if(pc.connectionState==='connected') setHighBitrate(pc,3000);
   };
   const offer=await pc.createOffer();
-  const watchSdp = offer.sdp.replace(/(m=video[^
-]*
-)/g, '$1b=AS:3000
-');
+  const watchSdp = offer.sdp.replace(/m=video /g, 'b=AS:3000\r\nm=video ');
   await pc.setLocalDescription({type:offer.type, sdp:watchSdp});
   sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:watchSdp}});
 }

@@ -640,7 +640,14 @@ let twPcs={};
 window.toggleTeacherShare=async function(){teacherSharing?stopTS():await startTS();};
 async function startTS(){
   try{
-    teacherStream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:15,max:30}},audio:false});
+    teacherStream=await navigator.mediaDevices.getDisplayMedia({
+      video:{
+        width:{ideal:1920,max:2560},
+        height:{ideal:1080,max:1440},
+        frameRate:{ideal:30,max:60}
+      },
+      audio:false
+    });
     teacherSharing=true;
     document.getElementById('tshare-btn').textContent='⏹ 共有停止';
     document.getElementById('tshare-btn').style.background='var(--red)';
@@ -660,16 +667,39 @@ function stopTS(){
   twPcs={};
   toast('⏹ 先生の画面共有を停止しました');
 }
+// 送信ビットレートを上げるヘルパー（teacher→生徒 配信用）
+async function setHighBitrate(pc, kbps=4000){
+  const senders = pc.getSenders();
+  for(const sender of senders){
+    if(!sender.track || sender.track.kind !== 'video') continue;
+    try{
+      const params = sender.getParameters();
+      if(!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+      params.encodings[0].maxBitrate = kbps * 1000;
+      params.encodings[0].maxFramerate = 30;
+      await sender.setParameters(params);
+      console.log('[bitrate] set to', kbps, 'kbps');
+    } catch(e){ console.warn('[setParameters]', e); }
+  }
+}
+
 async function setupTWPc(sid){
   if(!teacherStream)return;
   if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
   const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
   teacherStream.getTracks().forEach(t=>pc.addTrack(t,teacherStream));
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+  pc.onconnectionstatechange=()=>{
+    if(pc.connectionState==='connected') setHighBitrate(pc,4000);
+  };
   const offer=await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  // sdpは必ずプレーン文字列で送る（RTCSessionDescriptionオブジェクトはFirebaseでシリアライズ不定）
-  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+  // SDPにb=AS帯域指定を埋め込む（setParametersが効かない環境の保険）
+  const twSdp = offer.sdp.replace(/(m=video[^
+]*
+)/g, '$1b=AS:4000
+');
+  await pc.setLocalDescription({type:offer.type, sdp:twSdp});
+  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:twSdp}});
 }
 async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc)return;try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){}}
 async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
@@ -697,9 +727,16 @@ async function setupStudentBcastPc(sid,stream){
   const pc=new RTCPeerConnection(ICE);studentBcastPcs[sid]=pc;
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'watch-ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+  pc.onconnectionstatechange=()=>{
+    if(pc.connectionState==='connected') setHighBitrate(pc,3000);
+  };
   const offer=await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+  const watchSdp = offer.sdp.replace(/(m=video[^
+]*
+)/g, '$1b=AS:3000
+');
+  await pc.setLocalDescription({type:offer.type, sdp:watchSdp});
+  sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:watchSdp}});
 }
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){if(!currentBroadcastId)return;cmd('all','stopWatch',{});document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');currentBroadcastId=null;for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();studentBcastPcs={};}

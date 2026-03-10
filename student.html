@@ -238,7 +238,7 @@
 
     let app, db, auth;
     try {
-      app = initializeApp({apiKey, databaseURL:dbUrl, projectId}, 'student-'+Date.now());
+      app = initializeApp({apiKey, databaseURL:dbUrl, projectId, authDomain:`${projectId}.firebaseapp.com`}, 'student-'+Date.now());
       db = getDatabase(app);
       auth = getAuth(app);
     } catch(e) {

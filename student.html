@@ -752,10 +752,8 @@
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         const answer = await pc.createAnswer();
-        // SDPにb=AS帯域指定を埋め込む
-        const boostedSdp = answer.sdp.replace(/m=video /g, 'b=AS:3000\r\nm=video ');
-        await pc.setLocalDescription({type:answer.type, sdp:boostedSdp});
-        sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:boostedSdp}});
+        await pc.setLocalDescription(answer);
+        sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:answer.sdp}});
       } catch(e) {
         console.error('[handleOffer error]', e);
         // signalingStateがおかしい場合はPCを作り直して再試行
@@ -764,9 +762,8 @@
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await pc.createAnswer();
-            const boostedSdp2 = answer.sdp.replace(/m=video /g, 'b=AS:3000\r\nm=video ');
-            await pc.setLocalDescription({type:answer.type, sdp:boostedSdp2});
-            sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:boostedSdp2}});
+            await pc.setLocalDescription(answer);
+            sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:answer.sdp}});
           } catch(e2) { console.error('[retry failed]', e2); }
         }
       }

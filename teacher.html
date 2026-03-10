@@ -705,10 +705,8 @@ async function setupTWPc(sid){
     if(pc.connectionState==='connected') setHighBitrate(pc,4000);
   };
   const offer=await pc.createOffer();
-  // SDPにb=AS帯域指定を埋め込む（setParametersが効かない環境の保険）
-  const twSdp = offer.sdp.replace(/m=video /g, 'b=AS:4000\r\nm=video ');
-  await pc.setLocalDescription({type:offer.type, sdp:twSdp});
-  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:twSdp}});
+  await pc.setLocalDescription(offer);
+  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
 }
 async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc)return;try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){}}
 async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
@@ -740,9 +738,8 @@ async function setupStudentBcastPc(sid,stream){
     if(pc.connectionState==='connected') setHighBitrate(pc,3000);
   };
   const offer=await pc.createOffer();
-  const watchSdp = offer.sdp.replace(/m=video /g, 'b=AS:3000\r\nm=video ');
-  await pc.setLocalDescription({type:offer.type, sdp:watchSdp});
-  sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:watchSdp}});
+  await pc.setLocalDescription(offer);
+  sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
 }
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){if(!currentBroadcastId)return;cmd('all','stopWatch',{});document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');currentBroadcastId=null;for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();studentBcastPcs={};}

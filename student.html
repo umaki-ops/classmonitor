@@ -606,7 +606,7 @@
       const answer = await watchPc.createAnswer();
       await watchPc.setLocalDescription(answer);
       set(ref(db, `sessions/${sessionId}/signals/watchans_${studentId}_${Date.now()}`), {
-        type: 'watch-answer', from: studentId, to: 'teacher', sdp: answer
+        type: 'watch-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
       });
     }
 
@@ -723,7 +723,7 @@
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        sendSignal({type:'answer', from:studentId, to:'teacher', sdp:answer});
+        sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type,sdp:answer.sdp}});
       } catch(e) {
         console.error('[handleOffer error]', e);
         // signalingStateがおかしい場合はPCを作り直して再試行
@@ -733,7 +733,7 @@
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            sendSignal({type:'answer', from:studentId, to:'teacher', sdp:answer});
+            sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type,sdp:answer.sdp}});
           } catch(e2) { console.error('[retry failed]', e2); }
         }
       }
@@ -787,7 +787,7 @@
       const answer = await teacherWatchPc.createAnswer();
       await teacherWatchPc.setLocalDescription(answer);
       set(ref(db, `sessions/${sessionId}/signals/tw_ans_${studentId}_${Date.now()}`), {
-        type: 'tw-answer', from: studentId, to: 'teacher', sdp: answer
+        type: 'tw-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
       });
     }
 

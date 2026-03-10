@@ -156,6 +156,8 @@
     <button class="btn btn-survey" onclick="openSurvey('free')">✏️ 自由記述</button>
     <div class="hdiv"></div>
     <button class="btn btn-outline" onclick="openMsgModal(null)">💬 全員へ</button>
+    <div class="hdiv"></div>
+    <button class="btn" style="background:linear-gradient(135deg,#059669,#047857);color:white;" onclick="openWhiteboard()">📋 ホワイトボード</button>
   </div>
   <div class="header-right">
     <div class="status-bar"><div class="dot" id="cdot"></div><span id="cstatus">未接続</span></div>
@@ -597,6 +599,17 @@ window.openFullscreen=function(sid){
 window.closeFullscreen=function(){document.getElementById('fs-overlay').classList.remove('show');document.getElementById('fs-video').srcObject=null;window.currentFsId=null;};
 window.copyUrl=function(){navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(()=>{const b=document.getElementById('copy-btn');b.textContent='✓ コピー済';b.classList.add('copied');setTimeout(()=>{b.textContent='コピー';b.classList.remove('copied');},2000);});};
 window.updateGridSize=function(){document.getElementById('grid').style.gridTemplateColumns=`repeat(${document.getElementById('grid-size').value},1fr)`;};
+window.openWhiteboard = function() {
+  // Firebase設定をURLパラメータから取得してwhiteboard-teacher.htmlへ渡す
+  // セッション開始後はshare-urlからパラメータを取得できる
+  const shareUrl = document.getElementById('share-url').textContent;
+  if (!shareUrl) { alert('先にセッションを開始してください'); return; }
+  const params = new URLSearchParams(shareUrl.split('?')[1] || '');
+  const base = location.href.replace('teacher.html', 'whiteboard-teacher.html');
+  const url = `${base}?apiKey=${params.get('apiKey')}&db=${params.get('db')}&projectId=${params.get('projectId')}`;
+  window.open(url, '_blank');
+};
+
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeMsgModal();closeSurvey();closeResults();}});
 </script>
 </body>

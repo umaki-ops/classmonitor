@@ -667,7 +667,7 @@ async function startTS(){
     cmd('all','teacherShare',{});
     for(const sid of Object.keys(students))await setupTWPc(sid);
     toast('📺 先生の画面を全員に配信中');
-  }catch(e){if(e.name!=='NotAllowedError')toast('❌ '+e.message);}
+  }catch(e){console.error('[startTS]',e);if(e.name!=='NotAllowedError')toast('❌ 画面共有エラー: '+e.message);}
 }
 function stopTS(){
   if(teacherStream){teacherStream.getTracks().forEach(t=>t.stop());teacherStream=null;}
@@ -696,19 +696,23 @@ async function setHighBitrate(pc, kbps=4000){
 }
 
 async function setupTWPc(sid){
-  if(!teacherStream)return;
-  if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
-  const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
-  teacherStream.getTracks().forEach(t=>pc.addTrack(t,teacherStream));
-  pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-  pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='connected') setHighBitrate(pc,4000);
-  };
-  const offer=await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+  if(!teacherStream){console.warn('[TW] no teacherStream');return;}
+  try{
+    if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
+    const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
+    teacherStream.getTracks().forEach(t=>pc.addTrack(t,teacherStream));
+    pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+    pc.onconnectionstatechange=()=>{
+      console.log('[TW->'+sid+']',pc.connectionState);
+      if(pc.connectionState==='connected') setHighBitrate(pc,4000);
+    };
+    const offer=await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+    console.log('[TW] offer sent to',sid);
+  }catch(e){console.error('[setupTWPc]',e);toast('❌ 先生画面配信エラー: '+e.message);}
 }
-async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc)return;try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){}}
+async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc){console.warn('[TW] no pc for',sid);return;}try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));console.log('[TW] remoteDesc set for',sid);}catch(e){console.error('[handleTWAnswer]',e);}}
 async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
 // ===== Student screen broadcast =====
@@ -716,11 +720,25 @@ let studentBcastPcs={};
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
   const srcPc=peerConnections[sid];
-  if(!srcPc){toast('この生徒の画面が共有されていません');return;}
-  // receiver trackを使う（remote trackはaddTrack不可のため）
-  const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
-  if(tracks.length===0){toast('この生徒の映像トラックがまだ届いていません');return;}
-  const stream=new MediaStream(tracks);
+  // PCがない、またはliveなトラックがない場合: video要素のsrcObjectから試みる
+  let stream=null;
+  if(srcPc){
+    const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
+    if(tracks.length>0) stream=new MediaStream(tracks);
+  }
+  // フォールバック: video要素のsrcObjectを使う
+  if(!stream){
+    const v=document.getElementById('v-'+sid);
+    if(v&&v.srcObject){
+      const tracks=[...v.srcObject.getTracks()].filter(t=>t.readyState==='live');
+      if(tracks.length>0) stream=new MediaStream(tracks);
+    }
+  }
+  if(!stream){
+    console.warn('[broadcastStudentScreen] no stream for',sid, 'pc:',srcPc?.connectionState);
+    toast('この生徒の映像が取得できません（共有中か確認してください）');
+    return;
+  }
   if(currentBroadcastId)stopBcast();
   currentBroadcastId=sid;
   document.getElementById('card-'+sid)?.classList.add('focused');
@@ -734,20 +752,24 @@ async function startStudentBroadcast(sourceSid,stream){
   }
 }
 async function setupStudentBcastPc(sid,stream){
-  if(studentBcastPcs[sid]){try{studentBcastPcs[sid].close();}catch(e){}}
-  const pc=new RTCPeerConnection(ICE);studentBcastPcs[sid]=pc;
-  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-  pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'watch-ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-  pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='connected') setHighBitrate(pc,3000);
-  };
-  const offer=await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+  try{
+    if(studentBcastPcs[sid]){try{studentBcastPcs[sid].close();}catch(e){}}
+    const pc=new RTCPeerConnection(ICE);studentBcastPcs[sid]=pc;
+    stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+    pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'watch-ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+    pc.onconnectionstatechange=()=>{
+      console.log('[Watch->'+sid+']',pc.connectionState);
+      if(pc.connectionState==='connected') setHighBitrate(pc,3000);
+    };
+    const offer=await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+    console.log('[Watch] offer sent to',sid);
+  }catch(e){console.error('[setupStudentBcastPc]',e);toast('❌ 生徒画面配信エラー: '+e.message);}
 }
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){if(!currentBroadcastId)return;cmd('all','stopWatch',{});document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');currentBroadcastId=null;for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();studentBcastPcs={};}
-async function handleWatchAnswer(sid,sdp){const pc=studentBcastPcs[sid];if(!pc)return;try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){}}
+async function handleWatchAnswer(sid,sdp){const pc=studentBcastPcs[sid];if(!pc){console.warn('[Watch] no pc for',sid);return;}try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));console.log('[Watch] remoteDesc set for',sid);}catch(e){console.error('[handleWatchAnswer]',e);}}
 async function handleWatchAnswerIce(sid,c){const pc=studentBcastPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
 // ===== Focus =====

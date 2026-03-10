@@ -81,6 +81,37 @@
   #watch-video { flex:1; width:100%; object-fit:contain; background:#000; }
 
   /* ===== MESSAGE POPUP ===== */
+  /* ===== TEACHER WATCH OVERLAY ===== */
+  #teacher-overlay { display:none; position:fixed; inset:0; z-index:9000; background:#000; flex-direction:column; }
+  #teacher-overlay.show { display:flex; }
+  .teacher-header { padding:10px 20px; background:rgba(17,24,39,0.9); display:flex; align-items:center; gap:10px; }
+  .teacher-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 14px; background:rgba(59,130,246,0.2); border:1px solid rgba(59,130,246,0.4); border-radius:20px; color:#93c5fd; font-size:12px; font-weight:600; }
+  .teacher-dot { width:7px; height:7px; border-radius:50%; background:#3b82f6; animation:livepulse 1.5s infinite; }
+  #teacher-video { flex:1; width:100%; object-fit:contain; background:#000; }
+
+  /* ===== SURVEY OVERLAY ===== */
+  #survey-overlay { display:none; position:fixed; inset:0; z-index:9500; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; padding:20px; }
+  #survey-overlay.show { display:flex; }
+  .survey-card { background:white; border-radius:20px; padding:28px; width:100%; max-width:460px; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+  .survey-card-title { font-size:13px; font-weight:700; color:#64748b; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+  .survey-question { font-size:18px; font-weight:700; color:#1e293b; margin-bottom:20px; line-height:1.5; }
+  /* Choice buttons */
+  .choice-btn { width:100%; padding:14px 16px; margin-bottom:10px; background:white; border:2px solid #e2e8f0; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:14px; font-weight:600; color:#1e293b; cursor:pointer; transition:all 0.2s; text-align:left; display:flex; align-items:center; gap:10px; }
+  .choice-btn:hover { border-color:#3b82f6; background:#eff6ff; }
+  .choice-btn.selected { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
+  .choice-btn.answered { cursor:default; }
+  .choice-label-badge { width:28px; height:28px; border-radius:8px; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+  .choice-btn.selected .choice-label-badge { background:#3b82f6; color:white; }
+  /* Free text */
+  .survey-textarea { width:100%; padding:12px 14px; border:2px solid #e2e8f0; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:14px; color:#1e293b; resize:vertical; min-height:100px; outline:none; transition:border-color 0.2s; }
+  .survey-textarea:focus { border-color:#3b82f6; }
+  .survey-submit-btn { width:100%; padding:13px; background:#3b82f6; color:white; border:none; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:15px; font-weight:700; cursor:pointer; margin-top:14px; transition:all 0.2s; }
+  .survey-submit-btn:hover { background:#2563eb; }
+  .survey-submit-btn:disabled { background:#94a3b8; cursor:not-allowed; }
+  .survey-answered { text-align:center; padding:16px 0; }
+  .survey-answered-icon { font-size:40px; margin-bottom:8px; }
+  .survey-answered-text { font-size:15px; font-weight:700; color:#065f46; }
+
   #msg-popup { display:none; position:fixed; top:24px; left:50%; transform:translateX(-50%) translateY(-100px); z-index:10000; background:white; border-radius:16px; padding:20px 24px; box-shadow:0 20px 60px rgba(0,0,0,0.2); max-width:380px; width:calc(100% - 40px); text-align:center; transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1),opacity 0.3s; opacity:0; }
   #msg-popup.show { display:block; transform:translateX(-50%) translateY(0); opacity:1; }
   .msg-popup-icon { font-size:32px; margin-bottom:8px; }
@@ -185,6 +216,23 @@
   <video id="watch-video" autoplay playsinline muted></video>
 </div>
 
+<!-- Teacher screen overlay -->
+<div id="teacher-overlay">
+  <div class="teacher-header">
+    <div class="teacher-badge"><div class="teacher-dot"></div>先生の画面を表示中</div>
+  </div>
+  <video id="teacher-video" autoplay playsinline></video>
+</div>
+
+<!-- Survey overlay -->
+<div id="survey-overlay">
+  <div class="survey-card" id="survey-card">
+    <div class="survey-card-title"><span id="survey-type-icon">📊</span><span id="survey-type-label">アンケート</span></div>
+    <div class="survey-question" id="survey-q-text"></div>
+    <div id="survey-body"></div>
+  </div>
+</div>
+
 <!-- Message popup -->
 <div id="msg-popup">
   <div class="msg-popup-icon">💬</div>
@@ -281,11 +329,21 @@
           if (signal.to !== studentId) continue;
           if (signal.type === 'offer') handleOffer(signal.sdp);
           else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
-          // 画面共有視聴用
           else if (signal.type === 'watch-offer') handleWatchOffer(signal.from, signal.sdp, signal.sourceName);
           else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
           else if (signal.type === 'stop-watch') hideWatch();
+          // 先生画面受信
+          else if (signal.type === 'tw-offer') handleTeacherWatchOffer(signal.sdp);
+          else if (signal.type === 'tw-ice-offer') handleTeacherWatchIce(signal.candidate);
         }
+      });
+
+      // アンケート監視
+      onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
+        if (!snap.exists()) return;
+        const sv = snap.val();
+        if (sv.active) showSurvey(sv);
+        else hideSurvey();
       });
 
       // コマンド監視（個別 + 全体）
@@ -306,12 +364,10 @@
         hideFocus();
       } else if (data.command === 'message') {
         showMsgPopup(data.text);
-      } else if (data.command === 'watchStudent') {
-        // 先生から「この生徒の画面を見ろ」コマンド
-        // 先生側がWebRTCで映像を送ってくるのを待つ（シグナル経由）
-        // watch-offerシグナルで処理
       } else if (data.command === 'stopWatch') {
         hideWatch();
+      } else if (data.command === 'stopTeacherShare') {
+        hideTeacher();
       }
     }
 
@@ -516,6 +572,98 @@
       const btn = document.getElementById('share-btn');
       btn.classList.remove('disabled');
       btn.innerHTML = '<span>📡</span> 画面共有を再開する';
+    };
+
+    // ===== TEACHER SCREEN WATCH =====
+    let teacherWatchPc = null;
+
+    async function handleTeacherWatchOffer(sdp) {
+      if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
+      teacherWatchPc = new RTCPeerConnection(ICE);
+      teacherWatchPc.ontrack = event => {
+        document.getElementById('teacher-video').srcObject = event.streams[0];
+        showTeacher();
+      };
+      teacherWatchPc.onicecandidate = event => {
+        if (event.candidate) {
+          set(ref(db, `sessions/${sessionId}/signals/tw_ans_ice_${studentId}_${Date.now()}`), {
+            type: 'tw-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
+          });
+        }
+      };
+      await teacherWatchPc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await teacherWatchPc.createAnswer();
+      await teacherWatchPc.setLocalDescription(answer);
+      set(ref(db, `sessions/${sessionId}/signals/tw_ans_${studentId}_${Date.now()}`), {
+        type: 'tw-answer', from: studentId, to: 'teacher', sdp: answer
+      });
+    }
+
+    async function handleTeacherWatchIce(candidate) {
+      if (!teacherWatchPc) return;
+      try { await teacherWatchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+    }
+
+    function showTeacher() { document.getElementById('teacher-overlay').classList.add('show'); }
+    function hideTeacher() {
+      document.getElementById('teacher-overlay').classList.remove('show');
+      document.getElementById('teacher-video').srcObject = null;
+      if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
+    }
+
+    // ===== SURVEY =====
+    let surveyAnswered = false;
+    const LABELS = ['A','B','C','D'];
+
+    function showSurvey(sv) {
+      surveyAnswered = false;
+      document.getElementById('survey-type-icon').textContent = sv.type === 'choice' ? '📊' : '✏️';
+      document.getElementById('survey-type-label').textContent = sv.type === 'choice' ? '選択式アンケート' : '自由記述アンケート';
+      document.getElementById('survey-q-text').textContent = sv.question;
+      const body = document.getElementById('survey-body');
+      if (sv.type === 'choice') {
+        body.innerHTML = sv.choices.map((ch, i) =>
+          `<button class="choice-btn" id="choice-${i}" onclick="selectChoice('${ch.replace(/'/g,"\'")}')">`+
+          `<span class="choice-label-badge">${LABELS[i]}</span>${ch}</button>`
+        ).join('');
+      } else {
+        body.innerHTML = `<textarea class="survey-textarea" id="free-ans" placeholder="回答を入力してください..."></textarea>`+
+          `<button class="survey-submit-btn" onclick="submitFree()">📤 回答を送信</button>`;
+      }
+      document.getElementById('survey-overlay').classList.add('show');
+    }
+
+    function hideSurvey() { document.getElementById('survey-overlay').classList.remove('show'); }
+
+    window.selectChoice = function(choice) {
+      if (surveyAnswered) return;
+      surveyAnswered = true;
+      document.querySelectorAll('.choice-btn').forEach(b => { b.classList.remove('selected'); b.classList.add('answered'); });
+      // find matching button
+      document.querySelectorAll('.choice-btn').forEach(b => {
+        if (b.textContent.trim().slice(1).trim() === choice) b.classList.add('selected');
+      });
+      set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
+        name: document.getElementById('user-name-display').textContent || studentId,
+        answer: choice, ts: Date.now()
+      });
+      // Show answered state
+      setTimeout(() => {
+        document.getElementById('survey-body').innerHTML =
+          `<div class="survey-answered"><div class="survey-answered-icon">✅</div><div class="survey-answered-text">回答しました！</div></div>`;
+      }, 400);
+    };
+
+    window.submitFree = function() {
+      const text = document.getElementById('free-ans')?.value.trim();
+      if (!text) return;
+      surveyAnswered = true;
+      set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
+        name: document.getElementById('user-name-display').textContent || studentId,
+        answer: text, ts: Date.now()
+      });
+      document.getElementById('survey-body').innerHTML =
+        `<div class="survey-answered"><div class="survey-answered-icon">✅</div><div class="survey-answered-text">回答を送信しました！</div></div>`;
     };
 
     function showMsgPopup(text) {

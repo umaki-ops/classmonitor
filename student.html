@@ -82,7 +82,7 @@
 
   /* ===== MESSAGE POPUP ===== */
   /* ===== TEACHER WATCH OVERLAY ===== */
-  #teacher-overlay { display:none; position:fixed; inset:0; z-index:9000; background:#000; flex-direction:column; }
+  #teacher-overlay { display:none; position:fixed; inset:0; z-index:9600; background:#000; flex-direction:column; }
   #teacher-overlay.show { display:flex; }
   .teacher-header { padding:10px 20px; background:rgba(17,24,39,0.9); display:flex; align-items:center; gap:10px; }
   .teacher-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 14px; background:rgba(59,130,246,0.2); border:1px solid rgba(59,130,246,0.4); border-radius:20px; color:#93c5fd; font-size:12px; font-weight:600; }
@@ -796,9 +796,16 @@
       try { await teacherWatchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
 
-    function showTeacher() { document.getElementById('teacher-overlay').classList.add('show'); }
+    function showTeacher() {
+      hideSurvey(); // アンケート表示中でも先生画面を優先
+      document.getElementById('teacher-overlay').classList.add('show');
+    }
     function hideTeacher() {
       document.getElementById('teacher-overlay').classList.remove('show');
+      // 先生画面終了後、アンケートが継続中なら再表示
+      onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
+        if (snap.exists() && snap.val().active) showSurvey(snap.val());
+      }, {onlyOnce: true});
       document.getElementById('teacher-video').srcObject = null;
       if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
     }

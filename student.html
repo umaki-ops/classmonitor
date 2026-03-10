@@ -243,7 +243,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, onValue } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import { getDatabase, ref, set, onValue, onChildAdded } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   async function main() {
@@ -322,36 +322,37 @@
         }
       });
 
-      // シグナル監視
-      onValue(ref(db, `sessions/${sessionId}/signals`), snap => {
-        if (!snap.exists()) return;
-        for (const [key, signal] of Object.entries(snap.val())) {
-          if (signal.to !== studentId) continue;
-          if (signal.type === 'offer') handleOffer(signal.sdp);
-          else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
-          else if (signal.type === 'watch-offer') handleWatchOffer(signal.from, signal.sdp, signal.sourceName);
-          else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
-          else if (signal.type === 'stop-watch') hideWatch();
-          // 先生画面受信
-          else if (signal.type === 'tw-offer') handleTeacherWatchOffer(signal.sdp);
-          else if (signal.type === 'tw-ice-offer') handleTeacherWatchIce(signal.candidate);
-        }
+      // シグナル監視 - onChildAddedで新着のみ処理
+      onChildAdded(ref(db, `sessions/${sessionId}/signals`), snap => {
+        const signal = snap.val();
+        if (!signal || signal.to !== studentId) return;
+        if (signal.type === 'offer') handleOffer(signal.sdp);
+        else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
+        else if (signal.type === 'watch-offer') handleWatchOffer(signal.from, signal.sdp, signal.sourceName);
+        else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
+        else if (signal.type === 'stop-watch') hideWatch();
+        else if (signal.type === 'tw-offer') handleTeacherWatchOffer(signal.sdp);
+        else if (signal.type === 'tw-ice-offer') handleTeacherWatchIce(signal.candidate);
       });
 
-      // アンケート監視
+      // アンケート監視 - 変更のたびに発火
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
-        if (!snap.exists()) return;
+        if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
         if (sv.active) showSurvey(sv);
         else hideSurvey();
       });
 
-      // コマンド監視（個別 + 全体）
+      // コマンド監視（個別 + 全体）- tsで重複処理を防ぐ
+      let lastCmdTs = { [studentId]: 0, all: 0 };
       [studentId, 'all'].forEach(target => {
         onValue(ref(db, `sessions/${sessionId}/commands/${target}`), snap => {
           if (!snap.exists()) return;
           const data = snap.val();
           if (!data?.command) return;
+          // 同じtsのコマンドを2回処理しない
+          if (data.ts && data.ts <= lastCmdTs[target]) return;
+          lastCmdTs[target] = data.ts || Date.now();
           handleCommand(data);
         });
       });

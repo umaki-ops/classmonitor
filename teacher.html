@@ -332,15 +332,13 @@ function listenStudents(){
     if(d.shareType)updateShareType(sid,d.shareType);
   });
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
-  onValue(ref(db,`sessions/${sessionId}/signals`),snap=>{
-    if(!snap.exists())return;
-    for(const[k,sig] of Object.entries(snap.val())){
-      if(sig.to!=='teacher')continue;
-      if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
-      else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
-      else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
-      else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
-    }
+  onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{
+    const sig=snap.val();
+    if(!sig||sig.to!=='teacher')return;
+    if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
+    else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
+    else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
+    else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
   });
   onValue(ref(db,`sessions/${sessionId}/surveyAnswers`),snap=>{
     if(surveyActive)renderResults(snap.exists()?snap.val():{});

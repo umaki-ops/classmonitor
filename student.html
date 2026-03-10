@@ -91,7 +91,7 @@
   #img-overlay-title { font-size:13px; font-weight:700; color:#92400e; flex:1; }
   #img-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
   #img-canvas-bg { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
-  #img-canvas { display:block; position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; touch-action:none; background:transparent; }
+  #img-canvas { display:block; position:absolute; top:0; left:0; cursor:crosshair; touch-action:none; background:transparent; }
   #img-toolbar { flex-shrink:0; background:white; border-top:2px solid #e2e8f0; padding:8px 12px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 -2px 8px rgba(0,0,0,0.06); flex-wrap:wrap; }
   .img-submit-btn { padding:9px 16px; background:#2563eb; color:white; border:none; border-radius:10px; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:5px; white-space:nowrap; }
   .img-submit-btn.submitted { background:#10b981; }
@@ -939,30 +939,47 @@
       imgCtx = canvas.getContext('2d');
 
       function imgResize() {
-        const data = imgCtx.getImageData(0, 0, canvas.width || 1, canvas.height || 1);
+        // 描画内容を保持しながらリサイズ
+        const prev = (canvas.width > 1 && canvas.height > 1)
+          ? canvas.toDataURL() : null;
         canvas.width = wrap.offsetWidth;
         canvas.height = wrap.offsetHeight;
-        if (data.width > 1) imgCtx.putImageData(data, 0, 0);
+        // CSSサイズもcanvasの解像度に合わせる
+        canvas.style.width = canvas.width + 'px';
+        canvas.style.height = canvas.height + 'px';
+        if (prev) {
+          const img = new Image();
+          img.onload = () => imgCtx.drawImage(img, 0, 0);
+          img.src = prev;
+        }
       }
       imgResize();
       window.addEventListener('resize', () => {
         if (document.getElementById('img-overlay').classList.contains('show')) imgResize();
       });
 
+      function getXY(clientX, clientY) {
+        const r = canvas.getBoundingClientRect();
+        // getBoundingClientRect のサイズと canvas の実ピクセルサイズの比率でスケール
+        const scX = canvas.width / r.width;
+        const scY = canvas.height / r.height;
+        return [(clientX - r.left) * scX, (clientY - r.top) * scY];
+      }
+
       // touch
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
         imgDrawing = true;
-        const r = canvas.getBoundingClientRect();
-        imgLX = e.touches[0].clientX - r.left;
-        imgLY = e.touches[0].clientY - r.top;
+        const t = e.touches[0];
+        [imgLX, imgLY] = getXY(t.clientX, t.clientY);
         imgSignalDrawing(true);
       }, { passive: false });
       canvas.addEventListener('touchmove', e => {
         e.preventDefault();
         if (!imgDrawing) return;
-        const r = canvas.getBoundingClientRect();
-        imgDraw(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
+        const t = e.touches[0];
+        const [nx, ny] = getXY(t.clientX, t.clientY);
+        imgDraw(nx, ny);
       }, { passive: false });
       canvas.addEventListener('touchend', () => {
         imgDrawing = false;
@@ -973,23 +990,23 @@
       // mouse
       canvas.addEventListener('mousedown', e => {
         imgDrawing = true;
-        const r = canvas.getBoundingClientRect();
-        imgLX = e.clientX - r.left;
-        imgLY = e.clientY - r.top;
+        [imgLX, imgLY] = getXY(e.clientX, e.clientY);
         imgSignalDrawing(true);
       });
       canvas.addEventListener('mousemove', e => {
         if (!imgDrawing) return;
-        const r = canvas.getBoundingClientRect();
-        imgDraw(e.clientX - r.left, e.clientY - r.top);
+        const [nx, ny] = getXY(e.clientX, e.clientY);
+        imgDraw(nx, ny);
       });
       canvas.addEventListener('mouseup', () => {
         imgDrawing = false;
         imgSignalDrawing(false);
         imgScheduleSnapshot();
       });
+      canvas.addEventListener('mouseleave', () => {
+        if (imgDrawing) { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); }
+      });
     }
-
     function imgDraw(x, y) {
       imgCtx.beginPath();
       imgCtx.moveTo(imgLX, imgLY);
@@ -1091,15 +1108,17 @@
       document.getElementById('img-overlay').classList.add('show');
       // 初期化（一度だけ）してcanvasをクリア
       setTimeout(() => {
-        imgInitOnce();
+        // 初回は初期化、2回目以降はサイズだけ再設定してクリア
         const canvas = document.getElementById('img-canvas');
         const wrap = document.getElementById('img-canvas-wrap');
-        // canvas サイズが変わっていたら再設定
-        if (canvas.width !== wrap.offsetWidth || canvas.height !== wrap.offsetHeight) {
-          canvas.width = wrap.offsetWidth;
-          canvas.height = wrap.offsetHeight;
-        }
-        if (imgCtx) imgCtx.clearRect(0, 0, canvas.width, canvas.height);
+        imgInitOnce();
+        // 毎回サイズを wrap に合わせる（overlayが display:flex になった後）
+        canvas.width = wrap.offsetWidth;
+        canvas.height = wrap.offsetHeight;
+        canvas.style.width = canvas.width + 'px';
+        canvas.style.height = canvas.height + 'px';
+        imgCtx = canvas.getContext('2d');
+        imgCtx.clearRect(0, 0, canvas.width, canvas.height);
       }, 50);
     }
 

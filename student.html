@@ -931,6 +931,7 @@
 
     // WBのwbInitと完全同構造
     function imgInitOnce() {
+      console.log('[img] imgInitOnce called, done:', imgInitDone);
       if (imgInitDone) return;
       imgInitDone = true;
       const canvas = document.getElementById('img-canvas');
@@ -959,6 +960,7 @@
       // touchstart/touchmove/touchend (WBと同じ)
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
+        console.log('[img] touchstart');
         imgDrawing = true;
         const r = canvas.getBoundingClientRect();
         imgLX = e.touches[0].clientX - r.left;
@@ -978,6 +980,7 @@
 
       // mousedown/mousemove/mouseup (WBと同じ)
       canvas.addEventListener('mousedown', e => {
+        console.log('[img] mousedown');
         imgDrawing = true;
         const r = canvas.getBoundingClientRect();
         imgLX = e.clientX - r.left;
@@ -994,6 +997,7 @@
 
     // 背景画像をcanvasにフィット描画
     function imgDrawBg() {
+      console.log('[img] imgDrawBg called, bgImage:', !!imgBgImage, 'ctx:', !!imgCtx);
       if (!imgBgImage || !imgCtx) return;
       const canvas = document.getElementById('img-canvas');
       imgCtx.fillStyle = 'white';
@@ -1006,6 +1010,7 @@
 
     // WBのwbDrawと同じ構造（消しゴムは背景色で上書き）
     function imgDraw(x, y) {
+      console.log('[img] imgDraw', x.toFixed(0), y.toFixed(0), 'tool:', imgTool, 'color:', imgColor);
       imgCtx.beginPath();
       imgCtx.moveTo(imgLX, imgLY);
       imgCtx.lineTo(x, y);
@@ -1025,11 +1030,13 @@
     }
 
     window.setImgTool = function(tool) {
+      console.log('[img] setImgTool called:', tool, 'imgCtx:', !!imgCtx);
       imgTool = tool;
       document.getElementById('imgt-pen').classList.toggle('active', tool === 'pen');
       document.getElementById('imgt-eraser').classList.toggle('active', tool === 'eraser');
     };
     window.imgSetColor = function(el) {
+      console.log('[img] imgSetColor called:', el.dataset.color, 'imgCtx:', !!imgCtx);
       imgColor = el.dataset.color;
       document.querySelectorAll('#img-toolbar .wbc').forEach(d => d.classList.remove('active'));
       el.classList.add('active');
@@ -1069,9 +1076,11 @@
     };
 
     function showDistImg(dataUrl) {
+      console.log('[img] showDistImg called');
       // 背景画像をロードしてから表示
       const img = new Image();
       img.onload = () => {
+        console.log('[img] bg image loaded', img.width, 'x', img.height);
         imgBgImage = img;
         // ツール・色・サイズをリセット
         imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 4;

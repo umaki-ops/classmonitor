@@ -374,26 +374,33 @@
       }
     };
 
-    let _initialized = false; // 初期化を1回だけ実行するフラグ
+    let _initialized = false;
 
     onAuthStateChanged(auth, async (user) => {
       if (!user) { showState('login'); return; }
-
-      // トークンリフレッシュ等で再発火しても初期化をやり直さない
       if (_initialized) return;
       _initialized = true;
 
       studentId = user.uid;
-      // ヘッダー更新
       document.getElementById('session-badge').style.display = 'none';
       document.getElementById('user-badge').style.display = 'flex';
       document.getElementById('user-name-display').textContent = user.displayName || user.email;
       document.getElementById('user-email-display').textContent = user.email;
       document.getElementById('user-avatar').src = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName||user.email)}&background=3b82f6&color=fff`;
 
-      // セッション確認
+      // セッション確認（タイムアウト10秒）
+      let sessionConfirmed = false;
+      const timeout = setTimeout(() => {
+        if (!sessionConfirmed) {
+          showState('error');
+          document.getElementById('error-msg').textContent = 'セッションへの接続がタイムアウトしました。URLを確認してください。';
+        }
+      }, 10000);
+
       onValue(ref(db, `sessions/${sessionId}/active`), snap => {
-        if (!snap.exists() || !snap.val()) { showState('disconnected'); return; }
+        if (!snap.exists() || !snap.val()) { clearTimeout(timeout); showState('disconnected'); return; }
+        clearTimeout(timeout);
+        sessionConfirmed = true;
         set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
           name: user.displayName || user.email,
           email: user.email,
@@ -486,7 +493,7 @@
           handleCommand(data);
         });
       });
-    });
+    }); // end onAuthStateChanged
 
     function handleCommand(data) {
       if (data.command === 'focus') {
@@ -743,10 +750,7 @@
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         const answer = await pc.createAnswer();
         // SDPにb=AS帯域指定を埋め込む
-        const boostedSdp = answer.sdp.replace(/(m=video[^
-]*
-)/g, '$1b=AS:3000
-');
+        const boostedSdp = answer.sdp.replace(/m=video /g, 'b=AS:3000\r\nm=video ');
         await pc.setLocalDescription({type:answer.type, sdp:boostedSdp});
         sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:boostedSdp}});
       } catch(e) {
@@ -757,10 +761,7 @@
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await pc.createAnswer();
-            const boostedSdp2 = answer.sdp.replace(/(m=video[^
-]*
-)/g, '$1b=AS:3000
-');
+            const boostedSdp2 = answer.sdp.replace(/m=video /g, 'b=AS:3000\r\nm=video ');
             await pc.setLocalDescription({type:answer.type, sdp:boostedSdp2});
             sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:boostedSdp2}});
           } catch(e2) { console.error('[retry failed]', e2); }

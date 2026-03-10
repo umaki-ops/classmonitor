@@ -425,7 +425,7 @@
       window.FBDB = { ref, set };
       window.wbDb = db;
       window.wbSid = studentId;
-      window.wbName = studentName;
+      window.wbName = user.displayName || user.email || 'unknown';
       window.wbSessionId = sessionId;
       // ===== ホワイトボード監視 =====
       onValue(ref(db, `sessions/${sessionId}/wb/active`), snap => {
@@ -648,7 +648,13 @@
         set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), surfaceLabel);
         set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
         localStream.getVideoTracks()[0].onended = () => stopShare();
-        if (!pc) setupPeerConnection();
+        setupPeerConnection(); // 必ずPCを作り直す
+        // 保留中のofferがあれば処理する
+        if (window._pendingOffer) {
+          const pending = window._pendingOffer;
+          window._pendingOffer = null;
+          handleOffer(pending);
+        }
       } catch(e) {
         btn.classList.remove('disabled');
         btn.innerHTML = '<span>📡</span> 画面共有を開始する';
@@ -682,7 +688,11 @@
     }
 
     async function handleOffer(sdp) {
-      if (!localStream) { setTimeout(()=>handleOffer(sdp), 500); return; }
+      if (!localStream) {
+        // まだ画面共有が開始されていない → pendingとして保存しstartShare後に処理
+        window._pendingOffer = sdp;
+        return;
+      }
       // PCが存在しないか、すでにclosed/failedなら作り直す
       if (!pc || pc.signalingState === 'closed' ||
           pc.connectionState === 'failed' || pc.connectionState === 'closed') {
@@ -842,7 +852,7 @@
     // WB用グローバル公開（canvas event closureから使用）
     window.wbDb = db;
     window.wbSid = studentId;
-    window.wbName = studentName;
+    // wbName is set in main() after auth
     window.wbSessionId = sessionId;
 
   } // end main

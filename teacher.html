@@ -535,10 +535,11 @@ function listenStudents(){
       if(v){v.srcObject=null;v.style.display='none';}
       if(ph)ph.style.display='';
       setBadge(sid,'waiting');updateStats();
-      // PCも作り直す（生徒が再共有したときに新しいofferが必要）
-      if(students[sid])setupPC(sid);
     }
-    if(d.status==='sharing'){setBadge(sid,'live');updateStats();}
+    if(d.status==='sharing'){
+      // 生徒が共有開始 → 新しいofferを送って接続確立
+      setupPC(sid);
+    }
   });
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{

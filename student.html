@@ -318,7 +318,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, onValue, onChildAdded } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import { getDatabase, ref, set, update, onValue, onChildAdded } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   async function main() {
@@ -678,8 +678,11 @@
         const settings = track.getSettings();
         const surfaceType = settings.displaySurface || 'unknown';
         const surfaceLabel = surfaceType === 'monitor' ? '画面全体' : surfaceType === 'browser' ? 'タブ' : surfaceType === 'window' ? 'ウィンドウ' : '不明';
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), surfaceLabel);
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
+        // shareType と status を同時に書き込む（別々に書くと onChildChanged が2回発火して待機中になる）
+        update(ref(db, `sessions/${sessionId}/students/${studentId}`), {
+          shareType: surfaceLabel,
+          status: 'sharing'
+        });
         localStream.getVideoTracks()[0].onended = () => stopShare();
         setupPeerConnection(); // 必ずPCを作り直す
         // 保留中のofferがあれば処理する

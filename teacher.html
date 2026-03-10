@@ -546,7 +546,8 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
     if(d.shareType)updateShareType(sid,d.shareType);
-    // 生徒が共有停止 → 映像を非表示にしてバッジをリセット
+    // status が含まれていない変化（shareType だけ等）は無視
+    if(!d.hasOwnProperty('status'))return;
     if(d.status==='waiting'){
       const v=document.getElementById('v-'+sid);
       const ph=document.getElementById('ph-'+sid);
@@ -555,7 +556,6 @@ function listenStudents(){
       setBadge(sid,'waiting');updateStats();
     }
     if(d.status==='sharing'){
-      // 生徒が共有開始 → 新しいofferを送って接続確立
       setupPC(sid);
     }
   });

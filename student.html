@@ -657,22 +657,52 @@
     };
 
     function setupPeerConnection() {
+      if (pc) { try { pc.close(); } catch(e) {} }
       pc = new RTCPeerConnection(ICE);
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
       pc.onicecandidate = event => {
         if (event.candidate) sendSignal({type:'ice', from:studentId, to:'teacher', candidate:event.candidate.toJSON()});
+      };
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        console.log('[ICE]', state);
+        if (state === 'failed') {
+          // ICE失敗 → restartで回復を試みる
+          console.log('[ICE] failed, attempting restart...');
+          handleOffer._pendingRestart = true;
+          sendSignal({type:'ice-restart-request', from:studentId, to:'teacher'});
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        console.log('[PC state]', pc.connectionState);
       };
     }
 
     async function handleOffer(sdp) {
-      if (!localStream) { setTimeout(()=>handleOffer(sdp), 1000); return; }
-      if (!pc) setupPeerConnection();
+      if (!localStream) { setTimeout(()=>handleOffer(sdp), 500); return; }
+      // PCが存在しないか、すでにclosed/failedなら作り直す
+      if (!pc || pc.signalingState === 'closed' ||
+          pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        setupPeerConnection();
+      }
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         sendSignal({type:'answer', from:studentId, to:'teacher', sdp:answer});
-      } catch(e) { console.error(e); }
+      } catch(e) {
+        console.error('[handleOffer error]', e);
+        // signalingStateがおかしい場合はPCを作り直して再試行
+        if (e.name === 'InvalidStateError') {
+          setupPeerConnection();
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendSignal({type:'answer', from:studentId, to:'teacher', sdp:answer});
+          } catch(e2) { console.error('[retry failed]', e2); }
+        }
+      }
     }
 
     async function handleTeacherIce(candidate) {

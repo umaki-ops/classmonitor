@@ -538,8 +538,12 @@ function listenStudents(){
 }
 
 // ===== WebRTC Monitoring =====
+let reconnectTimers={};
+
 async function setupPC(sid){
+  if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
+
   pc.ontrack=ev=>{
     const v=document.getElementById('v-'+sid),ph=document.getElementById('ph-'+sid);
     if(v){
@@ -550,18 +554,59 @@ async function setupPC(sid){
     }
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+
   pc.onconnectionstatechange=()=>{
-    if(['disconnected','failed','closed'].includes(pc.connectionState)){setBadge(sid,'waiting');updateStats();}
-    if(pc.connectionState==='connected'){const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});}
+    const state=pc.connectionState;
+    if(state==='connected'){
+      const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
+      setBadge(sid,'live');updateStats();
+    }
+    // failedのみ即再接続。disconnectedは一時的な場合が多いためICE再起動で様子見
+    if(state==='failed'){
+      clearTimeout(reconnectTimers[sid]);
+      setBadge(sid,'waiting');updateStats();
+      setTimeout(()=>{if(students[sid]&&peerConnections[sid]===pc)setupPC(sid);},2000);
+    }
+    if(state==='closed'){setBadge(sid,'waiting');updateStats();}
   };
+
   pc.oniceconnectionstatechange=()=>{
-    if(pc.iceConnectionState==='connected'||pc.iceConnectionState==='completed'){const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});}
+    const iceState=pc.iceConnectionState;
+    if(iceState==='connected'||iceState==='completed'){
+      const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
+      setBadge(sid,'live');updateStats();
+    }
+    // disconnectedは10秒様子見してからICE再起動
+    if(iceState==='disconnected'){
+      reconnectTimers[sid]=setTimeout(async()=>{
+        if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
+        if(pc.iceConnectionState!=='disconnected')return;
+        console.log('[ICE] disconnected > 10s, restarting:',sid);
+        try{
+          const offer=await pc.createOffer({iceRestart:true,offerToReceiveVideo:true,offerToReceiveAudio:false});
+          await pc.setLocalDescription(offer);
+          sig(sid,{type:'offer',from:'teacher',to:sid,sdp:offer});
+        }catch(e){if(students[sid])setupPC(sid);}
+      },10000);
+    } else {
+      clearTimeout(reconnectTimers[sid]);
+    }
+    if(iceState==='failed'){
+      clearTimeout(reconnectTimers[sid]);
+      if(students[sid]&&peerConnections[sid]===pc)setupPC(sid);
+    }
   };
+
   const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
   await pc.setLocalDescription(offer);
   sig(sid,{type:'offer',from:'teacher',to:sid,sdp:offer});
 }
-async function handleAnswer(sid,sdp){const pc=peerConnections[sid];if(!pc||pc.signalingState!=='have-local-offer')return;try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){}}
+async function handleAnswer(sid,sdp){
+  const pc=peerConnections[sid];if(!pc)return;
+  // signalingStateがhave-local-offerでないと失敗するが、iceRestartのケースも考慮
+  if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
+  try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
+}
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
 // ===== Teacher screen → students =====
@@ -753,6 +798,7 @@ function updateCardContent(sid){
 
 function removeCard(sid){
   document.getElementById('card-'+sid)?.remove();
+  clearTimeout(reconnectTimers[sid]);delete reconnectTimers[sid];
   peerConnections[sid]?.close();delete peerConnections[sid];
   twPcs[sid]?.close();delete twPcs[sid];
   studentBcastPcs[sid]?.close();delete studentBcastPcs[sid];

@@ -118,6 +118,15 @@
   .dist-img-card-ph{text-align:center;color:var(--muted);font-size:11px;}
   .dist-card-opened{font-size:10px;color:var(--green);font-weight:600;}
   .dist-card-closed{font-size:10px;color:var(--muted);}
+  #dist-img-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+  .dist-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .dist-card-header{padding:6px 10px;display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-bottom:1px solid var(--border);}
+  .dist-card-name{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;}
+  .dist-card-body{position:relative;background:#f0f0f0;cursor:pointer;}
+  .dist-card-body img{width:100%;aspect-ratio:16/9;object-fit:contain;display:block;}
+  .dist-card-ph{width:100%;aspect-ratio:16/9;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;font-size:11px;gap:4px;}
+  .dist-sub-badge{position:absolute;bottom:4px;right:4px;background:var(--green);color:white;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;}
+  .dist-draw-dot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1s infinite;}
   .wb-ctrl-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
   .wb-input{padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;flex:1;min-width:200px;}
   .wb-input:focus{border-color:var(--accent);}
@@ -297,10 +306,15 @@
       </div>
     </div>
     <div class="wb-stats" id="dist-img-stats" style="margin-top:8px;">
-      <div class="wb-stat">配布中: <span id="dist-stat-active">−</span></div>
+      <div class="wb-stat">配布中: <span id="dist-stat-active">−</span>人</div>
+      <div class="wb-stat">提出済: <span id="dist-stat-sub">0</span>人</div>
+      <div class="wb-stat">描画中: <span id="dist-stat-drawing">0</span>人</div>
       <div class="wb-stat" style="color:var(--muted);font-size:10px;" id="dist-img-status">画像未選択</div>
     </div>
   </div>
+
+  <!-- img view grid（配布中のみ表示） -->
+  <div id="dist-img-grid" style="display:none;"></div>
 
   <!-- Grid -->
   <div id="grid">
@@ -465,7 +479,7 @@ window.switchView=function(v){
   document.getElementById('grid').style.display=v==='img'?'none':'';
   Object.keys(students).forEach(sid=>updateCardContent(sid));
   if(v==='wb') listenWbData();
-  if(v==='img') distImgRefreshUI();
+  if(v==='img'){ distImgRefreshUI(); listenDistImgData(); renderDistImgGrid(); }
 };
 
 // ===== WHITEBOARD =====
@@ -510,23 +524,28 @@ window.distImgSend = async function() {
   distImgActive = true;
   document.getElementById('dist-img-status').textContent = '配布中';
   document.getElementById('dist-stat-active').textContent = Object.keys(students).length + '人';
+  listenDistImgData();
+  renderDistImgGrid();
   toast('🖼️ 画像を全員に配布しました');
 };
 
 window.distImgCollect = async function() {
   if (!db) return;
-  // 回収と同時にデータも削除（Firebaseに画像を残さない）
   await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}/distImg`));
   distImgActive = false;
-  document.getElementById('dist-img-status').textContent = '回収済み（削除済み）';
+  distImgSubmissions = {};
+  document.getElementById('dist-img-status').textContent = '回収済み';
   document.getElementById('dist-stat-active').textContent = '0人';
+  document.getElementById('dist-stat-sub').textContent = '0';
+  document.getElementById('dist-img-grid').style.display = 'none';
+  document.getElementById('dist-img-grid').innerHTML = '';
   toast('📥 画像を回収・削除しました');
 };
 
 window.distImgClearAll = async function() {
   if (!confirm('配布中の画像を削除しますか？')) return;
   if (db) await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}/distImg`));
-  distImgDataUrl = null; distImgActive = false;
+  distImgDataUrl = null; distImgActive = false; distImgSubmissions = {};
   document.getElementById('dist-img-preview').style.display = 'none';
   document.getElementById('dist-img-preview').src = '';
   document.getElementById('dist-img-name').style.display = 'none';
@@ -534,7 +553,10 @@ window.distImgClearAll = async function() {
   document.getElementById('dist-img-send-btn').style.opacity = '0.4';
   document.getElementById('dist-img-status').textContent = '画像未選択';
   document.getElementById('dist-stat-active').textContent = '−';
+  document.getElementById('dist-stat-sub').textContent = '0';
   document.getElementById('dist-img-input').value = '';
+  document.getElementById('dist-img-grid').style.display = 'none';
+  document.getElementById('dist-img-grid').innerHTML = '';
   toast('🗑️ 画像を削除しました');
 };
 
@@ -548,6 +570,87 @@ function distImgRefreshUI() {
   statusEl.textContent = distImgActive ? '📡 配布中' : distImgDataUrl ? '✅ 配布準備完了' : '画像未選択';
   statEl.textContent = distImgActive ? Object.keys(students).length + '人' : '−';
 }
+
+let distImgSubmissions = {};
+let distImgListening = false;
+
+function listenDistImgData() {
+  if (distImgListening || !db) return;
+  distImgListening = true;
+  const {ref, onValue} = window.FB;
+  // スナップショット（リアルタイム書き込みプレビュー）
+  onValue(ref(db, `sessions/${sessionId}/distImg/snapshots`), snap => {
+    if (!snap.exists()) return;
+    Object.entries(snap.val()).forEach(([sid, imgData]) => {
+      const el = document.getElementById('di-img-'+sid);
+      const ph = document.getElementById('di-ph-'+sid);
+      if (el) { el.src = imgData; el.style.display = 'block'; }
+      if (ph) ph.style.display = 'none';
+    });
+  });
+  // 提出
+  onValue(ref(db, `sessions/${sessionId}/distImg/submissions`), snap => {
+    distImgSubmissions = snap.exists() ? snap.val() : {};
+    const subCount = Object.keys(distImgSubmissions).length;
+    const subEl = document.getElementById('dist-stat-sub');
+    if (subEl) subEl.textContent = subCount;
+    Object.keys(students).forEach(sid => {
+      const badge = document.getElementById('di-sub-'+sid);
+      if (badge) badge.style.display = distImgSubmissions[sid] ? '' : 'none';
+    });
+  });
+  // 描画中
+  onValue(ref(db, `sessions/${sessionId}/distImg/drawing`), snap => {
+    const data = snap.exists() ? snap.val() : {};
+    let drawCount = 0;
+    Object.keys(students).forEach(sid => {
+      const dot = document.getElementById('di-dot-'+sid);
+      if (dot) { dot.style.display = data[sid] ? '' : 'none'; }
+      if (data[sid]) drawCount++;
+    });
+    const drawEl = document.getElementById('dist-stat-drawing');
+    if (drawEl) drawEl.textContent = drawCount;
+  });
+}
+
+function renderDistImgGrid() {
+  const grid = document.getElementById('dist-img-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  const sids = Object.keys(students);
+  if (sids.length === 0) { grid.style.display = 'none'; return; }
+  grid.style.display = 'grid';
+  sids.forEach(sid => {
+    const d = students[sid];
+    const card = document.createElement('div');
+    card.className = 'dist-card';
+    card.id = 'di-card-'+sid;
+    card.innerHTML = `
+      <div class="dist-card-header">
+        <span class="dist-card-name">${d.name||'生徒'}</span>
+        <span class="dist-sub-badge" id="di-sub-${sid}" style="display:none;">提出済</span>
+      </div>
+      <div class="dist-card-body" onclick="openDistImgFullscreen('${sid}')">
+        <img id="di-img-${sid}" src="" style="display:none;" class="dist-card-body img"/>
+        <div class="dist-card-ph" id="di-ph-${sid}">
+          <div style="font-size:20px;">✏️</div>
+          <div>まだ描いていません</div>
+        </div>
+        <div class="dist-draw-dot" id="di-dot-${sid}" style="display:none;"></div>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+
+window.openDistImgFullscreen = function(sid) {
+  const img = document.getElementById('di-img-'+sid);
+  const sub = distImgSubmissions[sid];
+  const src = sub ? sub.image : (img && img.style.display !== 'none' ? img.src : '');
+  if (!src) { toast('まだ描いていません'); return; }
+  document.getElementById('fs-wb-img').src = src;
+  document.getElementById('fs-wb-name').textContent = students[sid]?.name || '生徒';
+  document.getElementById('fs-wb-overlay').classList.add('show');
+};
 
 window.sendWbCommand=async function(cmd){
   const{ref,set}=window.FB;

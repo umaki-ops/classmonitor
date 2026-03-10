@@ -418,6 +418,7 @@ window.switchView=function(v){
 
 // ===== WHITEBOARD =====
 window.sendWbInstruction=async function(){
+  if(!db){toast('⚠️ 先にセッションを開始してください');return;}
   const text=document.getElementById('wb-instruction').value.trim();
   if(!text){toast('⚠️ 指示を入力してください');return;}
   const{ref,set}=window.FB;
@@ -427,7 +428,14 @@ window.sendWbInstruction=async function(){
 
 window.sendWbCommand=async function(cmd){
   const{ref,set}=window.FB;
-  if(cmd==='open'){wbActive=true;await set(ref(db,`sessions/${sessionId}/wb/active`),true);toast('📋 ホワイトボードを配布しました');}
+  if(cmd==='open'){
+    wbActive=true;
+    const instr=document.getElementById('wb-instruction').value.trim();
+    // instructionと同時に配布（順序保証）
+    if(instr) await set(ref(db,`sessions/${sessionId}/wb/instruction`),instr);
+    await set(ref(db,`sessions/${sessionId}/wb/active`),true);
+    toast('📋 ホワイトボードを配布しました（指示も同時送信）');
+  }
   else if(cmd==='collect'){await set(ref(db,`sessions/${sessionId}/wb/active`),false);wbActive=false;toast('📥 ホワイトボードを回収しました');}
   else if(cmd==='clear'){
     if(!confirm('全員のホワイトボードを消去しますか？'))return;
@@ -520,6 +528,17 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
     if(d.shareType)updateShareType(sid,d.shareType);
+    // 生徒が共有停止 → 映像を非表示にしてバッジをリセット
+    if(d.status==='waiting'){
+      const v=document.getElementById('v-'+sid);
+      const ph=document.getElementById('ph-'+sid);
+      if(v){v.srcObject=null;v.style.display='none';}
+      if(ph)ph.style.display='';
+      setBadge(sid,'waiting');updateStats();
+      // PCも作り直す（生徒が再共有したときに新しいofferが必要）
+      if(students[sid])setupPC(sid);
+    }
+    if(d.status==='sharing'){setBadge(sid,'live');updateStats();}
   });
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{

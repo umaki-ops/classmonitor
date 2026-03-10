@@ -434,7 +434,10 @@
       });
       onValue(ref(db, `sessions/${sessionId}/wb/instruction`), snap => {
         const text = snap.exists() ? snap.val() : '';
+        // 現在の値をグローバルに保持（WBが開かれた後も表示できるように）
+        window._wbInstruction = text;
         const el = document.getElementById('wb-instruction-text');
+        if (!el) return; // まだDOM未準備
         if (text) { el.textContent = text; el.classList.remove('empty'); }
         else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
       });
@@ -974,6 +977,13 @@
     wbIsOpen = true;
     document.getElementById('wb-overlay').classList.add('show');
     if (!wbCtx) wbInit();
+    // 既に届いている指示があれば表示
+    const text = window._wbInstruction || '';
+    const el = document.getElementById('wb-instruction-text');
+    if (el) {
+      if (text) { el.textContent = text; el.classList.remove('empty'); }
+      else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
+    }
     wbToast('📋 ホワイトボードが配布されました');
   }
   function wbClose() {

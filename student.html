@@ -924,92 +924,89 @@
       try { await teacherWatchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
 
-    // ===== 配布画像 描画エンジン（WB同仕様）=====
+    // ===== 配布画像 描画エンジン（WB完全同仕様）=====
     let imgCtx = null, imgTool = 'pen', imgColor = '#1e293b', imgSize = 4;
     let imgDrawing = false, imgLX = 0, imgLY = 0;
     let imgBgDataUrl = null;
     let imgSnapshotTimer = null;
+    let imgInitDone = false;
 
-    function imgInit(bgUrl) {
+    function imgInitOnce() {
+      if (imgInitDone) return;
+      imgInitDone = true;
       const canvas = document.getElementById('img-canvas');
       const wrap = document.getElementById('img-canvas-wrap');
-      // canvas は transparent（背景は img#img-canvas-bg で表示）
-      canvas.width = wrap.offsetWidth;
-      canvas.height = wrap.offsetHeight;
       imgCtx = canvas.getContext('2d');
-      imgCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // タッチ・ポインタイベント
-      function getPos(e) {
-        const r = canvas.getBoundingClientRect();
-        const scX = canvas.width / r.width;
-        const scY = canvas.height / r.height;
-        const src = e.touches ? e.touches[0] : e;
-        return [(src.clientX - r.left) * scX, (src.clientY - r.top) * scY];
+      function imgResize() {
+        const data = imgCtx.getImageData(0, 0, canvas.width || 1, canvas.height || 1);
+        canvas.width = wrap.offsetWidth;
+        canvas.height = wrap.offsetHeight;
+        if (data.width > 1) imgCtx.putImageData(data, 0, 0);
       }
-      function drawDot(x, y) {
-        imgCtx.beginPath();
-        imgCtx.arc(x, y, imgSize / 2, 0, Math.PI * 2);
-        imgCtx.fillStyle = imgTool === 'eraser' ? 'rgba(0,0,0,1)' : imgColor;
-        if (imgTool === 'eraser') {
-          imgCtx.globalCompositeOperation = 'destination-out';
-          imgCtx.fill();
-          imgCtx.globalCompositeOperation = 'source-over';
-        } else {
-          imgCtx.fill();
-        }
-      }
-      function drawLine(x1, y1, x2, y2) {
-        imgCtx.beginPath();
-        imgCtx.moveTo(x1, y1);
-        imgCtx.lineTo(x2, y2);
-        imgCtx.strokeStyle = imgColor;
-        imgCtx.lineWidth = imgSize;
-        imgCtx.lineCap = 'round';
-        if (imgTool === 'eraser') {
-          imgCtx.globalCompositeOperation = 'destination-out';
-          imgCtx.stroke();
-          imgCtx.globalCompositeOperation = 'source-over';
-        } else {
-          imgCtx.stroke();
-        }
-      }
-
-      // Pointer events
-      canvas.addEventListener('pointerdown', e => {
-        e.preventDefault();
-        canvas.setPointerCapture(e.pointerId);
-        imgDrawing = true;
-        [imgLX, imgLY] = getPos(e);
-        drawDot(imgLX, imgLY);
-        imgSignalDrawing(true);
+      imgResize();
+      window.addEventListener('resize', () => {
+        if (document.getElementById('img-overlay').classList.contains('show')) imgResize();
       });
-      canvas.addEventListener('pointermove', e => {
+
+      // touch
+      canvas.addEventListener('touchstart', e => {
+        e.preventDefault();
+        imgDrawing = true;
+        const r = canvas.getBoundingClientRect();
+        imgLX = e.touches[0].clientX - r.left;
+        imgLY = e.touches[0].clientY - r.top;
+        imgSignalDrawing(true);
+      }, { passive: false });
+      canvas.addEventListener('touchmove', e => {
         e.preventDefault();
         if (!imgDrawing) return;
-        const [nx, ny] = getPos(e);
-        drawLine(imgLX, imgLY, nx, ny);
-        imgLX = nx; imgLY = ny;
-        imgScheduleSnapshot();
-      });
-      canvas.addEventListener('pointerup', e => {
-        e.preventDefault();
+        const r = canvas.getBoundingClientRect();
+        imgDraw(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
+      }, { passive: false });
+      canvas.addEventListener('touchend', () => {
         imgDrawing = false;
         imgSignalDrawing(false);
         imgScheduleSnapshot();
       });
-      canvas.addEventListener('pointerleave', () => {
-        if (imgDrawing) { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); }
-      });
 
-      // リサイズ対応
-      window.addEventListener('resize', () => {
-        if (!document.getElementById('img-overlay').classList.contains('show')) return;
-        const drawn = imgCtx.getImageData(0, 0, canvas.width, canvas.height);
-        canvas.width = wrap.offsetWidth;
-        canvas.height = wrap.offsetHeight;
-        imgCtx.putImageData(drawn, 0, 0);
+      // mouse
+      canvas.addEventListener('mousedown', e => {
+        imgDrawing = true;
+        const r = canvas.getBoundingClientRect();
+        imgLX = e.clientX - r.left;
+        imgLY = e.clientY - r.top;
+        imgSignalDrawing(true);
       });
+      canvas.addEventListener('mousemove', e => {
+        if (!imgDrawing) return;
+        const r = canvas.getBoundingClientRect();
+        imgDraw(e.clientX - r.left, e.clientY - r.top);
+      });
+      canvas.addEventListener('mouseup', () => {
+        imgDrawing = false;
+        imgSignalDrawing(false);
+        imgScheduleSnapshot();
+      });
+    }
+
+    function imgDraw(x, y) {
+      imgCtx.beginPath();
+      imgCtx.moveTo(imgLX, imgLY);
+      imgCtx.lineTo(x, y);
+      if (imgTool === 'eraser') {
+        imgCtx.globalCompositeOperation = 'destination-out';
+        imgCtx.strokeStyle = 'rgba(0,0,0,1)';
+        imgCtx.lineWidth = imgSize * 5;
+      } else {
+        imgCtx.globalCompositeOperation = 'source-over';
+        imgCtx.strokeStyle = imgColor;
+        imgCtx.lineWidth = imgSize;
+      }
+      imgCtx.lineCap = 'round';
+      imgCtx.lineJoin = 'round';
+      imgCtx.stroke();
+      imgLX = x; imgLY = y;
     }
 
     window.setImgTool = function(tool) {
@@ -1022,7 +1019,7 @@
       imgColor = el.dataset.color;
       document.querySelectorAll('#img-toolbar .wbc').forEach(d => d.classList.remove('active'));
       el.classList.add('active');
-      if (imgTool === 'eraser') setImgTool('pen');
+      if (imgTool === 'eraser') window.setImgTool('pen');
     };
 
     window.imgSetSize = function(v) { imgSize = parseInt(v); };
@@ -1030,11 +1027,11 @@
     window.distImgClear = function() {
       if (!imgCtx) return;
       const canvas = document.getElementById('img-canvas');
+      imgCtx.globalCompositeOperation = 'source-over';
       imgCtx.clearRect(0, 0, canvas.width, canvas.height);
       imgScheduleSnapshot();
     };
 
-    // 提出時は背景画像 + 描画を合成して送信
     function imgMergeAndExport() {
       const canvas = document.getElementById('img-canvas');
       const bg = document.getElementById('img-canvas-bg');
@@ -1044,13 +1041,11 @@
       const ctx = merged.getContext('2d');
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, merged.width, merged.height);
-      if (bg.src) {
-        try {
-          const scale = Math.min(merged.width / bg.naturalWidth, merged.height / bg.naturalHeight);
-          const x = (merged.width - bg.naturalWidth * scale) / 2;
-          const y = (merged.height - bg.naturalHeight * scale) / 2;
-          ctx.drawImage(bg, x, y, bg.naturalWidth * scale, bg.naturalHeight * scale);
-        } catch(e) {}
+      if (bg.naturalWidth > 0) {
+        const scale = Math.min(merged.width / bg.naturalWidth, merged.height / bg.naturalHeight);
+        const x = (merged.width - bg.naturalWidth * scale) / 2;
+        const y = (merged.height - bg.naturalHeight * scale) / 2;
+        ctx.drawImage(bg, x, y, bg.naturalWidth * scale, bg.naturalHeight * scale);
       }
       ctx.drawImage(canvas, 0, 0);
       return merged.toDataURL('image/jpeg', 0.8);
@@ -1083,23 +1078,29 @@
 
     function showDistImg(dataUrl) {
       imgBgDataUrl = dataUrl;
-      // 背景画像をimgタグで表示
       document.getElementById('img-canvas-bg').src = dataUrl;
-      // 提出ボタンリセット
       const btn = document.getElementById('img-submit-btn');
       btn.innerHTML = '📤 提出';
       btn.classList.remove('submitted');
-      // カラー・ツールをリセット
-      imgTool = 'pen';
-      imgColor = '#1e293b';
-      imgSize = 4;
+      // ツール・色・サイズをリセット
+      imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 4;
       document.getElementById('imgt-pen').classList.add('active');
       document.getElementById('imgt-eraser').classList.remove('active');
-      document.querySelectorAll('#img-toolbar .wbc').forEach((d,i) => d.classList.toggle('active', i===0));
+      document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
       document.getElementById('img-size').value = '4';
       document.getElementById('img-overlay').classList.add('show');
-      // canvas初期化（レイアウト確定後）
-      setTimeout(() => imgInit(dataUrl), 50);
+      // 初期化（一度だけ）してcanvasをクリア
+      setTimeout(() => {
+        imgInitOnce();
+        const canvas = document.getElementById('img-canvas');
+        const wrap = document.getElementById('img-canvas-wrap');
+        // canvas サイズが変わっていたら再設定
+        if (canvas.width !== wrap.offsetWidth || canvas.height !== wrap.offsetHeight) {
+          canvas.width = wrap.offsetWidth;
+          canvas.height = wrap.offsetHeight;
+        }
+        if (imgCtx) imgCtx.clearRect(0, 0, canvas.width, canvas.height);
+      }, 50);
     }
 
     window.hideDistImg = function() {
@@ -1108,7 +1109,6 @@
       if (imgCtx) {
         const canvas = document.getElementById('img-canvas');
         imgCtx.clearRect(0, 0, canvas.width, canvas.height);
-        imgCtx = null;
       }
     };
 

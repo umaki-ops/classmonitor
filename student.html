@@ -374,8 +374,14 @@
       }
     };
 
+    let _initialized = false; // 初期化を1回だけ実行するフラグ
+
     onAuthStateChanged(auth, async (user) => {
       if (!user) { showState('login'); return; }
+
+      // トークンリフレッシュ等で再発火しても初期化をやり直さない
+      if (_initialized) return;
+      _initialized = true;
 
       studentId = user.uid;
       // ヘッダー更新
@@ -428,18 +434,33 @@
       window.wbName = user.displayName || user.email || 'unknown';
       window.wbSessionId = sessionId;
       // ===== ホワイトボード監視 =====
-      onValue(ref(db, `sessions/${sessionId}/wb/active`), snap => {
-        if (snap.exists() && snap.val() === true) wbOpen();
-        else wbClose();
-      });
+      // instruction を常時監視（WB開閉に関わらず更新）
       onValue(ref(db, `sessions/${sessionId}/wb/instruction`), snap => {
         const text = snap.exists() ? snap.val() : '';
-        // 現在の値をグローバルに保持（WBが開かれた後も表示できるように）
         window._wbInstruction = text;
         const el = document.getElementById('wb-instruction-text');
-        if (!el) return; // まだDOM未準備
+        if (!el) return;
         if (text) { el.textContent = text; el.classList.remove('empty'); }
         else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
+      });
+      // active は instruction の onValue 登録後に監視開始
+      // → active=true が来た時点で _wbInstruction は既にセット済みの可能性が高い
+      // → さらに active onValue 内で instruction を直接読み取って確実に表示
+      onValue(ref(db, `sessions/${sessionId}/wb/active`), async snap => {
+        if (snap.exists() && snap.val() === true) {
+          // 念のため instruction を直接取得してから開く
+          const { get } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js');
+          const instrSnap = await get(ref(db, `sessions/${sessionId}/wb/instruction`));
+          if (instrSnap.exists()) {
+            const text = instrSnap.val();
+            window._wbInstruction = text;
+            const el = document.getElementById('wb-instruction-text');
+            if (el) { el.textContent = text; el.classList.remove('empty'); }
+          }
+          wbOpen();
+        } else {
+          wbClose();
+        }
       });
       onValue(ref(db, `sessions/${sessionId}/wb/resetTs`), snap => {
         if (snap.exists()) wbClear();

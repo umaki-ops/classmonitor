@@ -522,7 +522,12 @@ function listenStudents(){
   const{ref,onChildAdded,onChildChanged,onChildRemoved}=window.FB;
   onChildAdded(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
-    if(!students[sid]){students[sid]={...d,id:sid};addCard(sid,d);setupPC(sid);}
+    if(!students[sid]){
+      students[sid]={...d,id:sid};
+      addCard(sid,d);
+      // 参加時点でsharingなら即接続、waitingなら共有開始を待つ
+      if(d.status==='sharing') setupPC(sid);
+    }
   });
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
@@ -796,10 +801,24 @@ function updateCardContent(sid){
       <button class="icon-btn" onclick="broadcastStudentScreen('${sid}')">📡</button>
       <button class="icon-btn" onclick="openMsgModal('${sid}')">💬</button>
       <button class="icon-btn" onclick="openFullscreen('${sid}')">⛶</button>`;
-    // Re-attach stream if exists
-    if(peerConnections[sid]){
-      const senders=peerConnections[sid].getReceivers();
-      // stream is kept in peer connection, re-trigger by checking existing srcObject
+    // ビュー切替後に既存ストリームを新しいvideo要素に再アタッチ
+    const pc=peerConnections[sid];
+    if(pc){
+      const receivers=pc.getReceivers();
+      if(receivers.length>0){
+        const stream=new MediaStream(receivers.map(r=>r.track).filter(t=>t.readyState==='live'));
+        if(stream.getTracks().length>0){
+          const v=document.getElementById('v-'+sid);
+          const ph=document.getElementById('ph-'+sid);
+          if(v){
+            v.srcObject=stream;
+            v.play().catch(()=>{});
+            v.style.display='block';
+            if(ph)ph.style.display='none';
+            setBadge(sid,'live');
+          }
+        }
+      }
     }
   } else {
     // Whiteboard view

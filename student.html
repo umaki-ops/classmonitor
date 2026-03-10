@@ -118,6 +118,44 @@
   .msg-popup-from { font-size:11px; color:var(--text-muted); font-weight:600; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:6px; }
   .msg-popup-text { font-size:18px; font-weight:700; color:var(--text); line-height:1.4; }
   .msg-popup-close { margin-top:14px; padding:8px 20px; background:var(--accent); color:white; border:none; border-radius:8px; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
+  /* ===== WHITEBOARD OVERLAY ===== */
+  #wb-overlay { display:none; position:fixed; inset:0; z-index:9800; flex-direction:column; background:#f8f9fa; touch-action:none; }
+  #wb-overlay.show { display:flex; }
+
+  /* 上部ヘッダー */
+  #wb-header { flex-shrink:0; background:white; border-bottom:2px solid #e2e8f0; display:flex; align-items:center; min-height:54px; padding:0 12px; gap:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+  #wb-instruction-bar { flex:1; display:flex; align-items:center; gap:8px; background:#fffbeb; border:1.5px solid #fcd34d; border-radius:10px; padding:8px 12px; min-height:40px; }
+  #wb-instruction-icon { font-size:16px; flex-shrink:0; }
+  #wb-instruction-text { font-size:13px; font-weight:600; color:#1e293b; line-height:1.4; flex:1; }
+  #wb-instruction-text.empty { color:#94a3b8; font-weight:400; font-style:italic; }
+
+  /* ツールバー */
+  #wb-toolbar { flex-shrink:0; background:white; border-top:2px solid #e2e8f0; padding:8px 12px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 -2px 8px rgba(0,0,0,0.06); flex-wrap:wrap; }
+  .wbt { width:42px; height:42px; border-radius:10px; border:2px solid #e2e8f0; background:white; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; transition:all 0.15s; font-family:'Noto Sans JP',sans-serif; font-weight:700; color:#334155; flex-shrink:0; }
+  .wbt:active { transform:scale(0.9); }
+  .wbt.active { border-color:#3b82f6; background:#eff6ff; color:#2563eb; }
+  .wb-sep { width:1px; height:30px; background:#e2e8f0; flex-shrink:0; }
+  .wbc { width:30px; height:30px; border-radius:50%; border:3px solid transparent; cursor:pointer; transition:all 0.15s; flex-shrink:0; }
+  .wbc.active { border-color:#1e293b; transform:scale(1.2); }
+  .wbc:active { transform:scale(0.88); }
+  #wb-size { width:56px; height:36px; border:2px solid #e2e8f0; border-radius:8px; background:white; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:600; color:#1e293b; outline:none; text-align:center; cursor:pointer; }
+  .wb-submit-btn { padding:9px 16px; background:#2563eb; color:white; border:none; border-radius:10px; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:5px; white-space:nowrap; }
+  .wb-submit-btn:active { transform:scale(0.95); }
+  .wb-submit-btn.submitted { background:#10b981; }
+
+  /* キャンバス */
+  #wb-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
+  #wb-canvas { display:block; width:100%; height:100%; cursor:crosshair; touch-action:none; }
+
+  /* テキスト入力 */
+  #wb-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
+  #wb-text-overlay.show { display:block; }
+  #wb-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
+
+  /* トースト */
+  #wb-toast { position:fixed; top:64px; left:50%; transform:translateX(-50%) translateY(-70px); background:rgba(30,41,59,0.9); color:white; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:600; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index:9900; white-space:nowrap; }
+  #wb-toast.show { transform:translateX(-50%) translateY(0); }
+
 </style>
 </head>
 <body>
@@ -240,6 +278,43 @@
   <div class="msg-popup-text" id="msg-popup-text"></div>
   <button class="msg-popup-close" onclick="closeMsgPopup()">OK</button>
 </div>
+<div id="wb-overlay">
+  <div id="wb-header">
+    <div id="wb-instruction-bar">
+      <span id="wb-instruction-icon">📋</span>
+      <span id="wb-instruction-text" class="empty">先生の指示を待っています...</span>
+    </div>
+  </div>
+  <div id="wb-canvas-wrap">
+    <canvas id="wb-canvas"></canvas>
+    <div id="wb-text-overlay">
+      <input type="text" id="wb-text-input" />
+    </div>
+  </div>
+  <div id="wb-toolbar">
+    <button class="wbt active" id="wbt-pen" onclick="wbSetTool('pen')" title="ペン">✏️</button>
+    <button class="wbt" id="wbt-eraser" onclick="wbSetTool('eraser')" title="消しゴム">🧹</button>
+    <button class="wbt" id="wbt-text" onclick="wbSetTool('text')" title="テキスト">T</button>
+    <div class="wb-sep"></div>
+    <div class="wbc active" style="background:#1e293b;" data-color="#1e293b" onclick="wbSetColor(this)"></div>
+    <div class="wbc" style="background:#2563eb;" data-color="#2563eb" onclick="wbSetColor(this)"></div>
+    <div class="wbc" style="background:#ef4444;" data-color="#ef4444" onclick="wbSetColor(this)"></div>
+    <div class="wbc" style="background:#10b981;" data-color="#10b981" onclick="wbSetColor(this)"></div>
+    <div class="wbc" style="background:#f59e0b;" data-color="#f59e0b" onclick="wbSetColor(this)"></div>
+    <div class="wb-sep"></div>
+    <select id="wb-size" onchange="wbSetSize(this.value)">
+      <option value="2">細</option>
+      <option value="4" selected>中</option>
+      <option value="8">太</option>
+      <option value="16">極太</option>
+    </select>
+    <div class="wb-sep"></div>
+    <button class="wbt" onclick="wbClear()" title="全消し">🗑️</button>
+    <button class="wb-submit-btn" id="wb-submit-btn" onclick="wbSubmit()">📤 提出</button>
+  </div>
+</div>
+<div id="wb-toast"></div>
+
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
@@ -346,6 +421,27 @@
       });
 
       // アンケート監視 - 変更のたびに発火
+      // WB用にwindowに公開（canvas event closureから使用）
+      window.FBDB = { ref, set };
+      window.wbDb = db;
+      window.wbSid = studentId;
+      window.wbName = studentName;
+      window.wbSessionId = sessionId;
+      // ===== ホワイトボード監視 =====
+      onValue(ref(db, `sessions/${sessionId}/wb/active`), snap => {
+        if (snap.exists() && snap.val() === true) wbOpen();
+        else wbClose();
+      });
+      onValue(ref(db, `sessions/${sessionId}/wb/instruction`), snap => {
+        const text = snap.exists() ? snap.val() : '';
+        const el = document.getElementById('wb-instruction-text');
+        if (text) { el.textContent = text; el.classList.remove('empty'); }
+        else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
+      });
+      onValue(ref(db, `sessions/${sessionId}/wb/resetTs`), snap => {
+        if (snap.exists()) wbClear();
+      });
+
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
         if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
@@ -379,6 +475,10 @@
         hideWatch();
       } else if (data.command === 'stopTeacherShare') {
         hideTeacher();
+      } else if (data.command === 'wb-open') {
+        wbOpen();
+      } else if (data.command === 'wb-close') {
+        wbClose();
       }
     }
 
@@ -705,8 +805,200 @@
       document.getElementById('state-'+name)?.classList.add('active');
     }
 
+
+    // WB用グローバル公開（canvas event closureから使用）
+    window.wbDb = db;
+    window.wbSid = studentId;
+    window.wbName = studentName;
+    window.wbSessionId = sessionId;
+
   } // end main
   main();
+
+  // ===== WHITEBOARD ENGINE (グローバルスコープ) =====
+  let wbCtx = null, wbTool = 'pen', wbColor = '#1e293b', wbSize = 4;
+  let wbDrawing = false, wbLX = 0, wbLY = 0;
+  let wbSnapshotTimer = null, wbIsOpen = false;
+  let wbDrawingSignaled = false, wbDrawingTimer = null;
+
+  function wbInit() {
+    const canvas = document.getElementById('wb-canvas');
+    const wrap = document.getElementById('wb-canvas-wrap');
+    wbCtx = canvas.getContext('2d');
+    function wbResize() {
+      const img = wbCtx.getImageData(0, 0, canvas.width || 1, canvas.height || 1);
+      canvas.width = wrap.offsetWidth;
+      canvas.height = wrap.offsetHeight;
+      wbCtx.fillStyle = 'white';
+      wbCtx.fillRect(0, 0, canvas.width, canvas.height);
+      if (img.width > 1) wbCtx.putImageData(img, 0, 0);
+    }
+    wbResize();
+    window.addEventListener('resize', wbResize);
+
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (wbTool === 'text') { wbTextAt(e.touches[0], canvas); return; }
+      wbDrawing = true;
+      const r = canvas.getBoundingClientRect();
+      wbLX = e.touches[0].clientX - r.left;
+      wbLY = e.touches[0].clientY - r.top;
+    }, { passive: false });
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (!wbDrawing) return;
+      const r = canvas.getBoundingClientRect();
+      wbDraw(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => { wbDrawing = false; wbScheduleSnapshot(); });
+    canvas.addEventListener('mousedown', e => {
+      if (wbTool === 'text') { wbTextAt(e, canvas); return; }
+      wbDrawing = true;
+      const r = canvas.getBoundingClientRect();
+      wbLX = e.clientX - r.left; wbLY = e.clientY - r.top;
+    });
+    canvas.addEventListener('mousemove', e => {
+      if (!wbDrawing) return;
+      const r = canvas.getBoundingClientRect();
+      wbDraw(e.clientX - r.left, e.clientY - r.top);
+    });
+    canvas.addEventListener('mouseup', () => { wbDrawing = false; wbScheduleSnapshot(); });
+
+    const ti = document.getElementById('wb-text-input');
+    ti.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { wbCommitText(); e.preventDefault(); }
+      if (e.key === 'Escape') { document.getElementById('wb-text-overlay').classList.remove('show'); ti.value = ''; }
+    });
+    ti.addEventListener('blur', () => {
+      if (ti.value.trim()) wbCommitText();
+      else document.getElementById('wb-text-overlay').classList.remove('show');
+    });
+  }
+
+  function wbDraw(x, y) {
+    wbCtx.beginPath(); wbCtx.moveTo(wbLX, wbLY); wbCtx.lineTo(x, y);
+    if (wbTool === 'eraser') {
+      wbCtx.globalCompositeOperation = 'destination-out';
+      wbCtx.strokeStyle = 'rgba(0,0,0,1)'; wbCtx.lineWidth = wbSize * 5;
+    } else {
+      wbCtx.globalCompositeOperation = 'source-over';
+      wbCtx.strokeStyle = wbColor; wbCtx.lineWidth = wbSize;
+    }
+    wbCtx.lineCap = 'round'; wbCtx.lineJoin = 'round'; wbCtx.stroke();
+    wbLX = x; wbLY = y;
+    wbSignalDrawing();
+  }
+
+  function wbTextAt(e, canvas) {
+    const r = canvas.getBoundingClientRect();
+    const x = (e.clientX || (e.touches && e.touches[0].clientX) || 0) - r.left;
+    const y = (e.clientY || (e.touches && e.touches[0].clientY) || 0) - r.top;
+    const ti = document.getElementById('wb-text-input');
+    const wr = document.getElementById('wb-canvas-wrap').getBoundingClientRect();
+    ti.style.left = (r.left - wr.left + x) + 'px';
+    ti.style.top = (r.top - wr.top + y - 22) + 'px';
+    ti.style.color = wbColor;
+    ti.style.fontSize = Math.max(12, wbSize * 3.5) + 'px';
+    ti._x = x; ti._y = y; ti.value = '';
+    document.getElementById('wb-text-overlay').classList.add('show');
+    setTimeout(() => ti.focus(), 50);
+  }
+
+  function wbCommitText() {
+    const ti = document.getElementById('wb-text-input');
+    const text = ti.value.trim();
+    if (text) {
+      wbCtx.globalCompositeOperation = 'source-over';
+      wbCtx.fillStyle = wbColor;
+      wbCtx.font = `${Math.max(12, wbSize * 3.5)}px 'Noto Sans JP', sans-serif`;
+      wbCtx.fillText(text, ti._x, ti._y + 20);
+      wbScheduleSnapshot();
+    }
+    document.getElementById('wb-text-overlay').classList.remove('show');
+    ti.value = '';
+  }
+
+  window.wbSetTool = function(t) {
+    wbTool = t;
+    ['pen','eraser','text'].forEach(n => document.getElementById('wbt-'+n)?.classList.toggle('active', n===t));
+    document.getElementById('wb-canvas').style.cursor = t==='text' ? 'text' : 'crosshair';
+  };
+  window.wbSetColor = function(el) {
+    wbColor = el.dataset.color;
+    document.querySelectorAll('.wbc').forEach(d => d.classList.remove('active'));
+    el.classList.add('active');
+    wbSetTool('pen');
+  };
+  window.wbSetSize = function(v) { wbSize = parseInt(v); };
+  window.wbClear = function() {
+    if (!wbCtx) return;
+    wbCtx.globalCompositeOperation = 'source-over';
+    wbCtx.fillStyle = 'white';
+    const c = document.getElementById('wb-canvas');
+    wbCtx.fillRect(0, 0, c.width, c.height);
+    wbScheduleSnapshot();
+  };
+
+  function wbOpen() {
+    if (wbIsOpen) return;
+    wbIsOpen = true;
+    document.getElementById('wb-overlay').classList.add('show');
+    if (!wbCtx) wbInit();
+    wbToast('📋 ホワイトボードが配布されました');
+  }
+  function wbClose() {
+    wbIsOpen = false;
+    document.getElementById('wb-overlay').classList.remove('show');
+  }
+
+  function wbSignalDrawing() {
+    if (!window.wbSid || !window.FBDB || !window.wbDb) return;
+    const { ref, set } = window.FBDB;
+    if (!wbDrawingSignaled) {
+      wbDrawingSignaled = true;
+      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), true);
+    }
+    clearTimeout(wbDrawingTimer);
+    wbDrawingTimer = setTimeout(() => {
+      wbDrawingSignaled = false;
+      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), false);
+    }, 1500);
+  }
+
+  function wbScheduleSnapshot() {
+    clearTimeout(wbSnapshotTimer);
+    wbSnapshotTimer = setTimeout(wbSendSnapshot, 800);
+  }
+
+  function wbSendSnapshot() {
+    if (!window.wbSid || !window.FBDB || !wbCtx) return;
+    const c = document.getElementById('wb-canvas');
+    const data = c.toDataURL('image/jpeg', 0.4);
+    const { ref, set } = window.FBDB;
+    set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/snapshots/${window.wbSid}`), data);
+  }
+
+  window.wbSubmit = async function() {
+    if (!window.wbSid || !window.FBDB || !wbCtx) return;
+    const btn = document.getElementById('wb-submit-btn');
+    btn.textContent = '送信中...';
+    const c = document.getElementById('wb-canvas');
+    const data = c.toDataURL('image/jpeg', 0.75);
+    const { ref, set } = window.FBDB;
+    await set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/submissions/${window.wbSid}`), {
+      name: window.wbName, image: data, submittedAt: Date.now()
+    });
+    btn.classList.add('submitted');
+    btn.innerHTML = '✅ 提出済';
+    wbToast('✅ 提出しました！');
+  };
+
+  function wbToast(msg) {
+    const t = document.getElementById('wb-toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
 </script>
 </body>
 </html>

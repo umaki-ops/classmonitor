@@ -316,43 +316,74 @@
     }
 
     // ===== FOCUS =====
+    let focusActive = false;
+    let fsRetryTimer = null;
+
     function showFocus() {
+      focusActive = true;
       const overlay = document.getElementById('focus-overlay');
       overlay.classList.add('show');
-      // キーボードショートカット無効化
+      // 全キー・全マウス操作をブロック
       document.addEventListener('keydown', blockKeys, true);
-      // フルスクリーン要求
-      try { overlay.requestFullscreen && overlay.requestFullscreen(); } catch(e) {}
-      // タブ離脱検知
+      document.addEventListener('keyup', blockKeys, true);
+      document.addEventListener('keypress', blockKeys, true);
+      document.addEventListener('mousedown', blockMouse, true);
+      document.addEventListener('contextmenu', blockMouse, true);
+      // タブ切替・非表示検知
       document.addEventListener('visibilitychange', onVisibilityChange);
+      // フルスクリーン要求（Chromeではユーザー操作起点が必要なため少し遅延）
+      requestFocusFullscreen();
+      // フルスクリーンが解除されたら即再要求
+      document.addEventListener('fullscreenchange', onFullscreenChange);
     }
 
     function hideFocus() {
+      focusActive = false;
       document.getElementById('focus-overlay').classList.remove('show');
       document.removeEventListener('keydown', blockKeys, true);
+      document.removeEventListener('keyup', blockKeys, true);
+      document.removeEventListener('keypress', blockKeys, true);
+      document.removeEventListener('mousedown', blockMouse, true);
+      document.removeEventListener('contextmenu', blockMouse, true);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      if (fsRetryTimer) { clearTimeout(fsRetryTimer); fsRetryTimer = null; }
       try { document.exitFullscreen && document.exitFullscreen(); } catch(e) {}
     }
 
+    function requestFocusFullscreen() {
+      const overlay = document.getElementById('focus-overlay');
+      try {
+        const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen || overlay.mozRequestFullScreen;
+        if (req) req.call(overlay);
+      } catch(e) {}
+    }
+
+    function onFullscreenChange() {
+      // フルスクリーンが解除されたら（ESCなど）即再要求
+      if (focusActive && !document.fullscreenElement) {
+        fsRetryTimer = setTimeout(() => {
+          if (focusActive) requestFocusFullscreen();
+        }, 200);
+      }
+    }
+
     function blockKeys(e) {
-      // Ctrl+T, Ctrl+W, Ctrl+N, Ctrl+Tab, Alt+F4, F5等をブロック
-      const blocked = (e.ctrlKey && ['t','w','n','r'].includes(e.key.toLowerCase())) ||
-                      (e.altKey && e.key === 'F4') ||
-                      e.key === 'F5' ||
-                      (e.ctrlKey && e.key === 'Tab') ||
-                      (e.altKey && e.key === 'Tab');
-      if (blocked) { e.preventDefault(); e.stopPropagation(); }
+      // 全てのキー操作をブロック（フルスクリーン中はほぼ全部止める）
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+
+    function blockMouse(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     }
 
     function onVisibilityChange() {
-      if (document.hidden) {
-        // タブが隠れたら即座に集中オーバーレイを再表示
-        setTimeout(() => {
-          const overlay = document.getElementById('focus-overlay');
-          if (overlay.classList.contains('show')) {
-            try { overlay.requestFullscreen && overlay.requestFullscreen(); } catch(e) {}
-          }
-        }, 100);
+      if (document.hidden && focusActive) {
+        setTimeout(() => { if (focusActive) requestFocusFullscreen(); }, 200);
       }
     }
 
@@ -400,13 +431,34 @@
       btn.classList.add('disabled');
       btn.textContent = '許可を求めています...';
       try {
-        localStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {displaySurface:'monitor', frameRate:{ideal:15,max:30}, width:{ideal:1920}, height:{ideal:1080}},
-          audio: false,
-          selfBrowserSurface: 'exclude',
-          surfaceSwitching: 'exclude',
-          preferCurrentTab: false
-        });
+        // 画面全体のみ許可：それ以外は即キャンセルして再要求
+        let attempts = 0;
+        while (attempts < 3) {
+          attempts++;
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {displaySurface:'monitor', frameRate:{ideal:15,max:30}, width:{ideal:1920}, height:{ideal:1080}},
+            audio: false,
+            selfBrowserSurface: 'exclude',
+            surfaceSwitching: 'exclude',
+            preferCurrentTab: false
+          });
+          const track = stream.getVideoTracks()[0];
+          const settings = track.getSettings();
+          if (settings.displaySurface && settings.displaySurface !== 'monitor') {
+            // タブやウィンドウが選ばれた場合はキャンセルして再要求
+            stream.getTracks().forEach(t => t.stop());
+            btn.classList.remove('disabled');
+            btn.innerHTML = '<span>⚠️</span> 「画面全体」を選んでください';
+            btn.style.background = '#f59e0b';
+            await new Promise(r => setTimeout(r, 500));
+            btn.style.background = '';
+            btn.innerHTML = '<span>📡</span> 画面共有を開始する（画面全体のみ）';
+            continue;
+          }
+          localStream = stream;
+          break;
+        }
+        if (!localStream) { btn.classList.remove('disabled'); btn.innerHTML = '<span>📡</span> 画面共有を開始する'; return; }
         document.getElementById('preview-video').srcObject = localStream;
         showState('live');
         set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');

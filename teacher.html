@@ -286,7 +286,17 @@ window.currentFsId=null;
 let currentBroadcastId=null,teacherStream=null,teacherSharing=false;
 let surveyType='choice',surveyActive=false,namesVisible=false;
 const LABELS=['A','B','C','D'];
-const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+const ICE={
+  iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'stun:stun2.l.google.com:19302'},
+    {urls:'stun:stun3.l.google.com:19302'},
+  ],
+  iceCandidatePoolSize:10,
+  bundlePolicy:'max-bundle',
+  rtcpMuxPolicy:'require'
+};
 
 function gid(){return Math.random().toString(36).substr(2,8).toUpperCase();}
 function toast(msg,d=3000){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
@@ -354,11 +364,33 @@ async function setupPC(sid){
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
   pc.ontrack=ev=>{
     const v=document.getElementById('v-'+sid),ph=document.getElementById('ph-'+sid);
-    if(v){v.srcObject=ev.streams[0];v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();}
+    if(v){
+      if(ev.streams&&ev.streams[0]){
+        v.srcObject=ev.streams[0];
+      } else {
+        const ms=new MediaStream();ms.addTrack(ev.track);v.srcObject=ms;
+      }
+      v.play().catch(()=>{});
+      v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
+    }
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-  pc.onconnectionstatechange=()=>{if(['disconnected','failed','closed'].includes(pc.connectionState)){setBadge(sid,'waiting');updateStats();}};
+  pc.onconnectionstatechange=()=>{
+    if(['disconnected','failed','closed'].includes(pc.connectionState)){setBadge(sid,'waiting');updateStats();}
+    // connected時にvideo.play()を再実行（黒画面対策）
+    if(pc.connectionState==='connected'){
+      const v=document.getElementById('v-'+sid);
+      if(v&&v.srcObject) v.play().catch(()=>{});
+    }
+  };
+  pc.oniceconnectionstatechange=()=>{
+    if(pc.iceConnectionState==='connected'||pc.iceConnectionState==='completed'){
+      const v=document.getElementById('v-'+sid);
+      if(v&&v.srcObject) v.play().catch(()=>{});
+    }
+  };
   const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
+  // 低遅延設定: trickle ICEを最大活用するためpreferCurrentPage等は使わない
   await pc.setLocalDescription(offer);
   sig(sid,{type:'offer',from:'teacher',to:sid,sdp:offer});
 }
@@ -399,8 +431,14 @@ async function setupTWPc(sid){
   const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
   teacherStream.getTracks().forEach(t=>pc.addTrack(t,teacherStream));
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:offer});
+  const offer=await pc.createOffer();
+  const sdp=offer.sdp.replace(/a=mid:video
+/g,'a=mid:video
+b=AS:800
+');
+  const modOffer=new RTCSessionDescription({type:offer.type,sdp});
+  await pc.setLocalDescription(modOffer);
+  sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:modOffer});
 }
 async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc)return;try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){}}
 async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
@@ -439,10 +477,15 @@ async function setupStudentBcastPc(sid, stream) {
   pc.onicecandidate = ev => {
     if (ev.candidate) sig(sid, { type: 'watch-ice', from: 'teacher', to: sid, candidate: ev.candidate.toJSON() });
   };
-  // Handle answer from student
   const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  sig(sid, { type: 'watch-offer', from: 'teacher', to: sid, sdp: offer });
+  // 低遅延のためにSDP内の帯域幅ヒントを設定
+  const sdp = offer.sdp.replace(/a=mid:video
+/g, 'a=mid:video
+b=AS:800
+');
+  const modOffer = new RTCSessionDescription({ type: offer.type, sdp });
+  await pc.setLocalDescription(modOffer);
+  sig(sid, { type: 'watch-offer', from: 'teacher', to: sid, sdp: modOffer });
 }
 
 window.stopBroadcastScreen = function() {

@@ -274,7 +274,17 @@
 
     let studentId = null, localStream = null, pc = null;
     let watchPc = null; // 他の生徒の画面を受信するPC
-    const ICE = {iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+    const ICE = {
+      iceServers: [
+        {urls:'stun:stun.l.google.com:19302'},
+        {urls:'stun:stun1.l.google.com:19302'},
+        {urls:'stun:stun2.l.google.com:19302'},
+        {urls:'stun:stun3.l.google.com:19302'},
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
+    };
 
     // ===== GOOGLE LOGIN =====
     window.signInWithGoogle = async function() {
@@ -449,7 +459,16 @@
       if (watchPc) { watchPc.close(); watchPc = null; }
       watchPc = new RTCPeerConnection(ICE);
       watchPc.ontrack = event => {
-        document.getElementById('watch-video').srcObject = event.streams[0];
+        const vid = document.getElementById('watch-video');
+        // streams[0]が空のケースに対応: trackから直接MediaStreamを作る
+        if (event.streams && event.streams[0]) {
+          vid.srcObject = event.streams[0];
+        } else {
+          const ms = new MediaStream();
+          ms.addTrack(event.track);
+          vid.srcObject = ms;
+        }
+        vid.play().catch(() => {});
         showWatch();
       };
       watchPc.onicecandidate = event => {
@@ -582,7 +601,15 @@
       if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
       teacherWatchPc = new RTCPeerConnection(ICE);
       teacherWatchPc.ontrack = event => {
-        document.getElementById('teacher-video').srcObject = event.streams[0];
+        const vid = document.getElementById('teacher-video');
+        if (event.streams && event.streams[0]) {
+          vid.srcObject = event.streams[0];
+        } else {
+          const ms = new MediaStream();
+          ms.addTrack(event.track);
+          vid.srcObject = ms;
+        }
+        vid.play().catch(() => {});
         showTeacher();
       };
       teacherWatchPc.onicecandidate = event => {

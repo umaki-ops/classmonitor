@@ -473,6 +473,18 @@
         if (snap.exists()) wbClear();
       });
 
+      // 背景画像の監視
+      onValue(ref(db, `sessions/${sessionId}/wb/bgImage`), snap => {
+        const dataUrl = snap.exists() ? snap.val() : null;
+        window._wbBgImage = dataUrl;
+        if (dataUrl) {
+          wbApplyBgImage(dataUrl);
+        } else {
+          // 背景画像が削除されたらキャンバスをリセット
+          wbClearBg();
+        }
+      });
+
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
         if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
@@ -1069,8 +1081,46 @@
     wbCtx.fillStyle = 'white';
     const c = document.getElementById('wb-canvas');
     wbCtx.fillRect(0, 0, c.width, c.height);
+    // 背景画像があれば再描画
+    if (window._wbBgImage) {
+      setTimeout(() => wbApplyBgImage(window._wbBgImage), 10);
+    }
     wbScheduleSnapshot();
   };
+
+  // 背景画像をキャンバスに描画（描いた内容の下に敷く）
+  function wbApplyBgImage(dataUrl) {
+    if (!wbCtx) return; // WBがまだ開かれていない場合はスキップ（open時に適用）
+    const canvas = document.getElementById('wb-canvas');
+    const img = new Image();
+    img.onload = () => {
+      // 現在の描画を保存
+      const drawn = wbCtx.getImageData(0, 0, canvas.width, canvas.height);
+      // 白背景
+      wbCtx.fillStyle = 'white';
+      wbCtx.fillRect(0, 0, canvas.width, canvas.height);
+      // 画像をアスペクト比を保ってフィット
+      const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+      const x = (canvas.width - img.width * scale) / 2;
+      const y = (canvas.height - img.height * scale) / 2;
+      wbCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
+      // 描画を上に重ねる（白ピクセル=未描画とみなしてスキップ）
+      // シンプルに上書き: 描画レイヤーをそのまま重ねる
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.putImageData(drawn, 0, 0);
+      wbCtx.drawImage(tempCanvas, 0, 0);
+    };
+    img.src = dataUrl;
+  }
+
+  // 背景画像なしでキャンバスをリセット
+  function wbClearBg() {
+    if (!wbCtx) return;
+    window._wbBgImage = null;
+    wbClear();
+  }
 
   function wbOpen() {
     if (wbIsOpen) return;
@@ -1083,6 +1133,10 @@
     if (el) {
       if (text) { el.textContent = text; el.classList.remove('empty'); }
       else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
+    }
+    // 背景画像があれば適用
+    if (window._wbBgImage) {
+      setTimeout(() => wbApplyBgImage(window._wbBgImage), 50); // canvasサイズ確定後
     }
     wbToast('📋 ホワイトボードが配布されました');
   }

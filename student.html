@@ -161,6 +161,9 @@
   #wb-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
   #wb-text-overlay.show { display:block; }
   #wb-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
+  #img-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
+  #img-text-overlay.show { display:block; }
+  #img-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
 
   /* トースト */
   #wb-toast { position:fixed; top:64px; left:50%; transform:translateX(-50%) translateY(-70px); background:rgba(30,41,59,0.9); color:white; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:600; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index:9900; white-space:nowrap; }
@@ -298,10 +301,14 @@
   </div>
   <div id="img-canvas-wrap">
     <canvas id="img-canvas"></canvas>
+    <div id="img-text-overlay">
+      <input type="text" id="img-text-input" />
+    </div>
   </div>
   <div id="img-toolbar">
     <button class="wbt active" id="imgt-pen" onclick="setImgTool('pen')" title="ペン">✏️</button>
     <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🧹</button>
+    <button class="wbt" id="imgt-text" onclick="setImgTool('text')" title="テキスト">T</button>
     <div class="wb-sep"></div>
     <div class="wbc active" style="background:#1e293b;" data-color="#1e293b" onclick="imgSetColor(this)"></div>
     <div class="wbc" style="background:#2563eb;" data-color="#2563eb" onclick="imgSetColor(this)"></div>
@@ -967,6 +974,7 @@
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
         console.log('[img] touchstart');
+        if (imgTool === 'text') { imgTextAt(e.touches[0], canvas); return; }
         imgDrawing = true;
         const r = canvas.getBoundingClientRect();
         imgLX = e.touches[0].clientX - r.left;
@@ -987,6 +995,7 @@
       // mousedown/mousemove/mouseup (WBと同じ)
       canvas.addEventListener('mousedown', e => {
         console.log('[img] mousedown');
+        if (imgTool === 'text') { imgTextAt(e, canvas); return; }
         imgDrawing = true;
         const r = canvas.getBoundingClientRect();
         imgLX = e.clientX - r.left;
@@ -999,6 +1008,48 @@
       });
       canvas.addEventListener('mouseup',    () => { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); });
       canvas.addEventListener('mouseleave', () => { if (imgDrawing) { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); } });
+
+      // テキスト入力
+      const ti = document.getElementById('img-text-input');
+      ti.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { imgCommitText(); e.preventDefault(); }
+        if (e.key === 'Escape') { document.getElementById('img-text-overlay').classList.remove('show'); ti.value = ''; }
+      });
+      ti.addEventListener('blur', () => {
+        if (ti.value.trim()) imgCommitText();
+        else document.getElementById('img-text-overlay').classList.remove('show');
+      });
+    }
+
+    // テキスト入力をcanvasに配置
+    function imgTextAt(e, canvas) {
+      const r = canvas.getBoundingClientRect();
+      const wr = document.getElementById('img-canvas-wrap').getBoundingClientRect();
+      const x = (e.clientX || 0) - r.left;
+      const y = (e.clientY || 0) - r.top;
+      const ti = document.getElementById('img-text-input');
+      ti.style.left  = (r.left - wr.left + x) + 'px';
+      ti.style.top   = (r.top  - wr.top  + y - 22) + 'px';
+      ti.style.color = imgColor;
+      ti.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
+      ti._x = x; ti._y = y;
+      ti.value = '';
+      document.getElementById('img-text-overlay').classList.add('show');
+      ti.focus();
+    }
+
+    function imgCommitText() {
+      const ti = document.getElementById('img-text-input');
+      const text = ti.value.trim();
+      if (text && imgCtx) {
+        imgCtx.globalCompositeOperation = 'source-over';
+        imgCtx.fillStyle = imgColor;
+        imgCtx.font = `${Math.max(12, imgSize * 3.5)}px 'Noto Sans JP', sans-serif`;
+        imgCtx.fillText(text, ti._x, ti._y + 20);
+        imgScheduleSnapshot();
+      }
+      document.getElementById('img-text-overlay').classList.remove('show');
+      ti.value = '';
     }
 
     // 背景画像をcanvasにフィット描画
@@ -1040,13 +1091,18 @@
       imgTool = tool;
       document.getElementById('imgt-pen').classList.toggle('active', tool === 'pen');
       document.getElementById('imgt-eraser').classList.toggle('active', tool === 'eraser');
+      document.getElementById('imgt-text').classList.toggle('active', tool === 'text');
+      document.getElementById('img-canvas').style.cursor = tool === 'text' ? 'text' : 'crosshair';
     };
     window.imgSetColor = function(el) {
       console.log('[img] imgSetColor called:', el.dataset.color, 'imgCtx:', !!imgCtx);
       imgColor = el.dataset.color;
       document.querySelectorAll('#img-toolbar .wbc').forEach(d => d.classList.remove('active'));
       el.classList.add('active');
+      // テキスト・ペンモード中は色だけ変更、消しゴム中はペンに戻す
       if (imgTool === 'eraser') window.setImgTool('pen');
+      // テキスト入力中の色も更新
+      document.getElementById('img-text-input').style.color = imgColor;
     };
     window.imgSetSize = function(v) { imgSize = parseInt(v); };
 
@@ -1092,6 +1148,10 @@
         imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 4;
         document.getElementById('imgt-pen').classList.add('active');
         document.getElementById('imgt-eraser').classList.remove('active');
+        document.getElementById('imgt-text').classList.remove('active');
+        document.getElementById('img-canvas').style.cursor = 'crosshair';
+        document.getElementById('img-text-overlay').classList.remove('show');
+        document.getElementById('img-text-input').value = '';
         document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
         document.getElementById('img-size').value = '4';
         document.getElementById('img-submit-btn').innerHTML = '📤 提出';
@@ -1113,6 +1173,8 @@
 
     window.hideDistImg = function() {
       document.getElementById('img-overlay').classList.remove('show');
+      document.getElementById('img-text-overlay').classList.remove('show');
+      document.getElementById('img-text-input').value = '';
       imgBgImage = null;
       if (imgCtx) {
         const canvas = document.getElementById('img-canvas');

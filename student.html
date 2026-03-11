@@ -161,9 +161,9 @@
   #wb-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
   #wb-text-overlay.show { display:block; }
   #wb-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
-  #img-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
+  #img-text-overlay { display:none; position:fixed; inset:0; z-index:9800; pointer-events:none; }
   #img-text-overlay.show { display:block; }
-  #img-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
+  #img-text-input { position:absolute; pointer-events:all; background:rgba(255,255,255,0.85); border:none; border-bottom:2px solid #2563eb; border-radius:4px 4px 0 0; outline:none; font-family:'Noto Sans JP',sans-serif; padding:4px 6px; caret-color:#2563eb; min-width:80px; max-width:300px; box-shadow:0 2px 8px rgba(0,0,0,0.15); }
 
   /* トースト */
   #wb-toast { position:fixed; top:64px; left:50%; transform:translateX(-50%) translateY(-70px); background:rgba(30,41,59,0.9); color:white; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:600; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index:9900; white-space:nowrap; }
@@ -301,9 +301,9 @@
   </div>
   <div id="img-canvas-wrap">
     <canvas id="img-canvas"></canvas>
-    <div id="img-text-overlay">
-      <input type="text" id="img-text-input" />
-    </div>
+  </div>
+  <div id="img-text-overlay">
+    <input type="text" id="img-text-input" />
   </div>
   <div id="img-toolbar">
     <button class="wbt active" id="imgt-pen" onclick="setImgTool('pen')" title="ペン">✏️</button>
@@ -1024,18 +1024,25 @@
     // テキスト入力をcanvasに配置
     function imgTextAt(e, canvas) {
       const r = canvas.getBoundingClientRect();
-      const wr = document.getElementById('img-canvas-wrap').getBoundingClientRect();
-      const x = (e.clientX || 0) - r.left;
-      const y = (e.clientY || 0) - r.top;
+      // canvas内座標（描画用）
+      const cx = (e.clientX || 0) - r.left;
+      const cy = (e.clientY || 0) - r.top;
+      // 画面座標（inputの表示位置）- 入力欄を少し上にずらす
+      let sx = e.clientX || 0;
+      let sy = (e.clientY || 0) - 36;
+      // 画面内に収める
+      const IH = 42;
+      if (sy < 4) sy = (e.clientY || 0) + 4;
+      if (sx + 200 > window.innerWidth) sx = window.innerWidth - 204;
       const ti = document.getElementById('img-text-input');
-      ti.style.left  = (r.left - wr.left + x) + 'px';
-      ti.style.top   = (r.top  - wr.top  + y - 22) + 'px';
+      ti.style.left  = sx + 'px';
+      ti.style.top   = sy + 'px';
       ti.style.color = imgColor;
       ti.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
-      ti._x = x; ti._y = y;
+      ti._x = cx; ti._y = cy;
       ti.value = '';
       document.getElementById('img-text-overlay').classList.add('show');
-      ti.focus();
+      setTimeout(() => ti.focus(), 30);
     }
 
     function imgCommitText() {

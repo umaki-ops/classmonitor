@@ -161,9 +161,22 @@
   #wb-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
   #wb-text-overlay.show { display:block; }
   #wb-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
+  /* テキストラベル（ドラッグ可能） */
+  #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
+  .img-label { position:absolute; pointer-events:all; cursor:move; user-select:none;
+    background:rgba(255,255,255,0.85); border-radius:4px; padding:3px 6px 3px 6px;
+    font-family:'Noto Sans JP',sans-serif; white-space:pre; line-height:1.3;
+    box-shadow:0 1px 6px rgba(0,0,0,0.18); display:flex; align-items:center; gap:4px; }
+  .img-label-text { outline:none; min-width:40px; }
+  .img-label-del { cursor:pointer; color:#94a3b8; font-size:12px; flex-shrink:0; }
+  .img-label-del:hover { color:#ef4444; }
+  /* テキスト入力インライン */
   #img-text-overlay { display:none; position:fixed; inset:0; z-index:9800; pointer-events:none; }
   #img-text-overlay.show { display:block; }
-  #img-text-input { position:absolute; pointer-events:all; background:rgba(255,255,255,0.85); border:none; border-bottom:2px solid #2563eb; border-radius:4px 4px 0 0; outline:none; font-family:'Noto Sans JP',sans-serif; padding:4px 6px; caret-color:#2563eb; min-width:80px; max-width:300px; box-shadow:0 2px 8px rgba(0,0,0,0.15); }
+  #img-text-input { position:absolute; pointer-events:all; background:rgba(255,255,255,0.92);
+    border:none; border-bottom:2.5px solid #2563eb; border-radius:4px 4px 0 0; outline:none;
+    font-family:'Noto Sans JP',sans-serif; padding:4px 8px; caret-color:#2563eb;
+    min-width:80px; max-width:300px; box-shadow:0 2px 10px rgba(0,0,0,0.18); }
 
   /* トースト */
   #wb-toast { position:fixed; top:64px; left:50%; transform:translateX(-50%) translateY(-70px); background:rgba(30,41,59,0.9); color:white; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:600; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index:9900; white-space:nowrap; }
@@ -301,6 +314,7 @@
   </div>
   <div id="img-canvas-wrap">
     <canvas id="img-canvas"></canvas>
+    <div id="img-labels"></div>
   </div>
   <div id="img-text-overlay">
     <input type="text" id="img-text-input" />
@@ -982,7 +996,7 @@
       // touchstart/touchmove/touchend
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
-        if (imgTool === 'text') { imgTextAt(e.touches[0], canvas); return; }
+        if (imgTool === 'text') { imgAddLabel(e.touches[0].clientX, e.touches[0].clientY); return; }
         imgDrawing = true;
         [imgLX, imgLY] = getScaledPos(e.touches[0].clientX, e.touches[0].clientY);
         imgSignalDrawing(true);
@@ -1000,7 +1014,7 @@
 
       // mousedown/mousemove/mouseup
       canvas.addEventListener('mousedown', e => {
-        if (imgTool === 'text') { imgTextAt(e, canvas); return; }
+        if (imgTool === 'text') { imgAddLabel(e.clientX, e.clientY); return; }
         imgDrawing = true;
         [imgLX, imgLY] = getScaledPos(e.clientX, e.clientY);
         imgSignalDrawing(true);
@@ -1012,61 +1026,137 @@
       canvas.addEventListener('mouseup',    () => { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); });
       canvas.addEventListener('mouseleave', () => { if (imgDrawing) { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); } });
 
-      // テキスト入力
-      const ti = document.getElementById('img-text-input');
-      ti.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { imgCommitText(); e.preventDefault(); }
-        if (e.key === 'Escape') { document.getElementById('img-text-overlay').classList.remove('show'); ti.value = ''; }
-      });
-      ti.addEventListener('blur', () => {
-        if (ti.value.trim()) imgCommitText();
-        else document.getElementById('img-text-overlay').classList.remove('show');
-      });
+
     }
 
-    // テキスト入力をcanvasに配置
-    function imgTextAt(e, canvas) {
-      const r = canvas.getBoundingClientRect();
-      // CSS表示サイズ → canvas内部解像度へのスケール比率
-      const scX = canvas.width  / r.width;
-      const scY = canvas.height / r.height;
-      // canvas内座標（描画用）= スケール補正あり
-      const cx = ((e.clientX || 0) - r.left) * scX;
-      const cy = ((e.clientY || 0) - r.top)  * scY;
-      // 画面座標（inputの表示位置）= CSS座標のまま
-      let sx = e.clientX || 0;
-      let sy = (e.clientY || 0) - 36;
-      if (sy < 4) sy = (e.clientY || 0) + 4;
-      if (sx + 200 > window.innerWidth) sx = window.innerWidth - 204;
-      const ti = document.getElementById('img-text-input');
-      ti.style.left  = sx + 'px';
-      ti.style.top   = sy + 'px';
-      ti.style.color = imgColor;
-      ti.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
-      ti._x = cx; ti._y = cy;  // スケール補正済みcanvas座標を保存
-      ti.value = '';
-      document.getElementById('img-text-overlay').classList.add('show');
-      setTimeout(() => ti.focus(), 30);
-    }
+    // ===== ドラッグ可能テキストラベル管理 =====
+    let imgLabels = []; // { el, text, color, size, x, y } (x,y はwrap内CSS px)
 
-    function imgCommitText() {
-      const ti = document.getElementById('img-text-input');
-      const text = ti.value.trim();
-      if (text && imgCtx) {
-        const canvas = document.getElementById('img-canvas');
-        const r = canvas.getBoundingClientRect();
-        const scX = canvas.width / r.width;
-        const scY = canvas.height / r.height;
-        const sc = (scX + scY) / 2;
-        imgCtx.globalCompositeOperation = 'source-over';
-        imgCtx.fillStyle = imgColor;
-        // フォントサイズもスケール補正（CSS px → canvas px）
-        imgCtx.font = `${Math.max(12, imgSize * 3.5) * sc}px 'Noto Sans JP', sans-serif`;
-        imgCtx.fillText(text, ti._x, ti._y + 20 * scY);
+    function imgAddLabel(clientX, clientY) {
+      const wrap = document.getElementById('img-canvas-wrap');
+      const wr = wrap.getBoundingClientRect();
+      // wrap内のCSS座標
+      let lx = clientX - wr.left;
+      let ly = clientY - wr.top - 16;
+      if (ly < 4) ly = 4;
+      if (lx + 120 > wr.width) lx = wr.width - 124;
+
+      const el = document.createElement('div');
+      el.className = 'img-label';
+
+      const span = document.createElement('span');
+      span.className = 'img-label-text';
+      span.contentEditable = 'true';
+      span.style.color = imgColor;
+      span.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
+      span.textContent = '';
+
+      const del = document.createElement('span');
+      del.className = 'img-label-del';
+      del.textContent = '✕';
+      del.addEventListener('click', e => {
+        e.stopPropagation();
+        el.remove();
+        imgLabels = imgLabels.filter(l => l.el !== el);
         imgScheduleSnapshot();
-      }
-      document.getElementById('img-text-overlay').classList.remove('show');
-      ti.value = '';
+      });
+
+      el.appendChild(span);
+      el.appendChild(del);
+      el.style.left = lx + 'px';
+      el.style.top  = ly + 'px';
+
+      // ドラッグ（mouse + touch）
+      let drag = false, dx = 0, dy = 0;
+      el.addEventListener('mousedown', e => {
+        if (e.target === span || e.target === del) return;
+        drag = true;
+        dx = e.clientX - el.getBoundingClientRect().left;
+        dy = e.clientY - el.getBoundingClientRect().top;
+        e.preventDefault();
+      });
+      // spanのドラッグも有効化
+      el.addEventListener('mousedown', e => {
+        if (e.target !== del) {
+          drag = true;
+          dx = e.clientX - el.getBoundingClientRect().left;
+          dy = e.clientY - el.getBoundingClientRect().top;
+        }
+      });
+      document.addEventListener('mousemove', e => {
+        if (!drag) return;
+        const wr2 = wrap.getBoundingClientRect();
+        el.style.left = Math.max(0, e.clientX - wr2.left - dx) + 'px';
+        el.style.top  = Math.max(0, e.clientY - wr2.top  - dy) + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (drag) { drag = false; imgScheduleSnapshot(); }
+      });
+
+      // タッチドラッグ
+      el.addEventListener('touchstart', e => {
+        if (e.target === del) return;
+        drag = true;
+        const t = e.touches[0];
+        dx = t.clientX - el.getBoundingClientRect().left;
+        dy = t.clientY - el.getBoundingClientRect().top;
+      }, { passive: true });
+      document.addEventListener('touchmove', e => {
+        if (!drag) return;
+        const t = e.touches[0];
+        const wr2 = wrap.getBoundingClientRect();
+        el.style.left = Math.max(0, t.clientX - wr2.left - dx) + 'px';
+        el.style.top  = Math.max(0, t.clientY - wr2.top  - dy) + 'px';
+      }, { passive: true });
+      document.addEventListener('touchend', () => {
+        if (drag) { drag = false; imgScheduleSnapshot(); }
+      });
+
+      // 入力確定でスナップショット
+      span.addEventListener('input', () => imgScheduleSnapshot());
+      span.addEventListener('blur',  () => {
+        if (!span.textContent.trim()) {
+          el.remove();
+          imgLabels = imgLabels.filter(l => l.el !== el);
+        }
+        imgScheduleSnapshot();
+      });
+
+      document.getElementById('img-labels').appendChild(el);
+      imgLabels.push({ el, span });
+      setTimeout(() => { span.focus(); }, 30);
+      imgScheduleSnapshot();
+    }
+
+    // ラベルをcanvasに焼き付けて export
+    function imgExportWithLabels(quality = 0.8) {
+      const canvas = document.getElementById('img-canvas');
+      const wrap   = document.getElementById('img-canvas-wrap');
+      const wr     = wrap.getBoundingClientRect();
+      const scX    = canvas.width  / wr.width;
+      const scY    = canvas.height / wr.height;
+
+      const merged = document.createElement('canvas');
+      merged.width  = canvas.width;
+      merged.height = canvas.height;
+      const ctx = merged.getContext('2d');
+      // 背景（白）＋描画済みcanvas
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, merged.width, merged.height);
+      ctx.drawImage(canvas, 0, 0);
+      // ラベルをcanvas座標に変換して描画
+      imgLabels.forEach(({ el, span }) => {
+        const elr  = el.getBoundingClientRect();
+        const text = span.textContent.trim();
+        if (!text) return;
+        const cx = (elr.left - wr.left) * scX;
+        const cy = (elr.top  - wr.top)  * scY;
+        const fs = parseFloat(span.style.fontSize) * ((scX + scY) / 2);
+        ctx.font      = `${fs}px 'Noto Sans JP', sans-serif`;
+        ctx.fillStyle = span.style.color || '#1e293b';
+        ctx.fillText(text, cx, cy + fs);
+      });
+      return merged.toDataURL('image/jpeg', quality);
     }
 
     // 背景画像をcanvasにフィット描画
@@ -1127,6 +1217,8 @@
     window.distImgClear = function() {
       if (!imgCtx) return;
       imgDrawBg();
+      document.getElementById('img-labels').innerHTML = '';
+      imgLabels = [];
       imgScheduleSnapshot();
     };
 
@@ -1134,8 +1226,8 @@
     function imgScheduleSnapshot() {
       clearTimeout(imgSnapshotTimer);
       imgSnapshotTimer = setTimeout(() => {
-        const canvas = document.getElementById('img-canvas');
-        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), canvas.toDataURL('image/jpeg', 0.5));
+        const snap = imgExportWithLabels(0.5);
+        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), snap);
       }, 500);
     }
     function imgSignalDrawing(val) {
@@ -1144,10 +1236,9 @@
 
     window.distImgSubmit = function() {
       if (!imgCtx) return;
-      const canvas = document.getElementById('img-canvas');
       set(ref(db, `sessions/${sessionId}/distImg/submissions/${studentId}`), {
         name: window._studentName || user.displayName || user.email,
-        image: canvas.toDataURL('image/jpeg', 0.8),
+        image: imgExportWithLabels(),
         submittedAt: Date.now()
       });
       const btn = document.getElementById('img-submit-btn');
@@ -1167,8 +1258,9 @@
         document.getElementById('imgt-eraser').classList.remove('active');
         document.getElementById('imgt-text').classList.remove('active');
         document.getElementById('img-canvas').style.cursor = 'crosshair';
-        document.getElementById('img-text-overlay').classList.remove('show');
-        document.getElementById('img-text-input').value = '';
+        // ラベルをすべてクリア
+        document.getElementById('img-labels').innerHTML = '';
+        imgLabels = [];
         document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
         document.getElementById('img-size').value = '4';
         document.getElementById('img-submit-btn').innerHTML = '📤 提出';
@@ -1190,8 +1282,8 @@
 
     window.hideDistImg = function() {
       document.getElementById('img-overlay').classList.remove('show');
-      document.getElementById('img-text-overlay').classList.remove('show');
-      document.getElementById('img-text-input').value = '';
+      document.getElementById('img-labels').innerHTML = '';
+      imgLabels = [];
       imgBgImage = null;
       if (imgCtx) {
         const canvas = document.getElementById('img-canvas');

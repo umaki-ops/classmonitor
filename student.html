@@ -970,21 +970,27 @@
         if (document.getElementById('img-overlay').classList.contains('show')) imgResize();
       });
 
-      // touchstart/touchmove/touchend (WBと同じ)
+      // CSS表示サイズ → canvas内部解像度のスケール比率
+      function getScaledPos(clientX, clientY) {
+        const r = canvas.getBoundingClientRect();
+        return [
+          (clientX - r.left) * (canvas.width  / (r.width  || 1)),
+          (clientY - r.top)  * (canvas.height / (r.height || 1))
+        ];
+      }
+
+      // touchstart/touchmove/touchend
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
-        console.log('[img] touchstart');
         if (imgTool === 'text') { imgTextAt(e.touches[0], canvas); return; }
         imgDrawing = true;
-        const r = canvas.getBoundingClientRect();
-        imgLX = e.touches[0].clientX - r.left;
-        imgLY = e.touches[0].clientY - r.top;
+        [imgLX, imgLY] = getScaledPos(e.touches[0].clientX, e.touches[0].clientY);
+        imgSignalDrawing(true);
       }, { passive: false });
       canvas.addEventListener('touchmove', e => {
         e.preventDefault();
         if (!imgDrawing) return;
-        const r = canvas.getBoundingClientRect();
-        imgDraw(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
+        imgDraw(...getScaledPos(e.touches[0].clientX, e.touches[0].clientY));
       }, { passive: false });
       canvas.addEventListener('touchend', () => {
         imgDrawing = false;
@@ -992,19 +998,16 @@
         imgScheduleSnapshot();
       });
 
-      // mousedown/mousemove/mouseup (WBと同じ)
+      // mousedown/mousemove/mouseup
       canvas.addEventListener('mousedown', e => {
-        console.log('[img] mousedown');
         if (imgTool === 'text') { imgTextAt(e, canvas); return; }
         imgDrawing = true;
-        const r = canvas.getBoundingClientRect();
-        imgLX = e.clientX - r.left;
-        imgLY = e.clientY - r.top;
+        [imgLX, imgLY] = getScaledPos(e.clientX, e.clientY);
+        imgSignalDrawing(true);
       });
       canvas.addEventListener('mousemove', e => {
         if (!imgDrawing) return;
-        const r = canvas.getBoundingClientRect();
-        imgDraw(e.clientX - r.left, e.clientY - r.top);
+        imgDraw(...getScaledPos(e.clientX, e.clientY));
       });
       canvas.addEventListener('mouseup',    () => { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); });
       canvas.addEventListener('mouseleave', () => { if (imgDrawing) { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); } });
@@ -1024,14 +1027,15 @@
     // テキスト入力をcanvasに配置
     function imgTextAt(e, canvas) {
       const r = canvas.getBoundingClientRect();
-      // canvas内座標（描画用）
-      const cx = (e.clientX || 0) - r.left;
-      const cy = (e.clientY || 0) - r.top;
-      // 画面座標（inputの表示位置）- 入力欄を少し上にずらす
+      // CSS表示サイズ → canvas内部解像度へのスケール比率
+      const scX = canvas.width  / r.width;
+      const scY = canvas.height / r.height;
+      // canvas内座標（描画用）= スケール補正あり
+      const cx = ((e.clientX || 0) - r.left) * scX;
+      const cy = ((e.clientY || 0) - r.top)  * scY;
+      // 画面座標（inputの表示位置）= CSS座標のまま
       let sx = e.clientX || 0;
       let sy = (e.clientY || 0) - 36;
-      // 画面内に収める
-      const IH = 42;
       if (sy < 4) sy = (e.clientY || 0) + 4;
       if (sx + 200 > window.innerWidth) sx = window.innerWidth - 204;
       const ti = document.getElementById('img-text-input');
@@ -1039,7 +1043,7 @@
       ti.style.top   = sy + 'px';
       ti.style.color = imgColor;
       ti.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
-      ti._x = cx; ti._y = cy;
+      ti._x = cx; ti._y = cy;  // スケール補正済みcanvas座標を保存
       ti.value = '';
       document.getElementById('img-text-overlay').classList.add('show');
       setTimeout(() => ti.focus(), 30);
@@ -1049,10 +1053,16 @@
       const ti = document.getElementById('img-text-input');
       const text = ti.value.trim();
       if (text && imgCtx) {
+        const canvas = document.getElementById('img-canvas');
+        const r = canvas.getBoundingClientRect();
+        const scX = canvas.width / r.width;
+        const scY = canvas.height / r.height;
+        const sc = (scX + scY) / 2;
         imgCtx.globalCompositeOperation = 'source-over';
         imgCtx.fillStyle = imgColor;
-        imgCtx.font = `${Math.max(12, imgSize * 3.5)}px 'Noto Sans JP', sans-serif`;
-        imgCtx.fillText(text, ti._x, ti._y + 20);
+        // フォントサイズもスケール補正（CSS px → canvas px）
+        imgCtx.font = `${Math.max(12, imgSize * 3.5) * sc}px 'Noto Sans JP', sans-serif`;
+        imgCtx.fillText(text, ti._x, ti._y + 20 * scY);
         imgScheduleSnapshot();
       }
       document.getElementById('img-text-overlay').classList.remove('show');

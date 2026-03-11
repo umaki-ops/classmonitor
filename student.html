@@ -1220,12 +1220,19 @@
     const wrap = document.getElementById('wb-canvas-wrap');
     wbCtx = canvas.getContext('2d');
     function wbResize() {
-      const img = wbCtx.getImageData(0, 0, canvas.width || 1, canvas.height || 1);
-      canvas.width = wrap.offsetWidth;
-      canvas.height = wrap.offsetHeight;
+      // toDataURL で保存してから resize（putImageData より確実）
+      const prev = (canvas.width > 1 && canvas.height > 1) ? canvas.toDataURL() : null;
+      canvas.width  = wrap.offsetWidth  || window.innerWidth;
+      canvas.height = wrap.offsetHeight || window.innerHeight;
+      // まず全体を白で塗りつぶす（透明→黒になるのを防ぐ）
       wbCtx.fillStyle = 'white';
       wbCtx.fillRect(0, 0, canvas.width, canvas.height);
-      if (img.width > 1) wbCtx.putImageData(img, 0, 0);
+      // 以前の描画を上に重ねる
+      if (prev) {
+        const tmp = new Image();
+        tmp.onload = () => wbCtx.drawImage(tmp, 0, 0);
+        tmp.src = prev;
+      }
     }
     wbResize();
     window.addEventListener('resize', wbResize);
@@ -1375,18 +1382,21 @@
     if (wbIsOpen) return;
     wbIsOpen = true;
     document.getElementById('wb-overlay').classList.add('show');
-    if (!wbCtx) wbInit();
-    // 既に届いている指示があれば表示
-    const text = window._wbInstruction || '';
-    const el = document.getElementById('wb-instruction-text');
-    if (el) {
-      if (text) { el.textContent = text; el.classList.remove('empty'); }
-      else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
-    }
-    // 背景画像があれば適用
-    if (window._wbBgImage) {
-      setTimeout(() => wbApplyBgImage(window._wbBgImage), 50); // canvasサイズ確定後
-    }
+    // レイアウト確定後に初期化（offsetWidth が 0 のまま wbInit するのを防ぐ）
+    setTimeout(() => {
+      if (!wbCtx) wbInit();
+      // 既に届いている指示があれば表示
+      const text = window._wbInstruction || '';
+      const el = document.getElementById('wb-instruction-text');
+      if (el) {
+        if (text) { el.textContent = text; el.classList.remove('empty'); }
+        else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
+      }
+      // 背景画像があれば適用
+      if (window._wbBgImage) {
+        setTimeout(() => wbApplyBgImage(window._wbBgImage), 50);
+      }
+    }, 50);
     wbToast('📋 ホワイトボードが配布されました');
   }
   function wbClose() {
@@ -1416,6 +1426,7 @@
   function wbSendSnapshot() {
     if (!window.wbSid || !window.FBDB || !wbCtx) return;
     const c = document.getElementById('wb-canvas');
+    if (c.width < 10 || c.height < 10) return; // サイズ未確定なら送らない
     const data = c.toDataURL('image/jpeg', 0.4);
     const { ref, set } = window.FBDB;
     set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/snapshots/${window.wbSid}`), data);

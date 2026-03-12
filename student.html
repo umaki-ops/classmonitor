@@ -392,7 +392,30 @@
     document.getElementById('state-' + name)?.classList.add('active');
   }
 
-  // ページ読み込み直後にloginを表示（main()完了を待たない）
+  // auth をモジュールスコープで保持（main()完了前にログインボタンが押されても対応）
+  let _auth = null;
+
+  window.signInWithGoogle = async function() {
+    if (!_auth) {
+      // まだFirebase初期化中 → 少し待ってリトライ
+      showState('loading');
+      setTimeout(() => { if (!_auth) showState('error'); }, 5000);
+      const wait = setInterval(() => {
+        if (_auth) { clearInterval(wait); showState('login'); window.signInWithGoogle(); }
+      }, 200);
+      return;
+    }
+    try {
+      await signInWithPopup(_auth, new GoogleAuthProvider());
+    } catch(e) {
+      if (e.code !== 'auth/popup-closed-by-user') {
+        showState('error');
+        document.getElementById('error-msg').textContent = 'ログインエラー: ' + e.message;
+      }
+    }
+  };
+
+  // ページ読み込み直後にloginを表示
   showState('login');
 
   async function main() {
@@ -415,6 +438,7 @@
       app = initializeApp({apiKey, databaseURL:dbUrl, projectId, authDomain:`${projectId}.firebaseapp.com`}, 'student-'+Date.now());
       db = getDatabase(app);
       auth = getAuth(app);
+      _auth = auth;  // モジュールスコープに公開
     } catch(e) {
       showState('error');
       document.getElementById('error-msg').textContent = 'Firebase接続エラー: ' + e.message;
@@ -435,18 +459,7 @@
       rtcpMuxPolicy: 'require'
     };
 
-    // ===== GOOGLE LOGIN =====
-    window.signInWithGoogle = async function() {
-      try {
-        const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
-      } catch(e) {
-        if (e.code !== 'auth/popup-closed-by-user') {
-          showState('error');
-          document.getElementById('error-msg').textContent = 'ログインエラー: ' + e.message;
-        }
-      }
-    };
+    // ===== GOOGLE LOGIN (グローバルスコープに移動済み) =====
 
     let _initialized = false;
 

@@ -209,10 +209,7 @@
 <body>
 <header>
   <div class="logo"><div class="logo-icon">👁</div><span>ClassMonitor</span></div>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
-    <span id="teacher-name-display" style="font-size:13px;color:#94a3b8;"></span>
-    <button id="teacher-logout-btn" style="display:none;padding:5px 12px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;">ログアウト</button>
-  </div>
+
   <div class="hcenter" id="hactions" style="display:none;">
     <span class="hlabel">全体:</span>
     <button class="btn btn-focus" onclick="broadcastFocus()">🎯 全員集中</button>
@@ -453,40 +450,11 @@ window.startSession=async function(){
   const pi=document.getElementById('fb-projectid').value.trim();
   if(!ak||!du||!pi){toast('⚠️ Firebase設定を入力してください');return;}
   if(!window.FB){toast('⚠️ Firebase SDKの読み込み中です。しばらく待ってから再度お試しください');return;}
-  let teacherApp, teacherAuth, teacherUser;
+  let teacherApp;
   try{
     teacherApp=window.FB.initializeApp({apiKey:ak,databaseURL:du,projectId:pi,authDomain:`${pi}.firebaseapp.com`},'t-'+Date.now());
     db=window.FB.getDatabase(teacherApp);
-    teacherAuth=window.FB.getAuth(teacherApp);
   }catch(e){toast('❌ '+e.message);return;}
-
-  // Googleログイン確認
-  toast('🔐 Googleログインを確認中...');
-  try{
-    const currentUser = teacherAuth.currentUser;
-    if(!currentUser){
-      const result = await window.FB.signInWithPopup(teacherAuth, new window.FB.GoogleAuthProvider());
-      teacherUser = result.user;
-    } else {
-      teacherUser = currentUser;
-    }
-  }catch(e){
-    if(e.code!=='auth/popup-closed-by-user') toast('❌ ログインエラー: '+e.message);
-    return;
-  }
-  toast(`✅ ${teacherUser.displayName||teacherUser.email} でログイン中`);
-
-  // ログアウトボタンを表示
-  const logoutBtn = document.getElementById('teacher-logout-btn');
-  if(logoutBtn){
-    logoutBtn.style.display='inline-flex';
-    logoutBtn.onclick = async()=>{
-      await window.FB.signOut(teacherAuth);
-      location.reload();
-    };
-  }
-  const teacherNameEl = document.getElementById('teacher-name-display');
-  if(teacherNameEl) teacherNameEl.textContent = teacherUser.displayName||teacherUser.email;
 
   sessionId=gid();
   const{ref,set}=window.FB;

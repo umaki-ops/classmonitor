@@ -462,7 +462,6 @@
     try {
       app = initializeApp({apiKey, databaseURL:dbUrl, projectId, authDomain:`${projectId}.firebaseapp.com`}, 'student-'+Date.now());
       db = getDatabase(app);
-      ref = ref; set = set;  // group WB用に公開
       auth = getAuth(app);
       _auth = auth;  // モジュールスコープに公開
     } catch(e) {

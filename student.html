@@ -77,13 +77,18 @@
   #msg-popup { display:none; position:fixed; top:50%; left:50%;
     transform:translate(-50%,-50%);
     z-index:9500; background:#fff; color:#1e293b;
-    padding:28px 40px; border-radius:18px;
+    padding:32px 44px 24px; border-radius:18px;
     font-size:24px; font-weight:800;
-    box-shadow:0 8px 40px rgba(0,0,0,.25);
-    max-width:80vw; text-align:center; pointer-events:none;
+    box-shadow:0 8px 40px rgba(0,0,0,.3);
+    max-width:84vw; text-align:center; pointer-events:auto;
     border: 3px solid #2563eb; }
-  #msg-popup.show { display:block; animation:popIn .25s ease; }
+  #msg-popup.show { display:block; animation:popIn .3s ease; }
   @keyframes popIn { from{opacity:0;transform:translate(-50%,-50%) scale(.85)} to{opacity:1;transform:translate(-50%,-50%) scale(1)} }
+  #msg-popup-ok { margin-top:20px; padding:10px 40px;
+    background:#2563eb; color:#fff; border:none; border-radius:10px;
+    font-size:18px; font-weight:700; cursor:pointer; display:block; width:100%;
+    font-family:'Noto Sans JP',sans-serif; }
+  #msg-popup-ok:active { background:#1d4ed8; }
 
   /* ===== 先生画面オーバーレイ ===== */
   #teacher-overlay { display:none; position:fixed; inset:0; z-index:8000;
@@ -381,6 +386,7 @@
 <!-- メッセージポップアップ -->
 <div id="msg-popup">
   <div id="msg-popup-text"></div>
+  <button id="msg-popup-ok" onclick="document.getElementById('msg-popup').classList.remove('show')">OK</button>
 </div>
 
 <!-- 先生画面オーバーレイ -->
@@ -757,7 +763,7 @@
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
         if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
-        console.log('[SURVEY-DB] active:', sv.active, 'q:', sv.question?.slice(0,20));
+        console.log('[SURVEY-DB] active:', sv.active, 'type:', sv.type, 'q:', sv.question?.slice(0,30), 'choices:', sv.choices?.length);
         if (sv.active) showSurvey(sv);
         else hideSurvey();
       });
@@ -975,7 +981,7 @@
       if (!el || !txt) return;
       txt.textContent = text || '';
       el.classList.add('show');
-      setTimeout(() => el.classList.remove('show'), 4000);
+      // OKボタンを押すまで消えない
     }
 
     // ===== 視聴 =====
@@ -1495,6 +1501,7 @@
 
     // ===== アンケート =====
     function showSurvey(sv) {
+      console.log('[showSurvey] type:', sv.type, 'q:', sv.question, 'choices:', sv.choices);
       const overlay = document.getElementById('survey-overlay');
       if (overlay) overlay.classList.add('show');
       const q = document.getElementById('survey-question');
@@ -1546,16 +1553,11 @@
       } else if (data.command === 'message') {
         showMsgPopup(data.text);
       } else if (data.command === 'survey-open') {
-        console.log('[SURVEY-OPEN] data.survey:', !!data.survey, data.survey?.question?.slice(0,20));
-        if (data.survey) {
-          showSurvey(data.survey);
-        } else {
-          // fallback: DB から直接取得
-          const {ref: r2, get: g2, db: d2} = window.FBDB || {};
-          if (r2 && g2 && d2) g2(r2(d2, `sessions/${window.wbSid}/survey`)).then(snap => {
-            if (snap.exists() && snap.val().active) showSurvey(snap.val());
-          });
-        }
+        // DBから直接取得（cmds経由のsurveyデータは信頼しない）
+        get(ref(db, `sessions/${sessionId}/survey`)).then(snap => {
+          console.log('[SURVEY-OPEN] DB snap:', snap.exists(), snap.val()?.question?.slice(0,20));
+          if (snap.exists() && snap.val().active) showSurvey(snap.val());
+        });
       } else if (data.command === 'survey-close') {
         hideSurvey();
       } else if (data.command === 'stopWatch') {

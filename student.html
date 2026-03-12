@@ -727,7 +727,23 @@
     window.startShare = async function() {
       window._shareActive = true;
       try {
-        localStream = await navigator.mediaDevices.getDisplayMedia({video:true, audio:false});
+        localStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: 'monitor' },
+          audio: false,
+          selfBrowserSurface: 'exclude',
+          preferCurrentTab: false,
+          surfaceSwitching: 'exclude'
+        });
+        // 画面全体以外は拒否
+        const track = localStream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        if (settings.displaySurface && settings.displaySurface !== 'monitor') {
+          localStream.getTracks().forEach(t => t.stop());
+          window._shareActive = false;
+          showState('connected');
+          alert('「画面全体」を選択してください。ウィンドウやタブの共有は使用できません。');
+          return;
+        }
       } catch(e) {
         window._shareActive = false;
         showState('connected');
@@ -790,13 +806,13 @@
     let imgLabels = [];
 
     function showDistImg(dataUrl) {
-      const overlay = document.getElementById('dist-img-overlay');
+      const overlay = document.getElementById('img-overlay');
       if (overlay) overlay.classList.add('show');
       imgInitOnce();
       imgDrawBg(dataUrl);
     }
     window.hideDistImg = function() {
-      const overlay = document.getElementById('dist-img-overlay');
+      const overlay = document.getElementById('img-overlay');
       if (overlay) overlay.classList.remove('show');
     };
 

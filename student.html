@@ -1381,14 +1381,27 @@
       document.getElementById('survey-type-label').textContent = sv.type === 'choice' ? '選択式アンケート' : '自由記述アンケート';
       document.getElementById('survey-q-text').textContent = sv.question;
       const body = document.getElementById('survey-body');
+      body.innerHTML = '';
       if (sv.type === 'choice') {
-        body.innerHTML = sv.choices.map((ch, i) =>
-          `<button class="choice-btn" id="choice-${i}" onclick="selectChoice('${ch.replace(/'/g,"\'")}')">`+
-          `<span class="choice-label-badge">${LABELS[i]}</span>${ch}</button>`
-        ).join('');
+        sv.choices.forEach((ch, i) => {
+          const btn = document.createElement('button');
+          btn.className = 'choice-btn'; btn.id = `choice-${i}`;
+          const badge = document.createElement('span');
+          badge.className = 'choice-label-badge'; badge.textContent = LABELS[i];
+          const txt = document.createTextNode(ch);
+          btn.appendChild(badge); btn.appendChild(txt);
+          btn.addEventListener('click', () => selectChoice(ch));
+          body.appendChild(btn);
+        });
       } else {
-        body.innerHTML = `<textarea class="survey-textarea" id="free-ans" placeholder="回答を入力してください..."></textarea>`+
-          `<button class="survey-submit-btn" onclick="submitFree()">📤 回答を送信</button>`;
+        const ta = document.createElement('textarea');
+        ta.className = 'survey-textarea'; ta.id = 'free-ans';
+        ta.placeholder = '回答を入力してください...';
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'survey-submit-btn';
+        submitBtn.textContent = '📤 回答を送信';
+        submitBtn.addEventListener('click', submitFree);
+        body.appendChild(ta); body.appendChild(submitBtn);
       }
       document.getElementById('survey-overlay').classList.add('show');
     }

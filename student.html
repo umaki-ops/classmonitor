@@ -164,17 +164,19 @@
   /* テキストラベル（ドラッグ可能） */
   #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   .img-label { position:absolute; pointer-events:all; user-select:none;
-    background:rgba(255,255,255,0.88); border-radius:6px; padding:4px 4px 4px 6px;
+    background:rgba(255,255,255,0.88); border-radius:6px; padding:6px 8px 6px 8px;
     font-family:'Noto Sans JP',sans-serif; line-height:1.4;
-    box-shadow:0 1px 8px rgba(0,0,0,0.2); display:flex; align-items:flex-start; gap:3px;
-    min-width:80px; min-height:36px; resize:none; }
-  .img-label-header { display:flex; align-items:center; gap:2px; cursor:move; padding-bottom:2px; }
-  .img-label-drag { color:#cbd5e1; font-size:13px; cursor:move; flex-shrink:0; line-height:1; }
-  .img-label-del { cursor:pointer; color:#94a3b8; font-size:12px; flex-shrink:0; line-height:1; }
-  .img-label-del:hover { color:#ef4444; }
+    box-shadow:0 2px 10px rgba(0,0,0,0.22); cursor:move; }
+  /* 削除ボタン：ラベル外の右上に浮かせる */
+  .img-label-del { position:absolute; top:-10px; right:-10px; width:22px; height:22px;
+    border-radius:50%; background:#ef4444; color:white; font-size:13px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.3); line-height:1;
+    opacity:0; transition:opacity 0.15s; pointer-events:all; }
+  .img-label:hover .img-label-del { opacity:1; }
   .img-label-textarea { border:none; outline:none; background:transparent; resize:both;
-    font-family:'Noto Sans JP',sans-serif; line-height:1.4; padding:0;
-    min-width:60px; min-height:24px; width:140px; overflow:hidden; word-break:break-all; }
+    font-family:'Noto Sans JP',sans-serif; line-height:1.4; padding:0; cursor:text;
+    min-width:80px; min-height:28px; width:160px; word-break:break-all; display:block; }
   /* テキスト入力インライン */
   #img-text-overlay { display:none; position:fixed; inset:0; z-index:9800; pointer-events:none; }
   #img-text-overlay.show { display:block; }
@@ -1048,18 +1050,10 @@
       el.style.left = lx + 'px';
       el.style.top  = ly + 'px';
 
-      // ヘッダー（ドラッグハンドル＋削除ボタン）
-      const header = document.createElement('div');
-      header.className = 'img-label-header';
-
-      const dragHandle = document.createElement('span');
-      dragHandle.className = 'img-label-drag';
-      dragHandle.textContent = '⠿';
-      dragHandle.title = 'ドラッグで移動';
-
-      const del = document.createElement('span');
+      // 削除ボタン（ラベル外右上、ホバーで表示）
+      const del = document.createElement('div');
       del.className = 'img-label-del';
-      del.textContent = '✕';
+      del.textContent = '×';
       del.addEventListener('click', e => {
         e.stopPropagation();
         el.remove();
@@ -1067,38 +1061,38 @@
         imgScheduleSnapshot();
       });
 
-      header.appendChild(dragHandle);
-      header.appendChild(del);
-
-      // textarea（折り返し・リサイズ対応）
+      // textarea
       const ta = document.createElement('textarea');
       ta.className = 'img-label-textarea';
       ta.style.color    = imgColor;
       ta.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
-      ta.placeholder = 'テキスト入力...';
+      ta.placeholder = 'テキストを入力...';
       ta.rows = 2;
-      ta.addEventListener('input',   () => imgScheduleSnapshot());
-      ta.addEventListener('mousedown', e => e.stopPropagation()); // ドラッグ誤作動防止
+      ta.addEventListener('input', () => imgScheduleSnapshot());
+      // textarea上でのマウス操作はドラッグに使わない
+      ta.addEventListener('mousedown', e => e.stopPropagation());
       ta.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
 
-      el.appendChild(header);
+      el.appendChild(del);
       el.appendChild(ta);
 
-      // ===== ドラッグ（ヘッダーのみ） =====
+      // ===== ドラッグ：ラベル本体（taの外）=====
       let drag = false, dx = 0, dy = 0;
 
-      function startDrag(cx, cy) {
+      el.addEventListener('mousedown', e => {
+        if (e.target === ta || e.target === del) return;
         drag = true;
         const er = el.getBoundingClientRect();
-        dx = cx - er.left;
-        dy = cy - er.top;
-      }
-      header.addEventListener('mousedown', e => {
-        startDrag(e.clientX, e.clientY);
+        dx = e.clientX - er.left;
+        dy = e.clientY - er.top;
         e.preventDefault();
       });
-      header.addEventListener('touchstart', e => {
-        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+      el.addEventListener('touchstart', e => {
+        if (e.target === ta || e.target === del) return;
+        drag = true;
+        const er = el.getBoundingClientRect();
+        dx = e.touches[0].clientX - er.left;
+        dy = e.touches[0].clientY - er.top;
       }, { passive: true });
 
       document.addEventListener('mousemove', e => {
@@ -1208,6 +1202,26 @@
 
     function imgSignalDrawing(val) {
       set(ref(db, `sessions/${sessionId}/distImg/drawing/${studentId}`), val || null);
+    }
+
+    // ペン・消しゴム描画
+    function imgDraw(x, y) {
+      imgCtx.beginPath();
+      imgCtx.moveTo(imgLX, imgLY);
+      imgCtx.lineTo(x, y);
+      imgCtx.globalCompositeOperation = 'source-over';
+      if (imgTool === 'eraser') {
+        imgCtx.strokeStyle = 'white';
+        imgCtx.lineWidth = imgSize * 5;
+      } else {
+        imgCtx.strokeStyle = imgColor;
+        imgCtx.lineWidth = imgSize;
+      }
+      imgCtx.lineCap = 'round';
+      imgCtx.lineJoin = 'round';
+      imgCtx.stroke();
+      imgLX = x; imgLY = y;
+      imgSignalDrawing(true);
     }
 
     // 背景画像をcanvasにフィット描画

@@ -163,13 +163,18 @@
   #wb-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
   /* テキストラベル（ドラッグ可能） */
   #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
-  .img-label { position:absolute; pointer-events:all; cursor:move; user-select:none;
-    background:rgba(255,255,255,0.85); border-radius:4px; padding:3px 6px 3px 6px;
-    font-family:'Noto Sans JP',sans-serif; white-space:pre; line-height:1.3;
-    box-shadow:0 1px 6px rgba(0,0,0,0.18); display:flex; align-items:center; gap:4px; }
-  .img-label-text { outline:none; min-width:40px; }
-  .img-label-del { cursor:pointer; color:#94a3b8; font-size:12px; flex-shrink:0; }
+  .img-label { position:absolute; pointer-events:all; user-select:none;
+    background:rgba(255,255,255,0.88); border-radius:6px; padding:4px 4px 4px 6px;
+    font-family:'Noto Sans JP',sans-serif; line-height:1.4;
+    box-shadow:0 1px 8px rgba(0,0,0,0.2); display:flex; align-items:flex-start; gap:3px;
+    min-width:80px; min-height:36px; resize:none; }
+  .img-label-header { display:flex; align-items:center; gap:2px; cursor:move; padding-bottom:2px; }
+  .img-label-drag { color:#cbd5e1; font-size:13px; cursor:move; flex-shrink:0; line-height:1; }
+  .img-label-del { cursor:pointer; color:#94a3b8; font-size:12px; flex-shrink:0; line-height:1; }
   .img-label-del:hover { color:#ef4444; }
+  .img-label-textarea { border:none; outline:none; background:transparent; resize:both;
+    font-family:'Noto Sans JP',sans-serif; line-height:1.4; padding:0;
+    min-width:60px; min-height:24px; width:140px; overflow:hidden; word-break:break-all; }
   /* テキスト入力インライン */
   #img-text-overlay { display:none; position:fixed; inset:0; z-index:9800; pointer-events:none; }
   #img-text-overlay.show { display:block; }
@@ -1030,26 +1035,27 @@
     }
 
     // ===== ドラッグ可能テキストラベル管理 =====
-    let imgLabels = []; // { el, text, color, size, x, y } (x,y はwrap内CSS px)
+    let imgLabels = [];
 
     function imgAddLabel(clientX, clientY) {
       const wrap = document.getElementById('img-canvas-wrap');
-      const wr = wrap.getBoundingClientRect();
-      // wrap内のCSS座標
-      let lx = clientX - wr.left;
-      let ly = clientY - wr.top - 16;
-      if (ly < 4) ly = 4;
-      if (lx + 120 > wr.width) lx = wr.width - 124;
+      const wr   = wrap.getBoundingClientRect();
+      let lx = Math.max(0, clientX - wr.left - 4);
+      let ly = Math.max(0, clientY - wr.top  - 4);
 
       const el = document.createElement('div');
       el.className = 'img-label';
+      el.style.left = lx + 'px';
+      el.style.top  = ly + 'px';
 
-      const span = document.createElement('span');
-      span.className = 'img-label-text';
-      span.contentEditable = 'true';
-      span.style.color = imgColor;
-      span.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
-      span.textContent = '';
+      // ヘッダー（ドラッグハンドル＋削除ボタン）
+      const header = document.createElement('div');
+      header.className = 'img-label-header';
+
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'img-label-drag';
+      dragHandle.textContent = '⠿';
+      dragHandle.title = 'ドラッグで移動';
 
       const del = document.createElement('span');
       del.className = 'img-label-del';
@@ -1061,46 +1067,46 @@
         imgScheduleSnapshot();
       });
 
-      el.appendChild(span);
-      el.appendChild(del);
-      el.style.left = lx + 'px';
-      el.style.top  = ly + 'px';
+      header.appendChild(dragHandle);
+      header.appendChild(del);
 
-      // ドラッグ（mouse + touch）
+      // textarea（折り返し・リサイズ対応）
+      const ta = document.createElement('textarea');
+      ta.className = 'img-label-textarea';
+      ta.style.color    = imgColor;
+      ta.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
+      ta.placeholder = 'テキスト入力...';
+      ta.rows = 2;
+      ta.addEventListener('input',   () => imgScheduleSnapshot());
+      ta.addEventListener('mousedown', e => e.stopPropagation()); // ドラッグ誤作動防止
+      ta.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+      el.appendChild(header);
+      el.appendChild(ta);
+
+      // ===== ドラッグ（ヘッダーのみ） =====
       let drag = false, dx = 0, dy = 0;
-      el.addEventListener('mousedown', e => {
-        if (e.target === span || e.target === del) return;
+
+      function startDrag(cx, cy) {
         drag = true;
-        dx = e.clientX - el.getBoundingClientRect().left;
-        dy = e.clientY - el.getBoundingClientRect().top;
+        const er = el.getBoundingClientRect();
+        dx = cx - er.left;
+        dy = cy - er.top;
+      }
+      header.addEventListener('mousedown', e => {
+        startDrag(e.clientX, e.clientY);
         e.preventDefault();
       });
-      // spanのドラッグも有効化
-      el.addEventListener('mousedown', e => {
-        if (e.target !== del) {
-          drag = true;
-          dx = e.clientX - el.getBoundingClientRect().left;
-          dy = e.clientY - el.getBoundingClientRect().top;
-        }
-      });
+      header.addEventListener('touchstart', e => {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: true });
+
       document.addEventListener('mousemove', e => {
         if (!drag) return;
         const wr2 = wrap.getBoundingClientRect();
         el.style.left = Math.max(0, e.clientX - wr2.left - dx) + 'px';
         el.style.top  = Math.max(0, e.clientY - wr2.top  - dy) + 'px';
       });
-      document.addEventListener('mouseup', () => {
-        if (drag) { drag = false; imgScheduleSnapshot(); }
-      });
-
-      // タッチドラッグ
-      el.addEventListener('touchstart', e => {
-        if (e.target === del) return;
-        drag = true;
-        const t = e.touches[0];
-        dx = t.clientX - el.getBoundingClientRect().left;
-        dy = t.clientY - el.getBoundingClientRect().top;
-      }, { passive: true });
       document.addEventListener('touchmove', e => {
         if (!drag) return;
         const t = e.touches[0];
@@ -1108,121 +1114,87 @@
         el.style.left = Math.max(0, t.clientX - wr2.left - dx) + 'px';
         el.style.top  = Math.max(0, t.clientY - wr2.top  - dy) + 'px';
       }, { passive: true });
-      document.addEventListener('touchend', () => {
-        if (drag) { drag = false; imgScheduleSnapshot(); }
-      });
-
-      // 入力確定でスナップショット
-      span.addEventListener('input', () => imgScheduleSnapshot());
-      span.addEventListener('blur',  () => {
-        if (!span.textContent.trim()) {
-          el.remove();
-          imgLabels = imgLabels.filter(l => l.el !== el);
-        }
-        imgScheduleSnapshot();
-      });
+      document.addEventListener('mouseup',  () => { if (drag) { drag = false; imgScheduleSnapshot(); } });
+      document.addEventListener('touchend', () => { if (drag) { drag = false; imgScheduleSnapshot(); } });
 
       document.getElementById('img-labels').appendChild(el);
-      imgLabels.push({ el, span });
-      setTimeout(() => { span.focus(); }, 30);
-      imgScheduleSnapshot();
+      imgLabels.push({ el, ta });
+      setTimeout(() => ta.focus(), 30);
     }
 
-    // ラベルをcanvasに焼き付けて export
     function imgExportWithLabels(quality = 0.8) {
       const canvas = document.getElementById('img-canvas');
       const wrap   = document.getElementById('img-canvas-wrap');
       const wr     = wrap.getBoundingClientRect();
-      const scX    = canvas.width  / wr.width;
-      const scY    = canvas.height / wr.height;
+      const scX    = canvas.width  / (wr.width  || 1);
+      const scY    = canvas.height / (wr.height || 1);
+      const sc     = (scX + scY) / 2;
 
       const merged = document.createElement('canvas');
       merged.width  = canvas.width;
       merged.height = canvas.height;
       const ctx = merged.getContext('2d');
-      // 背景（白）＋描画済みcanvas
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, merged.width, merged.height);
       ctx.drawImage(canvas, 0, 0);
-      // ラベルをcanvas座標に変換して描画
-      imgLabels.forEach(({ el, span }) => {
-        const elr  = el.getBoundingClientRect();
-        const text = span.textContent.trim();
+
+      // ラベルを canvas 座標に変換して複数行描画
+      imgLabels.forEach(({ el, ta }) => {
+        const text = ta.value.trim();
         if (!text) return;
+        const elr = el.getBoundingClientRect();
+        // el の wrap 内 CSS 座標 → canvas座標
         const cx = (elr.left - wr.left) * scX;
         const cy = (elr.top  - wr.top)  * scY;
-        const fs = parseFloat(span.style.fontSize) * ((scX + scY) / 2);
+        const fs = parseFloat(ta.style.fontSize || '20') * sc;
+        const lh = fs * 1.4;
+        // textarea の幅に合わせた折り返し幅（canvas px）
+        const boxW = ta.offsetWidth * scX;
+
         ctx.font      = `${fs}px 'Noto Sans JP', sans-serif`;
-        ctx.fillStyle = span.style.color || '#1e293b';
-        ctx.fillText(text, cx, cy + fs);
+        ctx.fillStyle = ta.style.color || '#1e293b';
+
+        // 背景（半透明白）
+        const lines = wrapText(ctx, text, boxW);
+        const padX  = 6 * scX;
+        const padY  = 6 * scY;
+        const bgH   = lines.length * lh + padY * 2;
+        const bgW   = Math.max(...lines.map(l => ctx.measureText(l).width)) + padX * 2;
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.beginPath();
+        ctx.roundRect(cx, cy, bgW, bgH, 4 * sc);
+        ctx.fill();
+
+        // テキスト描画
+        ctx.fillStyle = ta.style.color || '#1e293b';
+        lines.forEach((line, i) => {
+          ctx.fillText(line, cx + padX, cy + padY + fs + i * lh);
+        });
       });
       return merged.toDataURL('image/jpeg', quality);
     }
 
-    // 背景画像をcanvasにフィット描画
-    function imgDrawBg() {
-      console.log('[img] imgDrawBg called, bgImage:', !!imgBgImage, 'ctx:', !!imgCtx);
-      if (!imgBgImage || !imgCtx) return;
-      const canvas = document.getElementById('img-canvas');
-      imgCtx.fillStyle = 'white';
-      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
-      const scale = Math.min(canvas.width / imgBgImage.width, canvas.height / imgBgImage.height);
-      const x = (canvas.width  - imgBgImage.width  * scale) / 2;
-      const y = (canvas.height - imgBgImage.height * scale) / 2;
-      imgCtx.drawImage(imgBgImage, x, y, imgBgImage.width * scale, imgBgImage.height * scale);
+    // canvas上での折り返し計算
+    function wrapText(ctx, text, maxWidth) {
+      const result = [];
+      const rawLines = text.split('\n');
+      rawLines.forEach(rawLine => {
+        if (!rawLine) { result.push(''); return; }
+        let line = '';
+        for (const char of rawLine) {
+          const test = line + char;
+          if (maxWidth > 0 && ctx.measureText(test).width > maxWidth && line) {
+            result.push(line);
+            line = char;
+          } else {
+            line = test;
+          }
+        }
+        result.push(line);
+      });
+      return result;
     }
 
-    // WBのwbDrawと同じ構造（消しゴムは背景色で上書き）
-    function imgDraw(x, y) {
-      console.log('[img] imgDraw', x.toFixed(0), y.toFixed(0), 'tool:', imgTool, 'color:', imgColor);
-      imgCtx.beginPath();
-      imgCtx.moveTo(imgLX, imgLY);
-      imgCtx.lineTo(x, y);
-      imgCtx.globalCompositeOperation = 'source-over';
-      if (imgTool === 'eraser') {
-        imgCtx.strokeStyle = 'white';
-        imgCtx.lineWidth = imgSize * 5;
-      } else {
-        imgCtx.strokeStyle = imgColor;
-        imgCtx.lineWidth = imgSize;
-      }
-      imgCtx.lineCap = 'round';
-      imgCtx.lineJoin = 'round';
-      imgCtx.stroke();
-      imgLX = x; imgLY = y;
-      imgSignalDrawing(true);
-    }
-
-    window.setImgTool = function(tool) {
-      console.log('[img] setImgTool called:', tool, 'imgCtx:', !!imgCtx);
-      imgTool = tool;
-      document.getElementById('imgt-pen').classList.toggle('active', tool === 'pen');
-      document.getElementById('imgt-eraser').classList.toggle('active', tool === 'eraser');
-      document.getElementById('imgt-text').classList.toggle('active', tool === 'text');
-      document.getElementById('img-canvas').style.cursor = tool === 'text' ? 'text' : 'crosshair';
-    };
-    window.imgSetColor = function(el) {
-      console.log('[img] imgSetColor called:', el.dataset.color, 'imgCtx:', !!imgCtx);
-      imgColor = el.dataset.color;
-      document.querySelectorAll('#img-toolbar .wbc').forEach(d => d.classList.remove('active'));
-      el.classList.add('active');
-      // テキスト・ペンモード中は色だけ変更、消しゴム中はペンに戻す
-      if (imgTool === 'eraser') window.setImgTool('pen');
-      // テキスト入力中の色も更新
-      document.getElementById('img-text-input').style.color = imgColor;
-    };
-    window.imgSetSize = function(v) { imgSize = parseInt(v); };
-
-    // 全消し = 背景画像を再描画するだけ（WBのwbClearと同じ発想）
-    window.distImgClear = function() {
-      if (!imgCtx) return;
-      imgDrawBg();
-      document.getElementById('img-labels').innerHTML = '';
-      imgLabels = [];
-      imgScheduleSnapshot();
-    };
-
-    // スナップショットはcanvasをそのままJPEGに（背景+描画が合成済み）
     function imgScheduleSnapshot() {
       clearTimeout(imgSnapshotTimer);
       imgSnapshotTimer = setTimeout(() => {
@@ -1253,7 +1225,7 @@
         console.log('[img] bg image loaded', img.width, 'x', img.height);
         imgBgImage = img;
         // ツール・色・サイズをリセット
-        imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 4;
+        imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 8;
         document.getElementById('imgt-pen').classList.add('active');
         document.getElementById('imgt-eraser').classList.remove('active');
         document.getElementById('imgt-text').classList.remove('active');
@@ -1262,7 +1234,7 @@
         document.getElementById('img-labels').innerHTML = '';
         imgLabels = [];
         document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
-        document.getElementById('img-size').value = '4';
+        document.getElementById('img-size').value = '8';
         document.getElementById('img-submit-btn').innerHTML = '📤 提出';
         document.getElementById('img-submit-btn').classList.remove('submitted');
         document.getElementById('img-overlay').classList.add('show');

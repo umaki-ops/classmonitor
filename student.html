@@ -74,6 +74,12 @@
     flex-direction:column; align-items:center; justify-content:center; text-align:center; }
   #focus-overlay.show { display:flex; }
   #focus-overlay p { font-size:32px; opacity:.95; font-weight:800; line-height:1.5; max-width:80%; }
+  #msg-popup { display:none; position:fixed; top:24px; left:50%; transform:translateX(-50%);
+    z-index:9500; background:#1e40af; color:#fff; padding:14px 28px; border-radius:14px;
+    font-size:18px; font-weight:700; box-shadow:0 4px 24px rgba(0,0,0,.4);
+    max-width:80vw; text-align:center; pointer-events:none; }
+  #msg-popup.show { display:block; animation:popIn .25s ease; }
+  @keyframes popIn { from{opacity:0;transform:translateX(-50%) scale(.85)} to{opacity:1;transform:translateX(-50%) scale(1)} }
 
   /* ===== 先生画面オーバーレイ ===== */
   #teacher-overlay { display:none; position:fixed; inset:0; z-index:8000;
@@ -347,6 +353,11 @@
 <!-- 集中モード -->
 <div id="focus-overlay">
   <p>Chromebookの画面ではなく、黒板の方に注目してください</p>
+</div>
+
+<!-- メッセージポップアップ -->
+<div id="msg-popup">
+  <div id="msg-popup-text"></div>
 </div>
 
 <!-- 先生画面オーバーレイ -->
@@ -736,6 +747,7 @@
           if (!data?.command) return;
           if (_cmdSeen.has(snap.key)) return;
           _cmdSeen.add(snap.key);
+          console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'startTs:', _cmdStartTs);
           // 起動前に書かれた古いコマンドは無視（再ログイン時の誤作動防止）
           if (data.ts && data.ts < _cmdStartTs - 5000) return;
           handleCommand(data);
@@ -748,6 +760,15 @@
         if (active === false) hideTeacher();
       });
       listenMyGroup();
+
+      // main()内のローカル関数をHTMLのonclickから呼べるよう window に公開
+      window.hideTeacher  = window.hideTeacher || hideTeacher;
+      window.showFocus    = () => showFocus();
+      window.hideFocus    = () => hideFocus();
+      window.showMsgPopup = (t) => showMsgPopup(t);
+      window.hideWatch    = () => hideWatch();
+      window.wbOpen       = () => wbOpen();
+      window.wbClose      = () => wbClose();
     }); // end onAuthStateChanged
 
     // ===== WebRTC =====
@@ -863,12 +884,13 @@
       const el = document.getElementById('teacher-overlay');
       if (el) el.classList.add('show');
     }
-    function hideTeacher() {
+    window.hideTeacher = function hideTeacher() {
       const el = document.getElementById('teacher-overlay');
       if (el) { el.classList.remove('show'); }
       const v = document.getElementById('teacher-video');
       if (v) v.srcObject = null;
     }
+    function hideTeacher() { window.hideTeacher(); }
 
     // ===== 画面共有 =====
     window.startShare = async function() {
@@ -1445,6 +1467,7 @@
     // listenMyGroup はこの後に定義
 
     function handleCommand(data) {
+      console.log('[CMD]', data.command, data.text || '');
       if (data.command === 'focus') {
         showFocus();
       } else if (data.command === 'unfocus') {

@@ -158,9 +158,8 @@
   #wb-canvas { display:block; width:100%; height:100%; cursor:crosshair; touch-action:none; }
 
   /* テキスト入力 */
-  #wb-text-overlay { display:none; position:absolute; inset:0; z-index:10; }
-  #wb-text-overlay.show { display:block; }
-  #wb-text-input { position:absolute; background:transparent; border:none; border-bottom:2px solid #2563eb; outline:none; font-family:'Noto Sans JP',sans-serif; padding:2px 4px; caret-color:#2563eb; min-width:80px; max-width:260px; }
+  #wb-text-overlay { display:none; }  /* 使用停止 */
+  #wb-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   /* テキストラベル（ドラッグ可能） */
   #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   .img-label { position:absolute; pointer-events:all; user-select:none;
@@ -339,8 +338,8 @@
     <div class="wb-sep"></div>
     <select id="img-size" onchange="imgSetSize(this.value)" style="width:56px;height:36px;border:2px solid #e2e8f0;border-radius:8px;background:white;font-family:'Noto Sans JP',sans-serif;font-size:12px;font-weight:600;color:#1e293b;outline:none;text-align:center;cursor:pointer;">
       <option value="2">細</option>
-      <option value="4" selected>中</option>
-      <option value="8">太</option>
+      <option value="4">中</option>
+      <option value="8" selected>太</option>
       <option value="16">極太</option>
     </select>
     <div class="wb-sep"></div>
@@ -356,9 +355,7 @@
   </div>
   <div id="wb-canvas-wrap">
     <canvas id="wb-canvas"></canvas>
-    <div id="wb-text-overlay">
-      <input type="text" id="wb-text-input" />
-    </div>
+    <div id="wb-labels"></div>
   </div>
   <div id="wb-toolbar">
     <button class="wbt active" id="wbt-pen" onclick="wbSetTool('pen')" title="ペン">✏️</button>
@@ -373,8 +370,8 @@
     <div class="wb-sep"></div>
     <select id="wb-size" onchange="wbSetSize(this.value)">
       <option value="2">細</option>
-      <option value="4" selected>中</option>
-      <option value="8">太</option>
+      <option value="4">中</option>
+      <option value="8" selected>太</option>
       <option value="16">極太</option>
     </select>
     <div class="wb-sep"></div>
@@ -1401,7 +1398,8 @@
   main();
 
   // ===== WHITEBOARD ENGINE (グローバルスコープ) =====
-  let wbCtx = null, wbTool = 'pen', wbColor = '#1e293b', wbSize = 4;
+  let wbCtx = null, wbTool = 'pen', wbColor = '#1e293b', wbSize = 8;
+  let wbLabels = [];
   let wbDrawing = false, wbLX = 0, wbLY = 0;
   let wbSnapshotTimer = null, wbIsOpen = false;
   let wbDrawingSignaled = false, wbDrawingTimer = null;
@@ -1430,7 +1428,7 @@
 
     canvas.addEventListener('touchstart', e => {
       e.preventDefault();
-      if (wbTool === 'text') { wbTextAt(e.touches[0], canvas); return; }
+      if (wbTool === 'text') { wbAddLabel(e.touches[0].clientX, e.touches[0].clientY); return; }
       wbDrawing = true;
       const r = canvas.getBoundingClientRect();
       wbLX = e.touches[0].clientX - r.left;
@@ -1444,7 +1442,7 @@
     }, { passive: false });
     canvas.addEventListener('touchend', () => { wbDrawing = false; wbScheduleSnapshot(); });
     canvas.addEventListener('mousedown', e => {
-      if (wbTool === 'text') { wbTextAt(e, canvas); return; }
+      if (wbTool === 'text') { wbAddLabel(e.clientX, e.clientY); return; }
       wbDrawing = true;
       const r = canvas.getBoundingClientRect();
       wbLX = e.clientX - r.left; wbLY = e.clientY - r.top;
@@ -1456,15 +1454,7 @@
     });
     canvas.addEventListener('mouseup', () => { wbDrawing = false; wbScheduleSnapshot(); });
 
-    const ti = document.getElementById('wb-text-input');
-    ti.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { wbCommitText(); e.preventDefault(); }
-      if (e.key === 'Escape') { document.getElementById('wb-text-overlay').classList.remove('show'); ti.value = ''; }
-    });
-    ti.addEventListener('blur', () => {
-      if (ti.value.trim()) wbCommitText();
-      else document.getElementById('wb-text-overlay').classList.remove('show');
-    });
+
   }
 
   function wbDraw(x, y) {
@@ -1481,132 +1471,132 @@
     wbSignalDrawing();
   }
 
-  function wbTextAt(e, canvas) {
-    const r = canvas.getBoundingClientRect();
-    const x = (e.clientX || (e.touches && e.touches[0].clientX) || 0) - r.left;
-    const y = (e.clientY || (e.touches && e.touches[0].clientY) || 0) - r.top;
-    const ti = document.getElementById('wb-text-input');
-    const wr = document.getElementById('wb-canvas-wrap').getBoundingClientRect();
-    ti.style.left = (r.left - wr.left + x) + 'px';
-    ti.style.top = (r.top - wr.top + y - 22) + 'px';
-    ti.style.color = wbColor;
-    ti.style.fontSize = Math.max(12, wbSize * 3.5) + 'px';
-    ti._x = x; ti._y = y; ti.value = '';
-    document.getElementById('wb-text-overlay').classList.add('show');
-    setTimeout(() => ti.focus(), 50);
-  }
+  function wbAddLabel(clientX, clientY) {
+    const wrap = document.getElementById('wb-canvas-wrap');
+    const wr   = wrap.getBoundingClientRect();
+    let lx = Math.max(0, clientX - wr.left - 4);
+    let ly = Math.max(0, clientY - wr.top  - 4);
 
-  function wbCommitText() {
-    const ti = document.getElementById('wb-text-input');
-    const text = ti.value.trim();
-    if (text) {
-      wbCtx.globalCompositeOperation = 'source-over';
-      wbCtx.fillStyle = wbColor;
-      wbCtx.font = `${Math.max(12, wbSize * 3.5)}px 'Noto Sans JP', sans-serif`;
-      wbCtx.fillText(text, ti._x, ti._y + 20);
+    const el = document.createElement('div');
+    el.className = 'img-label';   // imgと同じCSSクラスを流用
+    el.style.left = lx + 'px';
+    el.style.top  = ly + 'px';
+
+    const del = document.createElement('div');
+    del.className = 'img-label-del';
+    del.textContent = '×';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      el.remove();
+      wbLabels = wbLabels.filter(l => l.el !== el);
       wbScheduleSnapshot();
-    }
-    document.getElementById('wb-text-overlay').classList.remove('show');
-    ti.value = '';
+    });
+
+    const ta = document.createElement('textarea');
+    ta.className = 'img-label-textarea';
+    ta.style.color    = wbColor;
+    ta.style.fontSize = Math.max(12, wbSize * 3.5) + 'px';
+    ta.placeholder = 'テキストを入力...';
+    ta.rows = 2;
+    ta.addEventListener('input', () => wbScheduleSnapshot());
+    ta.addEventListener('mousedown', e => e.stopPropagation());
+    ta.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+    el.appendChild(del);
+    el.appendChild(ta);
+
+    let drag = false, dx = 0, dy = 0;
+    el.addEventListener('mousedown', e => {
+      if (e.target === ta || e.target === del) return;
+      drag = true;
+      const er = el.getBoundingClientRect();
+      dx = e.clientX - er.left; dy = e.clientY - er.top;
+      e.preventDefault();
+    });
+    el.addEventListener('touchstart', e => {
+      if (e.target === ta || e.target === del) return;
+      drag = true;
+      const er = el.getBoundingClientRect();
+      dx = e.touches[0].clientX - er.left; dy = e.touches[0].clientY - er.top;
+    }, { passive: true });
+    document.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const wr2 = wrap.getBoundingClientRect();
+      el.style.left = Math.max(0, e.clientX - wr2.left - dx) + 'px';
+      el.style.top  = Math.max(0, e.clientY - wr2.top  - dy) + 'px';
+    });
+    document.addEventListener('touchmove', e => {
+      if (!drag) return;
+      const t = e.touches[0];
+      const wr2 = wrap.getBoundingClientRect();
+      el.style.left = Math.max(0, t.clientX - wr2.left - dx) + 'px';
+      el.style.top  = Math.max(0, t.clientY - wr2.top  - dy) + 'px';
+    }, { passive: true });
+    document.addEventListener('mouseup',  () => { if (drag) { drag = false; wbScheduleSnapshot(); } });
+    document.addEventListener('touchend', () => { if (drag) { drag = false; wbScheduleSnapshot(); } });
+
+    document.getElementById('wb-labels').appendChild(el);
+    wbLabels.push({ el, ta });
+    setTimeout(() => ta.focus(), 30);
   }
 
-  window.wbSetTool = function(t) {
-    wbTool = t;
-    ['pen','eraser','text'].forEach(n => document.getElementById('wbt-'+n)?.classList.toggle('active', n===t));
-    document.getElementById('wb-canvas').style.cursor = t==='text' ? 'text' : 'crosshair';
-  };
-  window.wbSetColor = function(el) {
-    wbColor = el.dataset.color;
-    document.querySelectorAll('.wbc').forEach(d => d.classList.remove('active'));
-    el.classList.add('active');
-    wbSetTool('pen');
-  };
-  window.wbSetSize = function(v) { wbSize = parseInt(v); };
-  window.wbClear = function() {
-    if (!wbCtx) return;
-    wbCtx.globalCompositeOperation = 'source-over';
-    wbCtx.fillStyle = 'white';
-    const c = document.getElementById('wb-canvas');
-    wbCtx.fillRect(0, 0, c.width, c.height);
-    // 背景画像があれば再描画
-    if (window._wbBgImage) {
-      setTimeout(() => wbApplyBgImage(window._wbBgImage), 10);
-    }
-    wbScheduleSnapshot();
-  };
-
-  // 背景画像をキャンバスに描画（描いた内容の下に敷く）
-  function wbApplyBgImage(dataUrl) {
-    if (!wbCtx) return; // WBがまだ開かれていない場合はスキップ（open時に適用）
+  // ラベルをcanvasに合成してexport
+  function wbExportWithLabels(quality = 0.4) {
     const canvas = document.getElementById('wb-canvas');
-    const img = new Image();
-    img.onload = () => {
-      // 現在の描画を保存
-      const drawn = wbCtx.getImageData(0, 0, canvas.width, canvas.height);
-      // 白背景
-      wbCtx.fillStyle = 'white';
-      wbCtx.fillRect(0, 0, canvas.width, canvas.height);
-      // 画像をアスペクト比を保ってフィット
-      const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-      const x = (canvas.width - img.width * scale) / 2;
-      const y = (canvas.height - img.height * scale) / 2;
-      wbCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
-      // 描画を上に重ねる（白ピクセル=未描画とみなしてスキップ）
-      // シンプルに上書き: 描画レイヤーをそのまま重ねる
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.putImageData(drawn, 0, 0);
-      wbCtx.drawImage(tempCanvas, 0, 0);
-    };
-    img.src = dataUrl;
-  }
+    const wrap   = document.getElementById('wb-canvas-wrap');
+    const wr     = wrap.getBoundingClientRect();
+    const scX    = canvas.width  / (wr.width  || 1);
+    const scY    = canvas.height / (wr.height || 1);
+    const sc     = (scX + scY) / 2;
 
-  // 背景画像なしでキャンバスをリセット
-  function wbClearBg() {
-    if (!wbCtx) return;
-    window._wbBgImage = null;
-    wbClear();
-  }
+    const merged = document.createElement('canvas');
+    merged.width  = canvas.width;
+    merged.height = canvas.height;
+    const ctx = merged.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, merged.width, merged.height);
+    ctx.drawImage(canvas, 0, 0);
 
-  function wbOpen() {
-    if (wbIsOpen) return;
-    wbIsOpen = true;
-    document.getElementById('wb-overlay').classList.add('show');
-    // レイアウト確定後に初期化（offsetWidth が 0 のまま wbInit するのを防ぐ）
-    setTimeout(() => {
-      if (!wbCtx) wbInit();
-      // 既に届いている指示があれば表示
-      const text = window._wbInstruction || '';
-      const el = document.getElementById('wb-instruction-text');
-      if (el) {
-        if (text) { el.textContent = text; el.classList.remove('empty'); }
-        else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
-      }
-      // 背景画像があれば適用
-      if (window._wbBgImage) {
-        setTimeout(() => wbApplyBgImage(window._wbBgImage), 50);
-      }
-    }, 50);
-    wbToast('📋 ホワイトボードが配布されました');
-  }
-  function wbClose() {
-    wbIsOpen = false;
-    document.getElementById('wb-overlay').classList.remove('show');
-  }
+    wbLabels.forEach(({ el, ta }) => {
+      const text = ta.value.trim();
+      if (!text) return;
+      const elr = el.getBoundingClientRect();
+      const cx  = (elr.left - wr.left) * scX;
+      const cy  = (elr.top  - wr.top)  * scY;
+      const fs  = parseFloat(ta.style.fontSize || '28') * sc;
+      const lh  = fs * 1.4;
+      const boxW = ta.offsetWidth * scX;
 
-  function wbSignalDrawing() {
-    if (!window.wbSid || !window.FBDB || !window.wbDb) return;
-    const { ref, set } = window.FBDB;
-    if (!wbDrawingSignaled) {
-      wbDrawingSignaled = true;
-      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), true);
-    }
-    clearTimeout(wbDrawingTimer);
-    wbDrawingTimer = setTimeout(() => {
-      wbDrawingSignaled = false;
-      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), false);
-    }, 1500);
+      ctx.font      = `${fs}px 'Noto Sans JP', sans-serif`;
+      ctx.fillStyle = ta.style.color || '#1e293b';
+
+      const rawLines = text.split('
+');
+      const lines = [];
+      rawLines.forEach(rawLine => {
+        if (!rawLine) { lines.push(''); return; }
+        let line = '';
+        for (const char of rawLine) {
+          const test = line + char;
+          if (boxW > 0 && ctx.measureText(test).width > boxW && line) {
+            lines.push(line); line = char;
+          } else { line = test; }
+        }
+        lines.push(line);
+      });
+
+      const padX = 6 * scX, padY = 6 * scY;
+      const bgW  = Math.max(...lines.map(l => ctx.measureText(l).width)) + padX * 2;
+      const bgH  = lines.length * lh + padY * 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx, cy, bgW, bgH, 4 * sc);
+      else ctx.rect(cx, cy, bgW, bgH);
+      ctx.fill();
+      ctx.fillStyle = ta.style.color || '#1e293b';
+      lines.forEach((line, i) => ctx.fillText(line, cx + padX, cy + padY + fs + i * lh));
+    });
+    return merged.toDataURL('image/jpeg', quality);
   }
 
   function wbScheduleSnapshot() {
@@ -1617,30 +1607,112 @@
   function wbSendSnapshot() {
     if (!window.wbSid || !window.FBDB || !wbCtx) return;
     const c = document.getElementById('wb-canvas');
-    if (c.width < 10 || c.height < 10) return; // サイズ未確定なら送らない
-    const data = c.toDataURL('image/jpeg', 0.4);
+    if (c.width < 10 || c.height < 10) return;
+    const data = wbExportWithLabels(0.4);
     const { ref, set } = window.FBDB;
     set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/snapshots/${window.wbSid}`), data);
   }
 
+  window.wbSetTool = function(t) {
+    wbTool = t;
+    ['pen','eraser','text'].forEach(n => document.getElementById('wbt-'+n)?.classList.toggle('active', n===t));
+    document.getElementById('wb-canvas').style.cursor = t==='text' ? 'text' : 'crosshair';
+  };
+
+  window.wbSetColor = function(el) {
+    wbColor = el.dataset.color;
+    document.querySelectorAll('.wbc').forEach(d => d.classList.remove('active'));
+    el.classList.add('active');
+    wbSetTool('pen');
+  };
+
+  window.wbSetSize = function(v) { wbSize = parseInt(v); };
+
+  window.wbClear = function() {
+    if (!wbCtx) return;
+    const c = document.getElementById('wb-canvas');
+    wbCtx.fillStyle = 'white';
+    wbCtx.fillRect(0, 0, c.width, c.height);
+    document.getElementById('wb-labels').innerHTML = '';
+    wbLabels = [];
+    wbScheduleSnapshot();
+  };
+
   window.wbSubmit = async function() {
     if (!window.wbSid || !window.FBDB || !wbCtx) return;
-    const btn = document.getElementById('wb-submit-btn');
-    btn.textContent = '送信中...';
     const c = document.getElementById('wb-canvas');
-    const data = c.toDataURL('image/jpeg', 0.75);
+    if (c.width < 10) return;
+    const data = wbExportWithLabels(0.8);
     const { ref, set } = window.FBDB;
+    const name = window.wbName || '';
     await set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/submissions/${window.wbSid}`), {
-      name: window.wbName, image: data, submittedAt: Date.now()
+      name, image: data, submittedAt: Date.now()
     });
-    btn.classList.add('submitted');
-    btn.innerHTML = '✅ 提出済';
-    wbToast('✅ 提出しました！');
+    const btn = document.getElementById('wb-submit-btn');
+    if (btn) { btn.textContent = '✅ 提出済み'; btn.disabled = true; }
+    wbSendSnapshot();
   };
+
+  function wbOpen() {
+    if (wbIsOpen) return;
+    wbIsOpen = true;
+    document.getElementById('wb-overlay').classList.add('show');
+    setTimeout(() => {
+      if (!wbCtx) wbInit();
+      const text = window._wbInstruction || '';
+      const el = document.getElementById('wb-instruction-text');
+      if (el) {
+        if (text) { el.textContent = text; el.classList.remove('empty'); }
+        else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
+      }
+      if (window._wbBgImage) setTimeout(() => wbApplyBgImage(window._wbBgImage), 50);
+    }, 50);
+    wbToast('📋 ホワイトボードが配布されました');
+  }
+
+  function wbClose() {
+    wbIsOpen = false;
+    document.getElementById('wb-overlay').classList.remove('show');
+    document.getElementById('wb-labels').innerHTML = '';
+    wbLabels = [];
+  }
+
+  function wbSignalDrawing() {
+    if (!window.wbSid || !window.FBDB) return;
+    clearTimeout(wbDrawingTimer);
+    if (!wbDrawingSignaled) {
+      wbDrawingSignaled = true;
+      const { ref, set } = window.FBDB;
+      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), true);
+    }
+    wbDrawingTimer = setTimeout(() => {
+      wbDrawingSignaled = false;
+      const { ref, set } = window.FBDB;
+      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), null);
+    }, 1500);
+  }
+
+  function wbApplyBgImage(dataUrl) {
+    if (!wbCtx) return;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.getElementById('wb-canvas');
+      wbCtx.fillStyle = 'white';
+      wbCtx.fillRect(0, 0, c.width, c.height);
+      const scale = Math.min(c.width / img.width, c.height / img.height);
+      const x = (c.width  - img.width  * scale) / 2;
+      const y = (c.height - img.height * scale) / 2;
+      wbCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
+      wbScheduleSnapshot();
+    };
+    img.src = dataUrl;
+  }
 
   function wbToast(msg) {
     const t = document.getElementById('wb-toast');
-    t.textContent = msg; t.classList.add('show');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2500);
   }
 

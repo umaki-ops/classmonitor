@@ -1122,6 +1122,94 @@
       setTimeout(() => ta.focus(), 30);
     }
 
+    window.setImgTool = function(tool) {
+      imgTool = tool;
+      document.getElementById('imgt-pen').classList.toggle('active', tool === 'pen');
+      document.getElementById('imgt-eraser').classList.toggle('active', tool === 'eraser');
+      document.getElementById('imgt-text').classList.toggle('active', tool === 'text');
+      document.getElementById('img-canvas').style.cursor = tool === 'text' ? 'text' : 'crosshair';
+    };
+
+    window.imgSetColor = function(el) {
+      imgColor = el.dataset.color;
+      document.querySelectorAll('#img-toolbar .wbc').forEach(d => d.classList.remove('active'));
+      el.classList.add('active');
+      if (imgTool === 'eraser') window.setImgTool('pen');
+    };
+
+    window.imgSetSize = function(v) { imgSize = parseInt(v); };
+
+    window.distImgClear = function() {
+      if (!imgCtx) return;
+      imgDrawBg();
+      document.getElementById('img-labels').innerHTML = '';
+      imgLabels = [];
+      imgScheduleSnapshot();
+    };
+
+    window.distImgSubmit = function() {
+      if (!imgCtx) return;
+      set(ref(db, `sessions/${sessionId}/distImg/submissions/${studentId}`), {
+        name: window._studentName || user.displayName || user.email,
+        image: imgExportWithLabels(),
+        submittedAt: Date.now()
+      });
+      const btn = document.getElementById('img-submit-btn');
+      btn.innerHTML = '✅ 提出済'; btn.classList.add('submitted');
+    };
+
+    window.hideDistImg = function() {
+      document.getElementById('img-overlay').classList.remove('show');
+      document.getElementById('img-labels').innerHTML = '';
+      imgLabels = [];
+      imgBgImage = null;
+      if (imgCtx) {
+        const canvas = document.getElementById('img-canvas');
+        imgCtx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    };
+
+    function showDistImg(dataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        imgBgImage = img;
+        imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 8;
+        document.getElementById('imgt-pen').classList.add('active');
+        document.getElementById('imgt-eraser').classList.remove('active');
+        document.getElementById('imgt-text').classList.remove('active');
+        document.getElementById('img-canvas').style.cursor = 'crosshair';
+        document.getElementById('img-labels').innerHTML = '';
+        imgLabels = [];
+        document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
+        document.getElementById('img-size').value = '8';
+        document.getElementById('img-submit-btn').innerHTML = '📤 提出';
+        document.getElementById('img-submit-btn').classList.remove('submitted');
+        document.getElementById('img-overlay').classList.add('show');
+        setTimeout(() => {
+          imgInitOnce();
+          const canvas = document.getElementById('img-canvas');
+          const wrap   = document.getElementById('img-canvas-wrap');
+          canvas.width  = wrap.offsetWidth;
+          canvas.height = wrap.offsetHeight;
+          imgCtx = canvas.getContext('2d');
+          imgDrawBg();
+        }, 50);
+      };
+      img.src = dataUrl;
+    }
+
+    function imgScheduleSnapshot() {
+      clearTimeout(imgSnapshotTimer);
+      imgSnapshotTimer = setTimeout(() => {
+        const snap = imgExportWithLabels(0.5);
+        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), snap);
+      }, 500);
+    }
+
+    function imgSignalDrawing(val) {
+      set(ref(db, `sessions/${sessionId}/distImg/drawing/${studentId}`), val || null);
+    }
+
     // 背景画像をcanvasにフィット描画
     function imgDrawBg() {
       if (!imgBgImage || !imgCtx) return;
@@ -1207,73 +1295,7 @@
       return result;
     }
 
-    function imgScheduleSnapshot() {
-      clearTimeout(imgSnapshotTimer);
-      imgSnapshotTimer = setTimeout(() => {
-        const snap = imgExportWithLabels(0.5);
-        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), snap);
-      }, 500);
-    }
-    function imgSignalDrawing(val) {
-      set(ref(db, `sessions/${sessionId}/distImg/drawing/${studentId}`), val || null);
-    }
 
-    window.distImgSubmit = function() {
-      if (!imgCtx) return;
-      set(ref(db, `sessions/${sessionId}/distImg/submissions/${studentId}`), {
-        name: window._studentName || user.displayName || user.email,
-        image: imgExportWithLabels(),
-        submittedAt: Date.now()
-      });
-      const btn = document.getElementById('img-submit-btn');
-      btn.innerHTML = '✅ 提出済'; btn.classList.add('submitted');
-    };
-
-    function showDistImg(dataUrl) {
-      console.log('[img] showDistImg called');
-      // 背景画像をロードしてから表示
-      const img = new Image();
-      img.onload = () => {
-        console.log('[img] bg image loaded', img.width, 'x', img.height);
-        imgBgImage = img;
-        // ツール・色・サイズをリセット
-        imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 8;
-        document.getElementById('imgt-pen').classList.add('active');
-        document.getElementById('imgt-eraser').classList.remove('active');
-        document.getElementById('imgt-text').classList.remove('active');
-        document.getElementById('img-canvas').style.cursor = 'crosshair';
-        // ラベルをすべてクリア
-        document.getElementById('img-labels').innerHTML = '';
-        imgLabels = [];
-        document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
-        document.getElementById('img-size').value = '8';
-        document.getElementById('img-submit-btn').innerHTML = '📤 提出';
-        document.getElementById('img-submit-btn').classList.remove('submitted');
-        document.getElementById('img-overlay').classList.add('show');
-        // overlay が表示された後にcanvasを初期化・背景描画
-        setTimeout(() => {
-          imgInitOnce();
-          const canvas = document.getElementById('img-canvas');
-          const wrap   = document.getElementById('img-canvas-wrap');
-          canvas.width  = wrap.offsetWidth;
-          canvas.height = wrap.offsetHeight;
-          imgCtx = canvas.getContext('2d');
-          imgDrawBg();
-        }, 50);
-      };
-      img.src = dataUrl;
-    }
-
-    window.hideDistImg = function() {
-      document.getElementById('img-overlay').classList.remove('show');
-      document.getElementById('img-labels').innerHTML = '';
-      imgLabels = [];
-      imgBgImage = null;
-      if (imgCtx) {
-        const canvas = document.getElementById('img-canvas');
-        imgCtx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-    };;
 
     function showTeacher() {
       hideSurvey(); // アンケート表示中でも先生画面を優先

@@ -727,15 +727,14 @@
       });
 
       // コマンド監視（個別 + 全体）- tsで重複処理を防ぐ
-      let lastCmdTs = { [studentId]: 0, all: 0 };
+      // コマンド: studentId宛 と all宛 を onChildAdded で確実に受け取る
+      const _cmdSeen = new Set();
       [studentId, 'all'].forEach(target => {
-        onValue(ref(db, `sessions/${sessionId}/commands/${target}`), snap => {
-          if (!snap.exists()) return;
+        onChildAdded(ref(db, `sessions/${sessionId}/cmds/${target}`), snap => {
           const data = snap.val();
           if (!data?.command) return;
-          // 同じtsのコマンドを2回処理しない
-          if (data.ts && data.ts <= lastCmdTs[target]) return;
-          lastCmdTs[target] = data.ts || Date.now();
+          if (_cmdSeen.has(snap.key)) return;
+          _cmdSeen.add(snap.key);
           handleCommand(data);
         });
       });
@@ -799,15 +798,16 @@
       try { await watchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
     async function handleTeacherWatchOffer(sdp) {
-      console.log('[TWO] handleTeacherWatchOffer called, sdp type:', sdp?.type, 'has sdp:', !!sdp?.sdp);
       if (twPc) { try { twPc.close(); } catch(e) {} }
       twPc = new RTCPeerConnection(ICE);
+      const twIceQueue = [];
+      let twRemoteSet = false;
+
       twPc.ontrack = e => {
-        console.log('[TWO] ontrack fired! streams:', e.streams.length, 'track:', e.track?.kind);
         const el = document.getElementById('teacher-video');
         if (el) {
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
-          el.play().catch(err => console.warn('[TWO] play error:', err));
+          el.play().catch(()=>{});
           showTeacher();
         }
       };
@@ -817,20 +817,38 @@
         });
       };
       twPc.onconnectionstatechange = () => {
-        console.log('[TW-STATE]', twPc.connectionState);
         if (twPc.connectionState === 'failed') { try { twPc.close(); } catch(e) {} twPc = null; }
       };
+
+      // ICEキューをドレインする関数
+      window._twDrainIce = async () => {
+        while (twIceQueue.length > 0) {
+          const c = twIceQueue.shift();
+          try { await twPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+        }
+      };
+      // handleTeacherWatchIce がキューを使えるように公開
+      window._twIceQueue = twIceQueue;
+      window._twRemoteSet = () => twRemoteSet;
+
       await twPc.setRemoteDescription(new RTCSessionDescription(sdp));
+      twRemoteSet = true;
       const ans = await twPc.createAnswer();
       await twPc.setLocalDescription(ans);
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twa`), {
         type:'tw-answer', from:studentId, to:'teacher', sdp:{type:ans.type,sdp:ans.sdp}
       });
+      // キューに溜まったICEを追加
+      await window._twDrainIce();
     }
     async function handleTeacherWatchIce(candidate) {
-      console.log('[TWICE] adding ICE, twPc state:', twPc?.signalingState, 'candidate:', !!candidate);
-      if (!twPc || !candidate) return;
-      try { await twPc.addIceCandidate(new RTCIceCandidate(candidate)); console.log('[TWICE] OK'); } catch(e) { console.warn('[TWICE] err:', e); }
+      if (!candidate) return;
+      // remoteDescriptionが設定される前はキューに溜める
+      if (!twPc || !window._twRemoteSet?.()) {
+        if (window._twIceQueue) window._twIceQueue.push(candidate);
+        return;
+      }
+      try { await twPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
     function showTeacher() {
       const el = document.getElementById('teacher-overlay');

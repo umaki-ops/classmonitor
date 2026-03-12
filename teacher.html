@@ -1021,11 +1021,14 @@ async function setHighBitrate(pc, kbps=4000){
 }
 
 async function setupTWPc(sid){
+  console.log('[TW] setupTWPc for', sid, 'stream:', !!teacherStream);
   if(!teacherStream){console.warn('[TW] no teacherStream');return;}
   try{
     if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
     const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
-    teacherStream.getTracks().forEach(t=>pc.addTrack(t,teacherStream));
+    const tracks=teacherStream.getTracks();
+    console.log('[TW] adding tracks:', tracks.length, tracks.map(t=>t.kind));
+    tracks.forEach(tr=>pc.addTrack(tr,teacherStream));
     pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
     pc.onconnectionstatechange=()=>{
       console.log('[TW->'+sid+']',pc.connectionState);
@@ -1128,7 +1131,7 @@ window.startSurvey=async function(){
   document.getElementById('ntbtn').textContent='👤 名前を表示';
   renderResults({});toast('📤 アンケートを送信しました');
 };
-window.endSurvey=async function(){const{ref,set}=window.FB;await set(ref(db,`sessions/${sessionId}/survey/active`),false);surveyActive=false;closeResults();toast('🛑 アンケートを終了しました');};
+window.endSurvey=async function(){const{ref,set}=window.FB;await set(ref(db,`sessions/${sessionId}/survey/active`),false);cmd('all','survey-close');surveyActive=false;closeResults();toast('🛑 アンケートを終了しました');};
 window.closeResults=function(){document.getElementById('results-panel').classList.remove('show');};
 window.toggleNames=function(){
   namesVisible=!namesVisible;
@@ -1164,7 +1167,7 @@ window.setQM=function(t){document.getElementById('minput').value=t;document.getE
 window.sendMessage=function(){const text=document.getElementById('minput').value.trim();if(!text){toast('⚠️ メッセージを入力してください');return;}cmd(msgTargetId||'all','message',{text});closeMsgModal();toast('💬 送信しました');};
 
 function sig(to,data){const{ref,set}=window.FB;set(ref(db,`sessions/${sessionId}/signals/${data.from}_${to}_${Date.now()}`),data);}
-function cmd(target,command,extra={}){const{ref,set}=window.FB;set(ref(db,`sessions/${sessionId}/commands/${target}`),{command,...extra,ts:Date.now()});}
+function cmd(target,command,extra={}){const{ref,set,push}=window.FB;const k=Date.now()+'_'+Math.random().toString(36).slice(2,6);set(ref(db,`sessions/${sessionId}/cmds/${target}/${k}`),{command,...extra,ts:Date.now()});}
 function sendMsg(target) {
   const msg = prompt(target === 'all' ? '全員へのメッセージ:' : `${students[target]?.name || target} へのメッセージ:`);
   if (!msg) return;

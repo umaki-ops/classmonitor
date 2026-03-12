@@ -989,7 +989,9 @@ async function startTS(){
     document.getElementById('tshare-btn').textContent='⏹ 共有停止';
     document.getElementById('tshare-btn').style.background='var(--red)';
     teacherStream.getVideoTracks()[0].onended=()=>stopTS();
-    cmd('all','teacherShare',{});
+    const {ref,set}=window.FB;
+        cmd('all','teacherShare',{});
+    set(ref(db,`sessions/${sessionId}/teacherSharing`),true);
     for(const sid of Object.keys(students))await setupTWPc(sid);
     toast('📺 先生の画面を全員に配信中');
   }catch(e){console.error('[startTS]',e);if(e.name!=='NotAllowedError')toast('❌ 画面共有エラー: '+e.message);}
@@ -1000,6 +1002,9 @@ function stopTS(){
   document.getElementById('tshare-btn').textContent='📺 画面を共有';
   document.getElementById('tshare-btn').style.background='';
   cmd('all','stopTeacherShare',{});
+  // フォールバック: teacherSharing ノードに false を書き込む
+  const {ref,set}=window.FB;
+  set(ref(db,`sessions/${sessionId}/teacherSharing`),false);
   for(const sid of Object.keys(twPcs))twPcs[sid]?.close();
   twPcs={};
   toast('⏹ 先生の画面共有を停止しました');

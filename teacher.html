@@ -457,31 +457,26 @@ window.startSession=async function(){
     teacherApp=window.FB.initializeApp({apiKey:ak,databaseURL:du,projectId:pi,authDomain:`${pi}.firebaseapp.com`},'t-'+Date.now());
     db=window.FB.getDatabase(teacherApp);
     teacherAuth=window.FB.getAuth(teacherApp);
-  }catch(e){toast('❌ '+e.message);return;}
+  }catch(e){toast('❌ Firebase初期化エラー: '+e.message);return;}
 
-  // Googleログイン
+  // 現在のログイン状態を確認（onAuthStateChangedで確実に取得）
   toast('🔐 Googleログインしてください...');
-  let teacherUser;
-  try{
-    // すでにログイン済みなら再利用
-    await new Promise(resolve=>{
-      const unsub=window.FB.onAuthStateChanged(teacherAuth,user=>{
-        unsub(); resolve(user);
-      });
-    }).then(async user=>{
-      if(user){
-        teacherUser=user;
-      } else {
-        const result=await window.FB.signInWithPopup(teacherAuth,new window.FB.GoogleAuthProvider());
-        teacherUser=result.user;
-      }
-    });
-  }catch(e){
-    if(e.code==='auth/popup-closed-by-user'){toast('⚠️ ログインをキャンセルしました');return;}
-    toast('❌ ログインエラー: '+e.message); return;
+  let teacherUser = await new Promise(resolve=>{
+    const unsub = window.FB.onAuthStateChanged(teacherAuth, user=>{ unsub(); resolve(user); });
+  });
+
+  // 未ログインならポップアップでログイン
+  if(!teacherUser){
+    try{
+      const result = await window.FB.signInWithPopup(teacherAuth, new window.FB.GoogleAuthProvider());
+      teacherUser = result.user;
+    }catch(e){
+      if(e.code==='auth/popup-closed-by-user'){toast('⚠️ ログインをキャンセルしました');return;}
+      toast('❌ ログインエラー: '+e.message); return;
+    }
   }
 
-  // ヘッダーに教員名表示
+  // この時点でteacherUserは必ず存在する
   const nameEl=document.getElementById('teacher-name-display');
   const logoutBtn=document.getElementById('teacher-logout-btn');
   if(nameEl) nameEl.textContent=teacherUser.displayName||teacherUser.email;

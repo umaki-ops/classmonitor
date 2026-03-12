@@ -957,7 +957,7 @@ async function handleAnswer(sid,sdp){
   if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
   try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
 }
-async async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
 // ===== Teacher screen → students =====
 let twPcs={};

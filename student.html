@@ -217,7 +217,7 @@
   .txt-box-ctrl {
     display: none;
     position: absolute;
-    top: -38px; left: 0;
+    bottom: -40px; left: 0;
     gap: 4px;
     z-index: 100;
     white-space: nowrap;
@@ -893,6 +893,7 @@
       imgResize();
       window.addEventListener('resize', imgResize);
       imgCanvas.addEventListener('pointerdown', e => {
+        if (_selectedTxt) { deselectTxt(); return; }  // テキスト選択中はペン不可
         imgDrawing = true;
         const r = imgCanvas.getBoundingClientRect();
         imgLX = (e.clientX-r.left)*imgCanvas.width/r.width;
@@ -1063,8 +1064,13 @@
       });
       moveBtn.addEventListener('pointermove', e => {
         if (!moveDrag) return;
-        wrap.style.left = (moveOX + e.clientX - moveSX) + 'px';
-        wrap.style.top  = (moveOY + e.clientY - moveSY) + 'px';
+        const parent = wrap.parentElement;
+        const maxX = parent ? parent.offsetWidth  - wrap.offsetWidth  : 9999;
+        const maxY = parent ? parent.offsetHeight - wrap.offsetHeight : 9999;
+        const nx = Math.max(0, Math.min(maxX, moveOX + e.clientX - moveSX));
+        const ny = Math.max(0, Math.min(maxY, moveOY + e.clientY - moveSY));
+        wrap.style.left = nx + 'px';
+        wrap.style.top  = ny + 'px';
       });
       moveBtn.addEventListener('pointerup', () => { moveDrag = false; });
 
@@ -1148,6 +1154,7 @@
       wbResize();
       window.addEventListener('resize', wbResize);
       wbCanvas.addEventListener('pointerdown', e => {
+        if (_selectedTxt) { deselectTxt(); return; }  // テキスト選択中はペン不可
         wbDrawing = true;
         const r = wbCanvas.getBoundingClientRect();
         wbLX = (e.clientX-r.left)*wbCanvas.width/r.width;
@@ -1357,6 +1364,7 @@
       gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
 
       canvas.addEventListener('pointerdown', e => {
+        if (_selectedTxt) { deselectTxt(); return; }
         gWbDrawing = true;
         const r = canvas.getBoundingClientRect();
         gWbLX = (e.clientX - r.left) * canvas.width / r.width;

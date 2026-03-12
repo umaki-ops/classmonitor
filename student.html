@@ -199,99 +199,112 @@
     border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
 
   /* ===== テキストボックス ===== */
-  /* ===== テキストボックス ===== */
   .txt-box-wrap {
     position: absolute;
-    min-width: 60px; min-height: 40px;
+    min-width: 80px;
     user-select: none;
     touch-action: none;
-    padding-bottom: 20px; /* 下部ハンドル分のスペース */
+    cursor: grab;
   }
-  .txt-box-wrap.selected {
-    outline: 1.5px dashed rgba(37,99,235,0.55);
-    outline-offset: 2px;
-    border-radius: 6px;
+  .txt-box-wrap.edit-mode {
+    cursor: default;
   }
-  .txt-box-input {
+  /* 非選択時: 文字のみ浮かぶ */
+  .txt-box-wrap .txt-box-input {
     display: block;
     width: 100%;
     background: transparent;
     border: none;
-    padding: 4px 8px;
+    padding: 6px 8px;
     font-size: 20px; font-weight: 700;
     font-family: 'Noto Sans JP', sans-serif;
-    color: #1e293b;
+    color: inherit;
     resize: none;
     outline: none;
     overflow: hidden;
     word-break: break-all;
     box-sizing: border-box;
-    cursor: text;
-    touch-action: auto;
-    caret-color: #2563eb;
-  }
-  /* 下部バー: 移動ハンドル(中央)＋削除(右)＋リサイズ(右端) */
-  .txt-bottom-bar {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 20px;
-    display: none;
-    align-items: center;
-    justify-content: center;
-  }
-  .txt-box-wrap.selected .txt-bottom-bar { display: flex; }
-  /* 移動ハンドル（下部中央） */
-  .txt-move-handle {
-    width: 44px; height: 18px;
-    background: rgba(37,99,235,0.75);
-    border-radius: 9px;
-    cursor: grab;
+    pointer-events: none; /* 移動モード中はタップ透過 */
     touch-action: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 11px;
-    letter-spacing: 2px;
-    user-select: none;
+    caret-color: #2563eb;
+    background: transparent;
+    cursor: grab;
   }
-  .txt-move-handle:active { cursor: grabbing; background: #1d4ed8; }
-  /* 削除ボタン（下部右） */
+  .txt-box-wrap.edit-mode .txt-box-input {
+    pointer-events: auto;
+    touch-action: auto;
+    cursor: text;
+  }
+  /* 選択・編集時の枠 */
+  .txt-box-wrap.selected .txt-box-input,
+  .txt-box-wrap.edit-mode .txt-box-input {
+    outline: 1.5px dashed rgba(37,99,235,0.55);
+    border-radius: 6px;
+  }
+  /* 削除ボタン（右上・選択時常時表示） */
   .txt-del-btn {
     position: absolute;
-    right: 0; bottom: 0;
-    width: 20px; height: 20px;
+    top: -11px; right: -11px;
+    width: 24px; height: 24px;
     background: #ef4444;
     color: #fff;
-    border: none;
-    border-radius: 4px;
-    font-size: 11px; font-weight: 700;
+    border: 2.5px solid #fff;
+    border-radius: 50%;
+    font-size: 12px; font-weight: 700;
     cursor: pointer;
     display: none;
     align-items: center; justify-content: center;
-    z-index: 20;
+    z-index: 30;
     touch-action: none;
     padding: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    line-height: 1;
   }
-  .txt-box-wrap.selected .txt-del-btn { display: flex; }
-  /* リサイズハンドル（右下角） */
+  .txt-box-wrap.selected .txt-del-btn,
+  .txt-box-wrap.edit-mode .txt-del-btn { display: flex; }
+  /* リサイズハンドル（右下・選択時常時表示） */
   .txt-resize-handle {
     position: absolute;
-    right: 20px; bottom: 0;
-    width: 20px; height: 20px;
-    background: rgba(37,99,235,0.6);
+    right: -11px; bottom: -11px;
+    width: 24px; height: 24px;
+    background: #2563eb;
     color: #fff;
-    border-radius: 4px;
+    border: 2.5px solid #fff;
+    border-radius: 50%;
     cursor: se-resize;
     touch-action: none;
     display: none;
     align-items: center; justify-content: center;
-    font-size: 10px;
-    z-index: 20;
+    font-size: 11px;
+    z-index: 30;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
   }
-  .txt-box-wrap.selected .txt-resize-handle { display: flex; }
-  /* 移動バー（後方互換）*/
+  .txt-box-wrap.selected .txt-resize-handle,
+  .txt-box-wrap.edit-mode .txt-resize-handle { display: flex; }
+  /* 編集モード中の「完了」ボタン */
+  .txt-done-btn {
+    position: absolute;
+    top: -11px; left: -11px;
+    height: 24px;
+    padding: 0 8px;
+    background: #22c55e;
+    color: #fff;
+    border: 2.5px solid #fff;
+    border-radius: 12px;
+    font-size: 11px; font-weight: 700;
+    cursor: pointer;
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 30;
+    touch-action: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    white-space: nowrap;
+  }
+  .txt-box-wrap.edit-mode .txt-done-btn { display: flex; }
+  /* 後方互換 */
   .txt-move-bar { display: none !important; }
+  .txt-bottom-bar { display: none !important; }
+  .txt-move-handle { display: none !important; }
 </style>
 </head>
 <body>
@@ -1134,76 +1147,121 @@
       if (!container) return;
 
       const wrap = document.createElement('div');
-      wrap.className = 'txt-box-wrap';
+      wrap.className = 'txt-box-wrap selected';
       wrap.style.cssText = 'left:60px;top:60px;width:200px;';
 
-      // テキストエリア（背景透明）
+      // テキストエリア
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input';
       ta.placeholder = 'テキスト入力';
       ta.style.color = color || '#1e293b';
       ta.rows = 2;
 
-      // 下部バー（移動ハンドル・リサイズ・削除）
-      const bottomBar = document.createElement('div');
-      bottomBar.className = 'txt-bottom-bar';
+      // 削除ボタン（右上）
+      const delBtn = document.createElement('button');
+      delBtn.className = 'txt-del-btn';
+      delBtn.innerHTML = '✕';
+      delBtn.title = '削除';
 
-      // 移動ハンドル（中央）
-      const moveHandle = document.createElement('div');
-      moveHandle.className = 'txt-move-handle';
-      moveHandle.innerHTML = '⠿⠿⠿';
-      moveHandle.title = 'ドラッグで移動';
-
-      // リサイズハンドル（右寄り）
+      // リサイズハンドル（右下）
       const resizeHandle = document.createElement('div');
       resizeHandle.className = 'txt-resize-handle';
       resizeHandle.innerHTML = '⤡';
 
-      // 削除ボタン（右端）
-      const delBtn = document.createElement('button');
-      delBtn.className = 'txt-del-btn';
-      delBtn.textContent = '✕';
-      delBtn.title = '削除';
+      // 完了ボタン（左上・編集モード時のみ）
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'txt-done-btn';
+      doneBtn.innerHTML = '✓ 完了';
+      doneBtn.title = '編集完了';
 
       wrap.appendChild(ta);
-      wrap.appendChild(bottomBar);
-      wrap.appendChild(resizeHandle);
       wrap.appendChild(delBtn);
+      wrap.appendChild(resizeHandle);
+      wrap.appendChild(doneBtn);
       container.appendChild(wrap);
 
       const lblObj = {
         el: wrap,
         getText: () => ta.value,
         getStyle: () => ({
-          left: parseInt(wrap.style.left), top: parseInt(wrap.style.top),
-          width: parseInt(wrap.style.width) || wrap.offsetWidth,
-          height: parseInt(wrap.style.height) || wrap.offsetHeight,
+          left: parseInt(wrap.style.left) || 0,
+          top:  parseInt(wrap.style.top)  || 0,
+          width: wrap.offsetWidth,
+          height: wrap.offsetHeight,
           color: ta.style.color, text: ta.value
         })
       };
       labelsArr.push(lblObj);
 
-      // ===== 移動: moveHandle をドラッグ =====
-      let moveDrag = false, moveSX, moveSY, moveOX, moveOY;
-      moveHandle.addEventListener('pointerdown', e => {
-        e.preventDefault(); e.stopPropagation();
+      // ===== モード管理 =====
+      // selected: 移動モード（シングルタップ後）
+      // edit-mode: 編集モード（ダブルタップ後）
+      // 両方なし: 非選択
+
+      function enterMoveMode() {
+        selectTxt(wrap);             // 他のboxを非選択に
+        wrap.classList.add('selected');
+        wrap.classList.remove('edit-mode');
+      }
+      function enterEditMode() {
         selectTxt(wrap);
+        wrap.classList.add('selected', 'edit-mode');
+        ta.focus();
+        // カーソルを末尾に
+        const len = ta.value.length;
+        ta.setSelectionRange(len, len);
+      }
+      function exitAll() {
+        wrap.classList.remove('selected', 'edit-mode');
+        ta.blur();
+      }
+
+      // ===== シングルタップ → 移動モード =====
+      // ダブルタップ → 編集モード
+      let tapTimer = null, tapCount = 0;
+      wrap.addEventListener('pointerdown', e => {
+        if (e.target === delBtn || e.target === resizeHandle || e.target === doneBtn) return;
+        // 編集モード中にテキストエリアをタップ → そのまま入力
+        if (wrap.classList.contains('edit-mode') && e.target === ta) return;
+        e.preventDefault();
+        tapCount++;
+        if (tapCount === 1) {
+          tapTimer = setTimeout(() => {
+            tapCount = 0;
+            enterMoveMode();
+          }, 250);
+        } else if (tapCount >= 2) {
+          clearTimeout(tapTimer);
+          tapCount = 0;
+          enterEditMode();
+        }
+      });
+
+      // ===== 移動: 移動モード中に wrap をドラッグ =====
+      let moveDrag = false, moveSX, moveSY, moveOX, moveOY, moveStarted = false;
+      wrap.addEventListener('pointerdown', e => {
+        if (e.target === delBtn || e.target === resizeHandle || e.target === doneBtn) return;
+        if (wrap.classList.contains('edit-mode')) return;
         moveDrag = true;
-        moveHandle.setPointerCapture(e.pointerId);
+        moveStarted = false;
+        wrap.setPointerCapture(e.pointerId);
         moveSX = e.clientX; moveSY = e.clientY;
         moveOX = parseInt(wrap.style.left) || 0;
         moveOY = parseInt(wrap.style.top)  || 0;
       });
-      moveHandle.addEventListener('pointermove', e => {
+      wrap.addEventListener('pointermove', e => {
         if (!moveDrag) return;
+        const dx = e.clientX - moveSX, dy = e.clientY - moveSY;
+        if (!moveStarted && Math.hypot(dx, dy) < 5) return;
+        moveStarted = true;
         const parent = wrap.parentElement;
         const maxX = parent ? parent.offsetWidth  - wrap.offsetWidth  : 9999;
         const maxY = parent ? parent.offsetHeight - wrap.offsetHeight : 9999;
-        wrap.style.left = Math.max(0, Math.min(maxX, moveOX + e.clientX - moveSX)) + 'px';
-        wrap.style.top  = Math.max(0, Math.min(maxY, moveOY + e.clientY - moveSY)) + 'px';
+        wrap.style.left = Math.max(0, Math.min(maxX, moveOX + dx)) + 'px';
+        wrap.style.top  = Math.max(0, Math.min(maxY, moveOY + dy)) + 'px';
       });
-      moveHandle.addEventListener('pointerup',    () => { moveDrag = false; });
-      moveHandle.addEventListener('pointercancel',() => { moveDrag = false; });
+      wrap.addEventListener('pointerup',    () => { moveDrag = false; });
+      wrap.addEventListener('pointercancel',() => { moveDrag = false; });
 
       // ===== リサイズ =====
       let resDrag = false, resSX, resSY, resOW, resOH;
@@ -1212,20 +1270,19 @@
         resDrag = true;
         resizeHandle.setPointerCapture(e.pointerId);
         resSX = e.clientX; resSY = e.clientY;
-        resOW = parseInt(wrap.style.width)  || wrap.offsetWidth;
+        resOW = wrap.offsetWidth;
         resOH = ta.offsetHeight;
       });
       resizeHandle.addEventListener('pointermove', e => {
         if (!resDrag) return;
-        wrap.style.width = Math.max(80, resOW + e.clientX - resSX) + 'px';
-        const newH = Math.max(36, resOH + e.clientY - resSY);
-        ta.style.height = newH + 'px';
+        wrap.style.width = Math.max(80,  resOW + e.clientX - resSX) + 'px';
+        ta.style.height  = Math.max(40, resOH + e.clientY - resSY) + 'px';
       });
       resizeHandle.addEventListener('pointerup',    () => { resDrag = false; });
       resizeHandle.addEventListener('pointercancel',() => { resDrag = false; });
 
       // ===== 削除 =====
-      delBtn.addEventListener('pointerdown', e => { e.stopPropagation(); });
+      delBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); });
       delBtn.addEventListener('click', e => {
         e.stopPropagation();
         wrap.remove();
@@ -1234,29 +1291,37 @@
         if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
       });
 
-      // ===== 選択 =====
-      ta.addEventListener('focus', () => selectTxt(wrap));
-      ta.addEventListener('pointerdown', e => { e.stopPropagation(); selectTxt(wrap); });
-      wrap.addEventListener('pointerdown', e => { selectTxt(wrap); });
+      // ===== 完了ボタン =====
+      doneBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); });
+      doneBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        wrap.classList.remove('edit-mode');
+        wrap.classList.add('selected');
+        ta.blur();
+      });
 
-      // テキスト変更時スナップショット
+      // ===== テキスト入力 =====
       ta.addEventListener('input', () => {
         if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
       });
+
+      // 初期状態: 移動モードで開始
+      enterMoveMode();
+      setTimeout(() => ta.focus(), 50); // 最初だけ入力できるように
       return lblObj;
     }
 
     function selectTxt(wrap) {
       if (_selectedTxt && _selectedTxt !== wrap) {
-        _selectedTxt.classList.remove('selected');
+        _selectedTxt.classList.remove('selected', 'edit-mode');
+        _selectedTxt.querySelector('.txt-box-input')?.blur();
       }
       _selectedTxt = wrap;
-      wrap.classList.add('selected');
     }
 
     // canvas外クリックで選択解除
     function deselectTxt() {
-      if (_selectedTxt) { _selectedTxt.classList.remove('selected'); _selectedTxt = null; }
+      if (_selectedTxt) { _selectedTxt.classList.remove('selected', 'edit-mode'); _selectedTxt = null; }
     }
 
     // テキストボックスをcanvasに焼き込む（提出・スナップショット用）
@@ -1268,8 +1333,8 @@
         ctx.save();
         ctx.font = `bold 18px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
-        const x = (st.left + 6) * scaleX;
-        let y = (st.top + 20) * scaleY;
+        const x = (st.left + 8) * scaleX;
+        let y = (st.top + 22) * scaleY;
         const lines = (st.text || '').split('\n');
         lines.forEach(line => {
           ctx.fillText(line, x, y);

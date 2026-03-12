@@ -444,7 +444,7 @@
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
 </script>
-<script>
+<script type="module">
 // Firebase が読み込まれるまでセッション開始ボタンを無効化
 (function(){
   const btn = document.querySelector('button[onclick="startSession()"]');

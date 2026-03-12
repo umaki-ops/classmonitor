@@ -440,7 +440,7 @@
 <div id="survey-overlay">
   <div class="survey-card">
     <div class="survey-header">
-      <div class="survey-type-icon" id="survey-type-icon">📊</div>
+      <span class="survey-type-icon" id="survey-type-icon">📊</span>
       <div>
         <div class="survey-type-label" id="survey-type-label">アンケート</div>
         <div style="font-size:11px;color:var(--text-muted);">先生からの質問</div>
@@ -758,12 +758,15 @@
         }
       });
 
+      // ===== アンケート監視（DB直接）=====
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
         if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
-        console.log('[SURVEY-DB] full sv:', JSON.stringify(sv));
-        if (sv.active) showSurvey(sv);
-        else hideSurvey();
+        if (sv && sv.active === true) {
+          showSurvey(sv);
+        } else {
+          hideSurvey();
+        }
       });
 
       // コマンド監視（個別 + 全体）- tsで重複処理を防ぐ
@@ -1498,67 +1501,96 @@
     }
 
     // ===== アンケート =====
-    function showSurvey(sv) {
-      console.log('[showSurvey] called. sv=', JSON.stringify(sv));
-      if (!sv) { console.warn('[showSurvey] sv is null/undefined'); return; }
+    let _surveyAnswered = false;
 
-      // オーバーレイ表示
+    function showSurvey(sv) {
+      if (!sv || !sv.question) return;
+      _surveyAnswered = false;
+
       const overlay = document.getElementById('survey-overlay');
-      if (!overlay) { console.warn('[showSurvey] survey-overlay NOT FOUND'); return; }
-      overlay.classList.add('show');
+      if (!overlay) return;
 
       // 質問文
       const qEl = document.getElementById('survey-q-text');
-      console.log('[showSurvey] survey-q-text el:', !!qEl, 'question:', sv.question);
-      if (qEl) qEl.textContent = sv.question || '（質問なし）';
+      if (qEl) qEl.textContent = sv.question;
 
-      // タイプラベル
+      // タイプラベル・アイコン
       const lbl = document.getElementById('survey-type-label');
-      if (lbl) lbl.textContent = sv.type === 'choice' ? '選択式アンケート' : '自由記述アンケート';
+      const icon = document.getElementById('survey-type-icon');
+      if (sv.type === 'choice') {
+        if (lbl) lbl.textContent = '選択式アンケート';
+        if (icon) icon.textContent = '📊';
+      } else {
+        if (lbl) lbl.textContent = '自由記述アンケート';
+        if (icon) icon.textContent = '✏️';
+      }
 
-      // 回答エリア
+      // 回答エリア構築
       const area = document.getElementById('survey-body');
-      console.log('[showSurvey] survey-body el:', !!area, 'type:', sv.type, 'choices:', sv.choices);
-      if (!area) { console.warn('[showSurvey] survey-body NOT FOUND'); return; }
+      if (!area) return;
       area.innerHTML = '';
 
       if (sv.type === 'choice') {
-        const choices = Array.isArray(sv.choices) ? sv.choices : Object.values(sv.choices || {});
-        console.log('[showSurvey] rendering choices:', choices);
-        choices.forEach(c => {
+        // 選択肢を配列に正規化（Firebase は配列をオブジェクトに変換する場合あり）
+        const choices = Array.isArray(sv.choices)
+          ? sv.choices
+          : Object.values(sv.choices || {});
+        choices.forEach((c, i) => {
           const btn = document.createElement('button');
-          btn.className = 'survey-choice-btn';
-          btn.textContent = c;
-          btn.onclick = () => submitSurvey(c);
+          btn.className = 'choice-btn';
+          btn.innerHTML = `<span class="choice-label-badge">${String.fromCharCode(65+i)}</span><span>${c}</span>`;
+          btn.onclick = () => {
+            if (_surveyAnswered) return;
+            doSubmitSurvey(c, btn, area);
+          };
           area.appendChild(btn);
         });
       } else {
+        // 自由記述
         const ta = document.createElement('textarea');
         ta.id = 'survey-free-text';
         ta.placeholder = '回答を入力...';
-        ta.style.cssText = 'width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-size:15px;min-height:80px;resize:vertical;box-sizing:border-box;margin-bottom:8px;';
+        ta.style.cssText = 'width:100%;padding:10px;border-radius:8px;border:1.5px solid var(--border);font-size:15px;min-height:90px;resize:vertical;box-sizing:border-box;margin-bottom:10px;font-family:inherit;';
         area.appendChild(ta);
         const btn = document.createElement('button');
-        btn.className = 'survey-choice-btn';
-        btn.style.cssText = 'width:100%;margin-top:4px;';
-        btn.textContent = '送信';
+        btn.style.cssText = 'width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;';
+        btn.textContent = '送信する';
         btn.onclick = () => {
-          const val = document.getElementById('survey-free-text')?.value || '';
-          submitSurvey(val);
+          if (_surveyAnswered) return;
+          const val = (document.getElementById('survey-free-text')?.value || '').trim();
+          if (!val) { ta.style.borderColor='#ef4444'; ta.focus(); return; }
+          doSubmitSurvey(val, btn, area);
         };
         area.appendChild(btn);
+      }
+
+      overlay.classList.add('show');
+    }
+
+    async function doSubmitSurvey(answer, triggerEl, area) {
+      _surveyAnswered = true;
+      try {
+        await set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
+          name: window.wbName || studentId,
+          answer,
+          ts: Date.now()
+        });
+        // 回答済み表示
+        area.innerHTML = '';
+        const done = document.createElement('div');
+        done.style.cssText = 'text-align:center;padding:20px 0;font-size:15px;color:#16a34a;font-weight:700;';
+        done.innerHTML = '✅ 回答を送信しました';
+        area.appendChild(done);
+      } catch(e) {
+        _surveyAnswered = false;
+        alert('送信に失敗しました。もう一度お試しください。');
       }
     }
 
     function hideSurvey() {
       const overlay = document.getElementById('survey-overlay');
       if (overlay) overlay.classList.remove('show');
-    }
-    async function submitSurvey(answer) {
-      await set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
-        name: window.wbName || studentId, answer, ts: Date.now()
-      });
-      hideSurvey();
+      _surveyAnswered = false;
     }
 
     // ===== グループ監視 =====
@@ -1573,10 +1605,9 @@
       } else if (data.command === 'message') {
         showMsgPopup(data.text);
       } else if (data.command === 'survey-open') {
-        // DBから直接取得（cmds経由のsurveyデータは信頼しない）
+        // onValue が自動で拾うので何もしなくてよい（念のためDB再読）
         get(ref(db, `sessions/${sessionId}/survey`)).then(snap => {
-          console.log('[SURVEY-OPEN] DB snap:', snap.exists(), snap.val()?.question?.slice(0,20));
-          if (snap.exists() && snap.val().active) showSurvey(snap.val());
+          if (snap.exists() && snap.val()?.active) showSurvey(snap.val());
         });
       } else if (data.command === 'survey-close') {
         hideSurvey();

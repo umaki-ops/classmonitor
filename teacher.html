@@ -891,9 +891,7 @@ function listenStudents(){
     else if(sig.type==='watch-answer')handleWatchAnswer(sig.from,sig.sdp);
     else if(sig.type==='watch-answer-ice')handleWatchAnswerIce(sig.from,sig.candidate);
   });
-  window.FB.onValue(window.FB.ref(db,`sessions/${sessionId}/surveyAnswers`),snap=>{
-    if(surveyActive)renderResults(snap.exists()?snap.val():{});
-  });
+  startListenAnswers();
 }
 
 // ===== WebRTC Monitoring =====
@@ -1119,24 +1117,33 @@ window.addChoice=function(){const c=document.getElementById('choices');const n=c
 window.removeChoice=function(btn){const c=document.getElementById('choices');btn.closest('.choice-row').remove();Array.from(c.children).forEach((row,i)=>{row.querySelector('.clabel').textContent=LABELS[i];row.querySelector('input').placeholder='選択肢'+LABELS[i];});document.getElementById('add-ch-btn').style.display='';updateRmBtns();};
 function updateRmBtns(){const rows=Array.from(document.getElementById('choices').children);rows.forEach(row=>{const b=row.querySelector('.rm-ch');if(b)b.style.display=rows.length>2?'':'none';});}
 window.startSurvey=async function(){
-  const q=document.getElementById('sq').value.trim();if(!q){toast('⚠️ 質問文を入力してください');return;}
+  const q=document.getElementById('sq').value.trim();
+  if(!q){toast('⚠️ 質問文を入力してください');return;}
   let choices=[];
-  if(surveyType==='choice'){choices=Array.from(document.querySelectorAll('.ci')).map(i=>i.value.trim()).filter(Boolean);if(choices.length<2){toast('⚠️ 選択肢を2つ以上入力してください');return;}}
+  if(surveyType==='choice'){
+    choices=Array.from(document.querySelectorAll('.ci')).map(i=>i.value.trim()).filter(Boolean);
+    if(choices.length<2){toast('⚠️ 選択肢を2つ以上入力してください');return;}
+  }
   const{ref,set,remove}=window.FB;
+  // 前の回答をクリア
   await remove(ref(db,`sessions/${sessionId}/surveyAnswers`));
-  const surveyData={type:surveyType,question:q,choices,active:true,ts:Date.now()};
+  // survey ノードに書き込む（choices は配列のまま保存）
+  const surveyData={type:surveyType,question:q,choices:choices,active:true,ts:Date.now()};
   await set(ref(db,`sessions/${sessionId}/survey`),surveyData);
-  cmd('all','survey-open',{survey:surveyData});
+  // cmds は使わない（onValue で生徒が自動検知）
   surveyActive=true;namesVisible=false;
+  _surveyCurrentData=surveyData;
+  _surveyAnswers={};
   document.getElementById('survey-panel').classList.remove('show');
   document.getElementById('results-panel').classList.add('show');
   document.getElementById('rtitle').textContent=surveyType==='choice'?'📊 リアルタイム集計':'✏️ 自由記述回答';
   document.getElementById('rq').textContent=q;
   document.getElementById('name-toggle-area').style.display='';
   document.getElementById('ntbtn').textContent='👤 名前を表示';
-  renderResults({});toast('📤 アンケートを送信しました');
+  renderResultsUI();
+  toast('📤 アンケートを送信しました');
 };
-window.endSurvey=async function(){const{ref,set}=window.FB;await set(ref(db,`sessions/${sessionId}/survey/active`),false);cmd('all','survey-close');surveyActive=false;closeResults();toast('🛑 アンケートを終了しました');};
+window.endSurvey=async function(){const{ref,set}=window.FB;await set(ref(db,`sessions/${sessionId}/survey/active`),false);surveyActive=false;if(_surveyAnswersUnsub){_surveyAnswersUnsub();_surveyAnswersUnsub=null;}closeResults();toast('🛑 アンケートを終了しました');};
 window.closeResults=function(){document.getElementById('results-panel').classList.remove('show');};
 window.toggleNames=function(){
   namesVisible=!namesVisible;
@@ -1146,24 +1153,59 @@ window.toggleNames=function(){
   // 選択式の投票者名
   document.querySelectorAll('.bar-voters').forEach(el=>el.classList.toggle('hidden',!namesVisible));
 };
-function renderResults(answers){
-  window.FB.onValue(window.FB.ref(db,`sessions/${sessionId}/survey`),snap=>{if(!snap.exists())return;const sv=snap.val();const rc=document.getElementById('rcontent');if(sv.type==='choice')renderChoice(sv,answers,rc);else renderFree(answers,rc);},{onlyOnce:true});
+// アンケート結果のインメモリキャッシュ
+let _surveyAnswers = {};
+let _surveyCurrentData = null;
+let _surveyAnswersUnsub = null;
+
+function startListenAnswers() {
+  if (_surveyAnswersUnsub) { _surveyAnswersUnsub(); _surveyAnswersUnsub = null; }
+  const {ref, onChildAdded} = window.FB;
+  _surveyAnswersUnsub = onChildAdded(ref(db, `sessions/${sessionId}/surveyAnswers`), snap => {
+    if (!snap.exists()) return;
+    _surveyAnswers[snap.key] = snap.val();
+    if (surveyActive) renderResultsUI();
+  });
 }
-function renderChoice(sv,answers,c){
-  const votes={};const vnames={};sv.choices.forEach(ch=>{votes[ch]=0;vnames[ch]=[];});Object.values(answers).forEach(a=>{if(votes[a.answer]!==undefined){votes[a.answer]++;vnames[a.answer].push(a.name);}});
-  const total=Object.values(answers).length;const cols=['bc0','bc1','bc2','bc3'];
-  c.innerHTML=sv.choices.map((ch,i)=>{
-    const cnt=votes[ch]||0;const pct=total>0?Math.round(cnt/total*100):0;
-    const names=vnames[ch].join('、');
-    // namesVisible の状態に応じて hidden クラスを付与
-    const hiddenClass=namesVisible?'':'hidden';
+
+function renderResultsUI() {
+  const sv = _surveyCurrentData;
+  const rc = document.getElementById('rcontent');
+  if (!sv || !rc) return;
+  const answers = _surveyAnswers;
+  if (sv.type === 'choice') renderChoice(sv, answers, rc);
+  else renderFree(answers, rc);
+}
+
+function renderChoice(sv, answers, c) {
+  const choices = Array.isArray(sv.choices) ? sv.choices : Object.values(sv.choices || {});
+  const votes = {}; const vnames = {};
+  choices.forEach(ch => { votes[ch] = 0; vnames[ch] = []; });
+  Object.values(answers).forEach(a => {
+    if (votes[a.answer] !== undefined) { votes[a.answer]++; vnames[a.answer].push(a.name); }
+  });
+  const total = Object.values(answers).length;
+  const cols = ['bc0','bc1','bc2','bc3'];
+  c.innerHTML = choices.map((ch, i) => {
+    const cnt = votes[ch] || 0;
+    const pct = total > 0 ? Math.round(cnt / total * 100) : 0;
+    const names = vnames[ch].join('、');
+    const hiddenClass = namesVisible ? '' : 'hidden';
     return `<div class="bar-row"><div class="bar-label"><span>${LABELS[i]}. ${esc(ch)}</span><span class="bar-count">${cnt}票 (${pct}%)</span></div><div class="bar-track"><div class="bar-fill ${cols[i]}" style="width:${pct}%">${pct>15?pct+'%':''}</div></div>${names?`<div class="bar-voters ${hiddenClass}">${esc(names)}</div>`:''}</div>`;
-  }).join('')+`<div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">回答数: ${total} / ${Object.keys(students).length}</div>`;
+  }).join('') + `<div style="margin-top:10px;font-size:11px;color:var(--muted);">回答数: ${total} / ${Object.keys(students).length}人</div>`;
 }
-function renderFree(answers,c){
-  const items=Object.values(answers);const total=Object.keys(students).length;
-  c.innerHTML=items.length===0?`<div style="text-align:center;color:var(--muted);padding:22px;font-size:13px;">まだ回答がありません</div>`:items.map(a=>`<div class="free-item"><div class="free-text">${esc(a.answer)}</div><div class="free-name${namesVisible?'':' hidden'}">— ${esc(a.name)}</div></div>`).join('')+`<div style="margin-top:7px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;">回答数: ${items.length} / ${total}</div>`;
+
+function renderFree(answers, c) {
+  const items = Object.values(answers);
+  const total = Object.keys(students).length;
+  c.innerHTML = items.length === 0
+    ? `<div style="text-align:center;color:var(--muted);padding:22px;font-size:13px;">まだ回答がありません</div>`
+    : items.map(a => `<div class="free-item"><div class="free-text">${esc(a.answer)}</div><div class="free-name${namesVisible?'':' hidden'}">— ${esc(a.name)}</div></div>`).join('')
+      + `<div style="margin-top:7px;font-size:11px;color:var(--muted);">回答数: ${items.length} / ${total}人</div>`;
 }
+
+// 後方互換（古い呼び出し箇所があれば対応）
+function renderResults(answers) { renderResultsUI(); }
 
 // ===== Messages =====
 window.openMsgModal=function(sid){msgTargetId=sid;document.getElementById('mtarget').textContent=sid?`送信先: ${students[sid]?.name||'生徒'}`:'送信先: 全員';document.getElementById('minput').value='';document.getElementById('msg-modal').classList.add('show');setTimeout(()=>document.getElementById('minput').focus(),100);};

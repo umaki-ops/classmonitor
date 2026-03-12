@@ -330,14 +330,14 @@
   </div>
   <div class="card-body">
 
-    <div class="state" id="state-loading">
+    <div id="state-loading" class="state active">
       <div style="text-align:center;padding:20px 0;">
         <div class="spinner"></div>
         <p style="color:var(--text-muted);font-size:13px;">接続しています...</p>
       </div>
     </div>
 
-    <div class="state active" id="state-login">
+    <div id="state-login" class="state">
       <div style="text-align:center;margin-bottom:24px;">
         <div style="font-size:40px;margin-bottom:12px;">👋</div>
         <div style="font-size:16px;font-weight:700;margin-bottom:6px;">ログインしてください</div>
@@ -354,20 +354,20 @@
       </button>
     </div>
 
-    <div class="state" id="state-connected">
+    <div id="state-connected" class="state">
       <p class="status-bar" id="status-bar">画面共有を開始してください</p>
       <button class="share-btn" id="share-btn">📡 画面を共有する</button>
       <p class="share-note">「画面全体」を選択してください</p>
     </div>
 
-    <div class="state" id="state-live">
+    <div id="state-live" class="state">
       <p class="status-bar" id="live-status-bar">📡 画面共有中</p>
       <video id="preview-video" autoplay muted playsinline
         style="width:100%;border-radius:10px;background:#000;max-height:180px;"></video>
       <button class="share-btn stop" id="stop-btn" style="margin-top:12px;">⏹ 共有を停止する</button>
     </div>
 
-    <div class="state" id="state-error">
+    <div id="state-error" class="state">
       <div style="text-align:center;padding:20px 0;">
         <div style="font-size:40px;margin-bottom:12px;">⚠️</div>
         <p id="error-msg" style="color:#dc2626;font-size:14px;"></p>
@@ -585,8 +585,9 @@
     document.getElementById('session-id-text').textContent = 'セッション: ' + (sessionId || '不明');
 
     if (!sessionId || !dbUrl || !apiKey) {
-      // パラメータなし = 直接アクセス → ログイン画面を表示（先生がURLを送るまで待機）
-      showState('login');
+      // パラメータなし = 直接アクセス → エラー表示
+      showState('error');
+      document.getElementById('error-msg').textContent = '先生から共有されたURLでアクセスしてください。';
       return;
     }
 
@@ -624,7 +625,7 @@
     // currentUser が即座に取れる場合はすぐ処理、取れない場合は2秒でloginへ
     const _authTimeout = setTimeout(() => {
       if (!_initialized) showState('login');
-    }, 2000);
+    }, 3000);
 
     onAuthStateChanged(auth, async (user) => {
       clearTimeout(_authTimeout);

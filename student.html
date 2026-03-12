@@ -74,12 +74,16 @@
     flex-direction:column; align-items:center; justify-content:center; text-align:center; }
   #focus-overlay.show { display:flex; }
   #focus-overlay p { font-size:32px; opacity:.95; font-weight:800; line-height:1.5; max-width:80%; }
-  #msg-popup { display:none; position:fixed; top:24px; left:50%; transform:translateX(-50%);
-    z-index:9500; background:#1e40af; color:#fff; padding:14px 28px; border-radius:14px;
-    font-size:18px; font-weight:700; box-shadow:0 4px 24px rgba(0,0,0,.4);
-    max-width:80vw; text-align:center; pointer-events:none; }
+  #msg-popup { display:none; position:fixed; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    z-index:9500; background:#fff; color:#1e293b;
+    padding:28px 40px; border-radius:18px;
+    font-size:24px; font-weight:800;
+    box-shadow:0 8px 40px rgba(0,0,0,.25);
+    max-width:80vw; text-align:center; pointer-events:none;
+    border: 3px solid #2563eb; }
   #msg-popup.show { display:block; animation:popIn .25s ease; }
-  @keyframes popIn { from{opacity:0;transform:translateX(-50%) scale(.85)} to{opacity:1;transform:translateX(-50%) scale(1)} }
+  @keyframes popIn { from{opacity:0;transform:translate(-50%,-50%) scale(.85)} to{opacity:1;transform:translate(-50%,-50%) scale(1)} }
 
   /* ===== 先生画面オーバーレイ ===== */
   #teacher-overlay { display:none; position:fixed; inset:0; z-index:8000;
@@ -198,23 +202,22 @@
   /* ===== テキストボックス ===== */
   .txt-box-wrap {
     position: absolute;
-    min-width: 60px; min-height: 32px;
-    cursor: grab;
+    min-width: 60px; min-height: 40px;
     user-select: none;
     touch-action: none;
+    padding-bottom: 20px; /* 下部ハンドル分のスペース */
   }
-  .txt-box-wrap:active { cursor: grabbing; }
   .txt-box-wrap.selected {
-    outline: 1.5px dashed rgba(37,99,235,0.6);
+    outline: 1.5px dashed rgba(37,99,235,0.55);
     outline-offset: 2px;
     border-radius: 6px;
   }
   .txt-box-input {
     display: block;
-    width: 100%; height: 100%;
+    width: 100%;
     background: transparent;
     border: none;
-    padding: 4px 26px 4px 6px;
+    padding: 4px 8px;
     font-size: 20px; font-weight: 700;
     font-family: 'Noto Sans JP', sans-serif;
     color: #1e293b;
@@ -227,15 +230,41 @@
     touch-action: auto;
     caret-color: #2563eb;
   }
-  /* 削除ボタン（右上・選択時のみ） */
+  /* 下部バー: 移動ハンドル(中央)＋削除(右)＋リサイズ(右端) */
+  .txt-bottom-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 20px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .txt-box-wrap.selected .txt-bottom-bar { display: flex; }
+  /* 移動ハンドル（下部中央） */
+  .txt-move-handle {
+    width: 44px; height: 18px;
+    background: rgba(37,99,235,0.75);
+    border-radius: 9px;
+    cursor: grab;
+    touch-action: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 11px;
+    letter-spacing: 2px;
+    user-select: none;
+  }
+  .txt-move-handle:active { cursor: grabbing; background: #1d4ed8; }
+  /* 削除ボタン（下部右） */
   .txt-del-btn {
     position: absolute;
-    top: -10px; right: -10px;
-    width: 22px; height: 22px;
+    right: 0; bottom: 0;
+    width: 20px; height: 20px;
     background: #ef4444;
     color: #fff;
-    border: 2px solid #fff;
-    border-radius: 50%;
+    border: none;
+    border-radius: 4px;
     font-size: 11px; font-weight: 700;
     cursor: pointer;
     display: none;
@@ -243,28 +272,25 @@
     z-index: 20;
     touch-action: none;
     padding: 0;
-    box-shadow: 0 1px 4px rgba(0,0,0,.3);
   }
   .txt-box-wrap.selected .txt-del-btn { display: flex; }
-  /* リサイズハンドル（右下・選択時のみ） */
+  /* リサイズハンドル（右下角） */
   .txt-resize-handle {
     position: absolute;
-    right: -8px; bottom: -8px;
-    width: 18px; height: 18px;
-    background: #2563eb;
+    right: 20px; bottom: 0;
+    width: 20px; height: 20px;
+    background: rgba(37,99,235,0.6);
     color: #fff;
-    border-radius: 50%;
-    border: 2px solid #fff;
+    border-radius: 4px;
     cursor: se-resize;
     touch-action: none;
     display: none;
     align-items: center; justify-content: center;
     font-size: 10px;
     z-index: 20;
-    box-shadow: 0 1px 4px rgba(0,0,0,.3);
   }
   .txt-box-wrap.selected .txt-resize-handle { display: flex; }
-  /* 移動バー（非表示・後方互換）*/
+  /* 移動バー（後方互換）*/
   .txt-move-bar { display: none !important; }
 </style>
 </head>
@@ -481,7 +507,7 @@
 <script type="module">
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, update, onValue, onChildAdded } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import { getDatabase, ref, set, update, onValue, onChildAdded, get} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   // ===== 状態管理 =====
@@ -643,7 +669,8 @@
 
       // アンケート監視 - 変更のたびに発火
       // WB用にwindowに公開（canvas event closureから使用）
-      window.FBDB = { ref, set };
+      window.FBDB = { ref, set, get, db };
+      window.FBDB2 = { ref, get };
       window.wbDb = db;
       window.wbSid = studentId;
       window.wbName = user.displayName || user.email || 'unknown';
@@ -717,6 +744,7 @@
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
         if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
+        console.log('[SURVEY-DB] active:', sv.active, 'q:', sv.question?.slice(0,20));
         if (sv.active) showSurvey(sv);
         else hideSurvey();
       });
@@ -1107,29 +1135,40 @@
 
       const wrap = document.createElement('div');
       wrap.className = 'txt-box-wrap';
-      wrap.style.cssText = 'left:60px;top:60px;width:200px;height:72px;';
+      wrap.style.cssText = 'left:60px;top:60px;width:200px;';
 
-      // テキストエリア（背景透明・全面）
+      // テキストエリア（背景透明）
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input';
       ta.placeholder = 'テキスト入力';
       ta.style.color = color || '#1e293b';
       ta.rows = 2;
 
-      // 削除ボタン（右上・選択時のみ）
+      // 下部バー（移動ハンドル・リサイズ・削除）
+      const bottomBar = document.createElement('div');
+      bottomBar.className = 'txt-bottom-bar';
+
+      // 移動ハンドル（中央）
+      const moveHandle = document.createElement('div');
+      moveHandle.className = 'txt-move-handle';
+      moveHandle.innerHTML = '⠿⠿⠿';
+      moveHandle.title = 'ドラッグで移動';
+
+      // リサイズハンドル（右寄り）
+      const resizeHandle = document.createElement('div');
+      resizeHandle.className = 'txt-resize-handle';
+      resizeHandle.innerHTML = '⤡';
+
+      // 削除ボタン（右端）
       const delBtn = document.createElement('button');
       delBtn.className = 'txt-del-btn';
       delBtn.textContent = '✕';
       delBtn.title = '削除';
 
-      // リサイズハンドル（右下・選択時のみ）
-      const resizeHandle = document.createElement('div');
-      resizeHandle.className = 'txt-resize-handle';
-      resizeHandle.innerHTML = '⤡';
-
       wrap.appendChild(ta);
-      wrap.appendChild(delBtn);
+      wrap.appendChild(bottomBar);
       wrap.appendChild(resizeHandle);
+      wrap.appendChild(delBtn);
       container.appendChild(wrap);
 
       const lblObj = {
@@ -1137,30 +1176,25 @@
         getText: () => ta.value,
         getStyle: () => ({
           left: parseInt(wrap.style.left), top: parseInt(wrap.style.top),
-          width: parseInt(wrap.style.width), height: parseInt(wrap.style.height),
+          width: parseInt(wrap.style.width) || wrap.offsetWidth,
+          height: parseInt(wrap.style.height) || wrap.offsetHeight,
           color: ta.style.color, text: ta.value
         })
       };
       labelsArr.push(lblObj);
 
-      // ===== 移動: wrap 本体をドラッグ（テキスト入力中は除く）=====
+      // ===== 移動: moveHandle をドラッグ =====
       let moveDrag = false, moveSX, moveSY, moveOX, moveOY;
-
-      wrap.addEventListener('pointerdown', e => {
-        // テキストエリアへのクリックは入力として扱う
-        if (e.target === ta) {
-          selectTxt(wrap);
-          return;
-        }
+      moveHandle.addEventListener('pointerdown', e => {
         e.preventDefault(); e.stopPropagation();
         selectTxt(wrap);
         moveDrag = true;
-        wrap.setPointerCapture(e.pointerId);
+        moveHandle.setPointerCapture(e.pointerId);
         moveSX = e.clientX; moveSY = e.clientY;
         moveOX = parseInt(wrap.style.left) || 0;
         moveOY = parseInt(wrap.style.top)  || 0;
       });
-      wrap.addEventListener('pointermove', e => {
+      moveHandle.addEventListener('pointermove', e => {
         if (!moveDrag) return;
         const parent = wrap.parentElement;
         const maxX = parent ? parent.offsetWidth  - wrap.offsetWidth  : 9999;
@@ -1168,8 +1202,8 @@
         wrap.style.left = Math.max(0, Math.min(maxX, moveOX + e.clientX - moveSX)) + 'px';
         wrap.style.top  = Math.max(0, Math.min(maxY, moveOY + e.clientY - moveSY)) + 'px';
       });
-      wrap.addEventListener('pointerup',    () => { moveDrag = false; });
-      wrap.addEventListener('pointercancel',() => { moveDrag = false; });
+      moveHandle.addEventListener('pointerup',    () => { moveDrag = false; });
+      moveHandle.addEventListener('pointercancel',() => { moveDrag = false; });
 
       // ===== リサイズ =====
       let resDrag = false, resSX, resSY, resOW, resOH;
@@ -1179,12 +1213,13 @@
         resizeHandle.setPointerCapture(e.pointerId);
         resSX = e.clientX; resSY = e.clientY;
         resOW = parseInt(wrap.style.width)  || wrap.offsetWidth;
-        resOH = parseInt(wrap.style.height) || wrap.offsetHeight;
+        resOH = ta.offsetHeight;
       });
       resizeHandle.addEventListener('pointermove', e => {
         if (!resDrag) return;
-        wrap.style.width  = Math.max(80,  resOW + e.clientX - resSX) + 'px';
-        wrap.style.height = Math.max(36, resOH + e.clientY - resSY) + 'px';
+        wrap.style.width = Math.max(80, resOW + e.clientX - resSX) + 'px';
+        const newH = Math.max(36, resOH + e.clientY - resSY);
+        ta.style.height = newH + 'px';
       });
       resizeHandle.addEventListener('pointerup',    () => { resDrag = false; });
       resizeHandle.addEventListener('pointercancel',() => { resDrag = false; });
@@ -1196,13 +1231,15 @@
         wrap.remove();
         const i = labelsArr.indexOf(lblObj);
         if (i >= 0) labelsArr.splice(i, 1);
+        if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
       });
 
       // ===== 選択 =====
       ta.addEventListener('focus', () => selectTxt(wrap));
       ta.addEventListener('pointerdown', e => { e.stopPropagation(); selectTxt(wrap); });
+      wrap.addEventListener('pointerdown', e => { selectTxt(wrap); });
 
-      // テキスト変更時にスナップショット（班別WBの場合のみ）
+      // テキスト変更時スナップショット
       ta.addEventListener('input', () => {
         if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
       });
@@ -1444,7 +1481,16 @@
       } else if (data.command === 'message') {
         showMsgPopup(data.text);
       } else if (data.command === 'survey-open') {
-        if (data.survey) showSurvey(data.survey);
+        console.log('[SURVEY-OPEN] data.survey:', !!data.survey, data.survey?.question?.slice(0,20));
+        if (data.survey) {
+          showSurvey(data.survey);
+        } else {
+          // fallback: DB から直接取得
+          const {ref: r2, get: g2, db: d2} = window.FBDB || {};
+          if (r2 && g2 && d2) g2(r2(d2, `sessions/${window.wbSid}/survey`)).then(snap => {
+            if (snap.exists() && snap.val().active) showSurvey(snap.val());
+          });
+        }
       } else if (data.command === 'survey-close') {
         hideSurvey();
       } else if (data.command === 'stopWatch') {

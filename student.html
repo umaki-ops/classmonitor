@@ -442,7 +442,11 @@
 
     let _initialized = false;
 
+    // Firebase認証の初回コールバックが遅い場合のフォールバック
+    const _authTimeout = setTimeout(() => showState('login'), 3000);
+
     onAuthStateChanged(auth, async (user) => {
+      clearTimeout(_authTimeout);
       if (!user) { showState('login'); return; }
       if (_initialized) return;
       _initialized = true;

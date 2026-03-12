@@ -1382,8 +1382,12 @@ window.clearGroups = async function() {
 function renderGroupContentArea() {
   const list = document.getElementById('group-list');
   list.innerHTML = '';
+  if (!groupDefs || Object.keys(groupDefs).length === 0) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;">班が設定されていません</p>';
+    return;
+  }
   Object.entries(groupDefs).forEach(([gid, g]) => {
-    const memberNames = Object.keys(g.members)
+    const memberNames = Object.keys(g.members || {})
       .map(uid => students[uid]?.name || uid).join('、');
     const card = document.createElement('div');
     card.style.cssText = 'background:var(--surface2);border-radius:12px;padding:14px;border:1px solid var(--border);';
@@ -1484,7 +1488,9 @@ function listenGroups() {
     if (!snap.exists()) { groupDefs = {}; return; }
     groupDefs = {};
     snap.forEach(child => {
-      groupDefs[child.key] = child.val();
+      const g = child.val();
+      if (!g.members) g.members = {};  // nullの場合は空オブジェクトに
+      groupDefs[child.key] = g;
     });
     if (currentView === 'group') renderGroupPanel();
   });

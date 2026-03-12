@@ -80,6 +80,9 @@
   #teacher-overlay { display:none; position:fixed; inset:0; z-index:8000;
     background:#000; flex-direction:column; }
   #teacher-overlay.show { display:flex; }
+  #watch-overlay { display:none; position:fixed; inset:0; z-index:7500;
+    background:#000; flex-direction:column; }
+  #watch-overlay.show { display:flex; }
   #teacher-video { width:100%; height:100%; object-fit:contain; }
   .teacher-close { position:absolute; top:12px; right:12px; background:rgba(255,255,255,.2);
     color:#fff; border:none; border-radius:8px; padding:6px 12px; cursor:pointer; z-index:1; }
@@ -230,6 +233,13 @@
       <p class="share-note">「画面全体」を選択してください</p>
     </div>
 
+    <div class="state" id="state-live">
+      <p class="status-bar" id="live-status-bar">📡 画面共有中</p>
+      <video id="preview-video" autoplay muted playsinline
+        style="width:100%;border-radius:10px;background:#000;max-height:180px;"></video>
+      <button class="share-btn stop" id="stop-btn" style="margin-top:12px;">⏹ 共有を停止する</button>
+    </div>
+
     <div class="state" id="state-error">
       <div style="text-align:center;padding:20px 0;">
         <div style="font-size:40px;margin-bottom:12px;">⚠️</div>
@@ -251,6 +261,13 @@
 <div id="teacher-overlay">
   <video id="teacher-video" autoplay playsinline></video>
   <button class="teacher-close" onclick="hideTeacher()">✕ 閉じる</button>
+</div>
+
+<!-- クラスメート画面視聴オーバーレイ -->
+<div id="watch-overlay">
+  <video id="watch-video" autoplay playsinline style="width:100%;height:100%;object-fit:contain;"></video>
+  <button style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;"
+    onclick="document.getElementById('watch-overlay').style.display='none';">✕ 閉じる</button>
 </div>
 
 <!-- アンケートオーバーレイ -->
@@ -388,6 +405,7 @@
     if (window._shareActive) window.stopShare();
     else window.startShare();
   });
+  document.getElementById('stop-btn')?.addEventListener('click', () => window.stopShare());
 
 
   async function main() {

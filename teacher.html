@@ -239,7 +239,8 @@
     <div class="ig"><label>Firebase API Key</label><input type="text" id="fb-apikey" placeholder="AIzaSy..."/></div>
     <div class="ig"><label>Firebase Database URL</label><input type="text" id="fb-dburl" placeholder="https://your-project-default-rtdb.firebaseio.com"/></div>
     <div class="ig"><label>Firebase Project ID</label><input type="text" id="fb-projectid" placeholder="your-project-id"/></div>
-    <button class="btn btn-primary" style="width:100%;padding:11px;font-size:13px;margin-top:5px;justify-content:center;" onclick="startSession()">🚀 セッション開始</button>
+    <button id="login-btn" class="btn btn-primary" style="width:100%;padding:11px;font-size:13px;margin-top:5px;justify-content:center;" onclick="teacherLogin()">🔐 Googleログインしてセッション開始</button>
+    <p id="login-status" style="text-align:center;font-size:12px;color:#94a3b8;margin-top:6px;display:none;"></p>
   </div>
 
   <!-- Control bar -->
@@ -444,6 +445,51 @@ function toast(msg,d=3000){const t=document.getElementById('toast');t.textConten
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // ===== SESSION =====
+// 教員Googleログイン → 完了後にstartSession呼び出し
+let _teacherAuth = null;
+window.teacherLogin = async function(){
+  const ak=document.getElementById('fb-apikey').value.trim();
+  const du=document.getElementById('fb-dburl').value.trim();
+  const pi=document.getElementById('fb-projectid').value.trim();
+  if(!ak||!du||!pi){toast('⚠️ Firebase設定を先に入力してください');return;}
+  if(!window.FB){toast('⚠️ Firebase SDKの読み込み中です');return;}
+
+  const btn=document.getElementById('login-btn');
+  btn.disabled=true; btn.textContent='ログイン中...';
+
+  try{
+    // Firebase初期化（authDomain必須）
+    const app=window.FB.initializeApp(
+      {apiKey:ak,databaseURL:du,projectId:pi,authDomain:`${pi}.firebaseapp.com`},
+      'teacher-auth-'+Date.now()
+    );
+    db=window.FB.getDatabase(app);
+    _teacherAuth=window.FB.getAuth(app);
+
+    // ログイン済みか確認
+    let user = await new Promise(resolve=>{
+      const unsub=window.FB.onAuthStateChanged(_teacherAuth,u=>{unsub();resolve(u);});
+    });
+
+    if(!user){
+      const result=await window.FB.signInWithPopup(_teacherAuth,new window.FB.GoogleAuthProvider());
+      user=result.user;
+    }
+
+    // ログイン成功 → そのままセッション開始
+    const status=document.getElementById('login-status');
+    if(status){status.style.display='block';status.textContent=`✅ ${user.displayName||user.email}`;}
+    btn.textContent='✅ ログイン済み　セッション開始中...';
+    await window.startSession();
+
+  }catch(e){
+    btn.disabled=false;
+    btn.textContent='🔐 Googleログインしてセッション開始';
+    if(e.code==='auth/popup-closed-by-user'){toast('⚠️ ログインをキャンセルしました');return;}
+    toast('❌ エラー: '+e.message);
+  }
+};
+
 window.startSession=async function(){
   const ak=document.getElementById('fb-apikey').value.trim();
   const du=document.getElementById('fb-dburl').value.trim();
@@ -451,10 +497,13 @@ window.startSession=async function(){
   if(!ak||!du||!pi){toast('⚠️ Firebase設定を入力してください');return;}
   if(!window.FB){toast('⚠️ Firebase SDKの読み込み中です。しばらく待ってから再度お試しください');return;}
 
-  try{
-    const app=window.FB.initializeApp({apiKey:ak,databaseURL:du,projectId:pi},'t-'+Date.now());
-    db=window.FB.getDatabase(app);
-  }catch(e){toast('❌ '+e.message);return;}
+  // teacherLogin()経由の場合はdb初期化済み、直接呼び出し時のフォールバック
+  if(!db){
+    try{
+      const app=window.FB.initializeApp({apiKey:ak,databaseURL:du,projectId:pi},'t-'+Date.now());
+      db=window.FB.getDatabase(app);
+    }catch(e){toast('❌ '+e.message);return;}
+  }
 
   sessionId=gid();
   const{ref,set}=window.FB;

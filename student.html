@@ -564,6 +564,7 @@
 
     let studentId = null, localStream = null, pc = null;
     let watchPc = null; // 他の生徒の画面を受信するPC
+    let twPc = null;    // 教員画面共有受信用PC
     const ICE = {
       iceServers: [
         {urls:'stun:stun.l.google.com:19302'},
@@ -633,7 +634,9 @@
       // シグナル監視 - onChildAddedで新着のみ処理
       onChildAdded(ref(db, `sessions/${sessionId}/signals`), snap => {
         const signal = snap.val();
+        console.log('[SIG-IN]', signal?.type, 'to:', signal?.to, 'myId:', studentId);
         if (!signal || signal.to !== studentId) return;
+        console.log('[SIG-MATCH]', signal.type);
         if (signal.type === 'offer') handleOffer(signal.sdp);
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
         else if (signal.type === 'watch-offer') handleWatchOffer(signal.from, signal.sdp, signal.sourceName);
@@ -796,13 +799,15 @@
       try { await watchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
     async function handleTeacherWatchOffer(sdp) {
+      console.log('[TWO] handleTeacherWatchOffer called, sdp type:', sdp?.type, 'has sdp:', !!sdp?.sdp);
       if (twPc) { try { twPc.close(); } catch(e) {} }
       twPc = new RTCPeerConnection(ICE);
       twPc.ontrack = e => {
+        console.log('[TWO] ontrack fired! streams:', e.streams.length, 'track:', e.track?.kind);
         const el = document.getElementById('teacher-video');
         if (el) {
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
-          el.play().catch(()=>{});
+          el.play().catch(err => console.warn('[TWO] play error:', err));
           showTeacher();
         }
       };
@@ -812,6 +817,7 @@
         });
       };
       twPc.onconnectionstatechange = () => {
+        console.log('[TW-STATE]', twPc.connectionState);
         if (twPc.connectionState === 'failed') { try { twPc.close(); } catch(e) {} twPc = null; }
       };
       await twPc.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -822,8 +828,9 @@
       });
     }
     async function handleTeacherWatchIce(candidate) {
+      console.log('[TWICE] adding ICE, twPc state:', twPc?.signalingState, 'candidate:', !!candidate);
       if (!twPc || !candidate) return;
-      try { await twPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+      try { await twPc.addIceCandidate(new RTCIceCandidate(candidate)); console.log('[TWICE] OK'); } catch(e) { console.warn('[TWICE] err:', e); }
     }
     function showTeacher() {
       const el = document.getElementById('teacher-overlay');

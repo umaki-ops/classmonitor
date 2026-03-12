@@ -889,6 +889,9 @@ let reconnectTimers={};
 
 async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
+  // 古いシグナルをクリア（再接続時の誤作動防止）
+  const{ref,remove}=window.FB;
+  try{await remove(ref(db,`sessions/${sessionId}/signals`));}catch(e){}
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
   pc.ontrack=ev=>{
@@ -954,7 +957,7 @@ async function handleAnswer(sid,sdp){
   if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
   try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
 }
-async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+async async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
 // ===== Teacher screen → students =====
 let twPcs={};

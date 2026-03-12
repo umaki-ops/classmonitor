@@ -1400,10 +1400,12 @@ function renderGroupContentArea() {
           <span style="font-weight:600;font-size:14px;">${g.name}</span>
           <span style="font-size:12px;color:var(--muted);margin-left:8px;">${memberNames || '未割り当て'}</span>
         </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="openGroupWb('${gid}')">📋 WBを開く</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="openGroupWb('${gid}')">📋 ホワイトボードを配布</button>
+          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;color:#ef4444;" onclick="closeGroupWb('${gid}')">📋 ホワイトボードを回収</button>
           <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="sendGroupImg('${gid}')">🖼 画像を配布</button>
-          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;color:#ef4444;" onclick="closeGroupWb('${gid}')">✕ WBを閉じる</button>
+          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;color:#ef4444;" onclick="collectGroupImg('${gid}')">🖼 画像を回収</button>
+          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;background:#7c3aed;color:#fff;" onclick="sendGroupMsg('${gid}')">💬 メッセージ</button>
         </div>
       </div>
       <div id="group-wb-prev-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -1435,7 +1437,24 @@ window.openGroupWb = async function(gid) {
 window.closeGroupWb = async function(gid) {
   const { ref, set } = window.FB;
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), false);
-  toast(`${groupDefs[gid]?.name} のWBを閉じました`);
+  toast(`${groupDefs[gid]?.name} のWBを回収しました`);
+};
+
+window.collectGroupImg = async function(gid) {
+  const { ref, set } = window.FB;
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/active`), false);
+  toast(`${groupDefs[gid]?.name} の画像を回収しました`);
+};
+
+window.sendGroupMsg = function(gid) {
+  const name = groupDefs[gid]?.name || gid;
+  const msg = prompt(`${name} へのメッセージを入力:`);
+  if (!msg) return;
+  const { ref, set } = window.FB;
+  set(ref(db, `sessions/${sessionId}/groups/${gid}/message`), {
+    text: msg, ts: Date.now()
+  });
+  toast(`${name} にメッセージを送りました`);
 };
 
 // 班への画像配布

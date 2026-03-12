@@ -73,8 +73,8 @@
     background:linear-gradient(135deg,#1e3a5f,#0f172a); color:#fff;
     flex-direction:column; align-items:center; justify-content:center; text-align:center; }
   #focus-overlay.show { display:flex; }
-  #focus-overlay h2 { font-size:24px; font-weight:700; margin-bottom:12px; }
-  #focus-overlay p { font-size:14px; opacity:.8; }
+  #focus-overlay h2 { font-size:42px; font-weight:800; margin-bottom:20px; letter-spacing:0.02em; }
+  #focus-overlay p { font-size:24px; opacity:.9; font-weight:600; }
 
   /* ===== 先生画面オーバーレイ ===== */
   #teacher-overlay { display:none; position:fixed; inset:0; z-index:8000;
@@ -137,6 +137,8 @@
   #wb-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
   #wb-canvas { position:absolute; inset:0; touch-action:none; }
   #wb-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
+  #group-wb-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
+  #group-wb-labels .txt-box-wrap { pointer-events:auto; }
   #wb-labels .txt-box-wrap { pointer-events:auto; }
   #wb-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px;
     border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
@@ -345,8 +347,8 @@
 
 <!-- 集中モード -->
 <div id="focus-overlay">
-  <h2>🎯 集中してください</h2>
-  <p>先生の指示に従ってください</p>
+  <h2>🎯 黒板の方に注目してください</h2>
+  <p>Chromebookの画面ではなく、黒板の方に注目してください</p>
 </div>
 
 <!-- 先生画面オーバーレイ -->
@@ -369,29 +371,30 @@
       <h3 id="group-wb-title" style="margin:0;font-size:15px;">📋 班のホワイトボード</h3>
       <div id="group-wb-instruction" style="font-size:12px;color:#94a3b8;margin-top:2px;"></div>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button class="wbt active" id="gwb-pen-btn" onclick="gWbSetTool('pen')">✏️</button>
-      <button class="wbt" id="gwb-eraser-btn" onclick="gWbSetTool('eraser')">🩹</button>
-      <button class="wbt" id="gwb-text-btn" onclick="gWbSetTool('text')">T</button>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      <button class="wbt active" id="gwb-pen-btn" onclick="gWbSetTool('pen')" title="ペン">✏️</button>
+      <button class="wbt" id="gwb-eraser-btn" onclick="gWbSetTool('eraser')" title="消しゴム">🩹</button>
+      <button class="wbt" id="gwb-text-btn" onclick="gWbSetTool('text')" title="テキスト">T</button>
+      <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
+      <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="gWbSetColor(this)"></div>
+      <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="gWbSetColor(this)"></div>
+      <div class="wbc" data-color="#2563eb" style="background:#2563eb" onclick="gWbSetColor(this)"></div>
+      <div class="wbc" data-color="#16a34a" style="background:#16a34a" onclick="gWbSetColor(this)"></div>
+      <div class="wbc" data-color="#d97706" style="background:#d97706" onclick="gWbSetColor(this)"></div>
+      <div class="wbc" data-color="#9333ea" style="background:#9333ea" onclick="gWbSetColor(this)"></div>
+      <div class="wbc" data-color="#ffffff" style="background:#fff;border:1.5px solid #666;" onclick="gWbSetColor(this)"></div>
+      <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
+      <button class="wbt" id="gwb-thin-btn" onclick="gWbSetSize(3)" title="細">細</button>
+      <button class="wbt" id="gwb-mid-btn" onclick="gWbSetSize(8)" title="中">中</button>
+      <button class="wbt active" id="gwb-thick-btn" onclick="gWbSetSize(14)" title="太">太</button>
+      <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
       <button onclick="gWbClear()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">全消し</button>
       <button onclick="gWbSubmit()" style="background:#22c55e;color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;">📤 提出</button>
     </div>
   </div>
-  <div style="display:flex;gap:6px;padding:8px 12px;background:rgba(0,0,0,.2);flex-wrap:wrap;">
-    <div id="gwb-colors" style="display:flex;gap:4px;">
-      <div class="wcolor active" style="background:#1e293b;" onclick="gWbSetColor(this)" data-color="#1e293b"></div>
-      <div class="wcolor" style="background:#ef4444;" onclick="gWbSetColor(this)" data-color="#ef4444"></div>
-      <div class="wcolor" style="background:#3b82f6;" onclick="gWbSetColor(this)" data-color="#3b82f6"></div>
-      <div class="wcolor" style="background:#22c55e;" onclick="gWbSetColor(this)" data-color="#22c55e"></div>
-      <div class="wcolor" style="background:#f59e0b;" onclick="gWbSetColor(this)" data-color="#f59e0b"></div>
-      <div class="wcolor" style="background:#a855f7;" onclick="gWbSetColor(this)" data-color="#a855f7"></div>
-    </div>
-    <input type="range" min="1" max="20" value="3" oninput="gWbSetSize(this.value)" style="width:80px;">
-    <span id="gwb-active-label" style="font-size:11px;color:#94a3b8;align-self:center;"></span>
-  </div>
   <div style="position:relative;flex:1;overflow:hidden;">
     <canvas id="group-wb-canvas" style="position:absolute;inset:0;touch-action:none;width:100%;height:100%;"></canvas>
-    <div id="group-wb-labels" style="position:absolute;inset:0;pointer-events:none;"></div>
+    <div id="group-wb-labels" style="position:absolute;inset:0;pointer-events:none;z-index:20;"></div>
   </div>
 </div>
 
@@ -779,14 +782,14 @@
       };
       watchPc.onicecandidate = e => {
         if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wi`), {
-          type:'watch-ice-answer', from:studentId, to:fromId, candidate:e.candidate.toJSON()
+          type:'watch-answer-ice', from:studentId, to:fromId, candidate:e.candidate.toJSON()
         });
       };
-      await watchPc.setRemoteDescription({type:'offer', sdp});
+      await watchPc.setRemoteDescription(new RTCSessionDescription(sdp));
       const ans = await watchPc.createAnswer();
       await watchPc.setLocalDescription(ans);
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wa`), {
-        type:'watch-answer', from:studentId, to:fromId, sdp:ans.sdp
+        type:'watch-answer', from:studentId, to:fromId, sdp:{type:ans.type,sdp:ans.sdp}
       });
       showWatch(sourceName);
     }
@@ -802,14 +805,14 @@
       };
       twPc.onicecandidate = e => {
         if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twi`), {
-          type:'tw-ice-answer', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
+          type:'tw-ice', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
         });
       };
-      await twPc.setRemoteDescription({type:'offer', sdp});
+      await twPc.setRemoteDescription(new RTCSessionDescription(sdp));
       const ans = await twPc.createAnswer();
       await twPc.setLocalDescription(ans);
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twa`), {
-        type:'tw-answer', from:studentId, to:'teacher', sdp:ans.sdp
+        type:'tw-answer', from:studentId, to:'teacher', sdp:{type:ans.type,sdp:ans.sdp}
       });
     }
     function showTeacher() {
@@ -1044,8 +1047,9 @@
 
     // ===== テキストボックスエンジン（WB・img共用）=====
     let _selectedTxt = null; // 現在選択中のtxt-box-wrap
-    let _wbTextMode = false;  // WBテキストモード中
-    let _imgTextMode = false; // 画像テキストモード中
+    let _wbTextMode = false;   // WBテキストモード中
+    let _imgTextMode = false;  // 画像テキストモード中
+    let _gWbTextMode = false;  // 班別WBテキストモード中
 
     function makeTxtBox(containerId, labelsArr, color) {
       const container = document.getElementById(containerId);
@@ -1432,6 +1436,7 @@
 
       canvas.addEventListener('pointerdown', e => {
         if (_selectedTxt) { deselectTxt(); return; }
+        if (_gWbTextMode) { makeTxtBox('group-wb-labels', [], gWbColor); return; }
         gWbDrawing = true;
         const r = canvas.getBoundingClientRect();
         gWbLX = (e.clientX - r.left) * canvas.width / r.width;
@@ -1540,10 +1545,20 @@
     }
 
     window.gWbSetTool = function(tool) {
+      if (tool === 'text') {
+        _gWbTextMode = !_gWbTextMode;
+        document.getElementById('gwb-pen-btn').classList.toggle('active', !_gWbTextMode);
+        document.getElementById('gwb-text-btn').classList.toggle('active', _gWbTextMode);
+        document.getElementById('gwb-eraser-btn').classList.remove('active');
+        if (!_gWbTextMode) gWbTool = 'pen';
+        else gWbTool = 'text';
+        return;
+      }
+      _gWbTextMode = false;
       gWbTool = tool;
       document.getElementById('gwb-pen-btn').classList.toggle('active', tool === 'pen');
       document.getElementById('gwb-eraser-btn').classList.toggle('active', tool === 'eraser');
-      document.getElementById('gwb-text-btn').classList.toggle('active', tool === 'text');
+      document.getElementById('gwb-text-btn').classList.remove('active');
     };
     window.gWbSetColor = function(el) {
       gWbColor = el.dataset.color;
@@ -1612,6 +1627,19 @@
             const imgData = imgSnap.val();
             if (imgData.active && imgData.dataUrl) {
               showDistImg(imgData.dataUrl);
+            } else if (!imgData.active) {
+              window.hideDistImg && window.hideDistImg();
+            }
+          });
+
+          // 班メッセージの監視
+          let _lastMsgTs = 0;
+          onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/message`), msgSnap => {
+            if (!msgSnap.exists()) return;
+            const msg = msgSnap.val();
+            if (msg.ts && msg.ts > _lastMsgTs) {
+              _lastMsgTs = msg.ts;
+              showMsgPopup(msg.text);
             }
           });
         }

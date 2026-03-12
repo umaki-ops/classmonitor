@@ -1122,6 +1122,18 @@
       setTimeout(() => ta.focus(), 30);
     }
 
+    // 背景画像をcanvasにフィット描画
+    function imgDrawBg() {
+      if (!imgBgImage || !imgCtx) return;
+      const canvas = document.getElementById('img-canvas');
+      imgCtx.fillStyle = 'white';
+      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
+      const scale = Math.min(canvas.width / imgBgImage.width, canvas.height / imgBgImage.height);
+      const x = (canvas.width  - imgBgImage.width  * scale) / 2;
+      const y = (canvas.height - imgBgImage.height * scale) / 2;
+      imgCtx.drawImage(imgBgImage, x, y, imgBgImage.width * scale, imgBgImage.height * scale);
+    }
+
     function imgExportWithLabels(quality = 0.8) {
       const canvas = document.getElementById('img-canvas');
       const wrap   = document.getElementById('img-canvas-wrap');

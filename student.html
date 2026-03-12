@@ -622,13 +622,10 @@
 
     let _initialized = false;
 
-    // currentUser が即座に取れる場合はすぐ処理、取れない場合は2秒でloginへ
-    const _authTimeout = setTimeout(() => {
-      if (!_initialized) showState('login');
-    }, 3000);
+    // Firebase初期化完了 → 即ログイン画面へ（ログイン済みなら onAuthStateChanged で上書き）
+    showState('login');
 
     onAuthStateChanged(auth, async (user) => {
-      clearTimeout(_authTimeout);
       if (!user) { showState('login'); return; }
       if (_initialized) return;
       _initialized = true;
@@ -1557,7 +1554,7 @@
       const overlay = document.getElementById('survey-overlay');
       if (overlay) overlay.classList.remove('show');
     }
-    async async function submitSurvey(answer) {
+    async function submitSurvey(answer) {
       await set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
         name: window.wbName || studentId, answer, ts: Date.now()
       });

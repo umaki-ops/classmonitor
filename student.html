@@ -1601,6 +1601,7 @@
     let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
     let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3;
     let gWbGroupId = null, gWbResetTs = 0;
+    let gWbFromImg = false; // distImg経由でWBを開いた場合true
     let gWbStrokeListenerUnsub = null;
     let gWbCurrentStroke = null;
 
@@ -1853,15 +1854,16 @@
 
           // WBの監視
           _wbUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/wb`), wbSnap => {
-            if (!wbSnap.exists()) { gWbClose(); return; }
-            const wbData = wbSnap.val();
-            if (wbData.active) {
-              gWbOpen(_myGroupId, wbData);
-              const lbl = document.getElementById('gwb-active-label');
-              if (lbl) lbl.textContent = `メンバー: ${Object.keys(foundGroupData.members || {}).length}人`;
-            } else {
-              gWbClose();
+            if (!wbSnap.exists() || !wbSnap.val()?.active) {
+              // distImg経由で開いている場合は閉じない
+              if (!gWbFromImg) gWbClose();
+              return;
             }
+            const wbData = wbSnap.val();
+            gWbFromImg = false; // WB配布で開き直す
+            gWbOpen(_myGroupId, wbData);
+            const lbl = document.getElementById('gwb-active-label');
+            if (lbl) lbl.textContent = `メンバー: ${Object.keys(foundGroupData.members || {}).length}人`;
           });
 
           // 画像配布の監視（班のWB背景として表示）
@@ -1869,13 +1871,17 @@
             if (!imgSnap.exists()) return;
             const imgData = imgSnap.val();
             if (imgData.active && imgData.dataUrl) {
-              // 班WBが開いていなければ開く
-              if (!gWbGroupId) gWbOpen(_myGroupId, {instruction: '画像に書き込みましょう'});
+              // 班WBが開いていなければ開く（distImg経由フラグをセット）
+              if (!gWbGroupId) {
+                gWbFromImg = true;
+                gWbOpen(_myGroupId, {instruction: '画像に書き込みましょう'});
+              }
               // 背景画像を設定
               gWbSetBgImage(imgData.dataUrl);
             } else if (!imgData.active) {
-              // 背景クリア
-              gWbSetBgImage(null);
+              // 画像回収時: distImg経由で開いていたなら閉じる
+              if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
+              else gWbSetBgImage(null);
             }
           });
 

@@ -382,10 +382,10 @@
   <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">
     <h3 style="margin:0 0 10px;font-size:14px;">📡 全班への一括操作</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="openAllGroupWb()">📋 全班にWB配布</button>
-      <button class="btn btn-outline" style="color:#ef4444;" onclick="closeAllGroupWb()">📋 全班のWB回収</button>
-      <button class="btn btn-outline" onclick="sendAllGroupImg()">🖼 全班に画像配布</button>
-      <button class="btn btn-outline" style="color:#ef4444;" onclick="collectAllGroupImg()">🖼 全班の画像回収</button>
+      <button class="btn btn-primary" onclick="openAllGroupWb()">📋 全班にホワイトボード配布</button>
+      <button class="btn" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupWb()">📋 全班のホワイトボード回収</button>
+      <button class="btn btn-primary" onclick="sendAllGroupImg()">🖼 全班に画像配布</button>
+      <button class="btn" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupImg()">🖼 全班の画像回収</button>
     </div>
   </div>
   <div id="group-list" style="display:flex;flex-direction:column;gap:16px;"></div>
@@ -762,7 +762,7 @@ window.sendWbCommand=async function(cmd){
     const instr=document.getElementById('wb-instruction').value.trim();
     if(instr) await set(ref(db,`sessions/${sessionId}/wb/instruction`),instr);
     await set(ref(db,`sessions/${sessionId}/wb/active`),true);
-    toast('📋 ホワイトボードを配布しました');
+    toast('📋 ホワイトボード配布しました');
   }
   else if(cmd==='collect'){
     await set(ref(db,`sessions/${sessionId}/wb/active`),false);
@@ -1436,10 +1436,10 @@ function renderGroupContentArea() {
           <span style="font-size:12px;color:var(--muted);margin-left:8px;">${memberNames || '未割り当て'}</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="openGroupWb('${gid}')">📋 ホワイトボードを配布</button>
-          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;color:#ef4444;" onclick="closeGroupWb('${gid}')">📋 ホワイトボードを回収</button>
-          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="sendGroupImg('${gid}')">🖼 画像を配布</button>
-          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;color:#ef4444;" onclick="collectGroupImg('${gid}')">🖼 画像を回収</button>
+          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="openGroupWb('${gid}')">📋 ホワイトボード配布</button>
+          <button class="btn" style="padding:5px 12px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeGroupWb('${gid}')">📋 ホワイトボード回収</button>
+          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="sendGroupImg('${gid}')">🖼 画像配布</button>
+          <button class="btn" style="padding:5px 12px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectGroupImg('${gid}')">🖼 画像回収</button>
           <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;background:#7c3aed;color:#fff;" onclick="sendGroupMsg('${gid}')">💬 メッセージ</button>
         </div>
       </div>

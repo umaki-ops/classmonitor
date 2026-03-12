@@ -327,7 +327,7 @@
   </div>
   <div id="img-toolbar">
     <button class="wbt active" id="imgt-pen" onclick="setImgTool('pen')" title="ペン">✏️</button>
-    <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🧹</button>
+    <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="imgt-text" onclick="setImgTool('text')" title="テキスト">T</button>
     <div class="wb-sep"></div>
     <div class="wbc active" style="background:#1e293b;" data-color="#1e293b" onclick="imgSetColor(this)"></div>
@@ -359,7 +359,7 @@
   </div>
   <div id="wb-toolbar">
     <button class="wbt active" id="wbt-pen" onclick="wbSetTool('pen')" title="ペン">✏️</button>
-    <button class="wbt" id="wbt-eraser" onclick="wbSetTool('eraser')" title="消しゴム">🧹</button>
+    <button class="wbt" id="wbt-eraser" onclick="wbSetTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="wbt-text" onclick="wbSetTool('text')" title="テキスト">T</button>
     <div class="wb-sep"></div>
     <div class="wbc active" style="background:#1e293b;" data-color="#1e293b" onclick="wbSetColor(this)"></div>
@@ -1208,15 +1208,18 @@
       imgCtx.lineTo(x, y);
       imgCtx.globalCompositeOperation = 'source-over';
       if (imgTool === 'eraser') {
-        imgCtx.strokeStyle = 'white';
+        imgCtx.globalCompositeOperation = 'destination-out';
+        imgCtx.strokeStyle = 'rgba(0,0,0,1)';
         imgCtx.lineWidth = imgSize * 5;
       } else {
+        imgCtx.globalCompositeOperation = 'source-over';
         imgCtx.strokeStyle = imgColor;
         imgCtx.lineWidth = imgSize;
       }
       imgCtx.lineCap = 'round';
       imgCtx.lineJoin = 'round';
       imgCtx.stroke();
+      imgCtx.globalCompositeOperation = 'source-over'; // 必ず戻す
       imgLX = x; imgLY = y;
       imgSignalDrawing(true);
     }
@@ -1467,6 +1470,7 @@
       wbCtx.strokeStyle = wbColor; wbCtx.lineWidth = wbSize;
     }
     wbCtx.lineCap = 'round'; wbCtx.lineJoin = 'round'; wbCtx.stroke();
+    wbCtx.globalCompositeOperation = 'source-over'; // 必ず戻す
     wbLX = x; wbLY = y;
     wbSignalDrawing();
   }

@@ -6,188 +6,180 @@
 <title>授業モニター｜生徒用</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600;700;900&family=JetBrains+Mono:wght@500&display=swap');
-  :root { --bg:#f0f4ff; --surface:#fff; --border:#e2e8f0; --accent:#3b82f6; --accent-dark:#1d4ed8; --green:#10b981; --red:#ef4444; --text:#1e293b; --text-muted:#64748b; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Noto Sans JP',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
-  body::before { content:''; position:fixed; inset:0; background:radial-gradient(circle at 20% 20%,rgba(59,130,246,0.08) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(6,182,212,0.06) 0%,transparent 50%); pointer-events:none; }
+  :root {
+    --bg:#f0f4ff; --surface:#fff; --border:#e2e8f0;
+    --accent:#2563eb; --accent2:#7c3aed;
+    --text:#1e293b; --text-muted:#64748b;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Noto Sans JP',sans-serif; background:var(--bg); min-height:100vh;
+    display:flex; align-items:center; justify-content:center; padding:16px; }
+  .card { background:var(--surface); border-radius:20px; box-shadow:0 4px 32px rgba(37,99,235,.10);
+    width:100%; max-width:420px; overflow:hidden; }
+  .card-top { background:linear-gradient(135deg,#2563eb,#7c3aed); color:#fff;
+    padding:28px 24px 20px; text-align:center; }
+  .card-top h1 { font-size:22px; font-weight:700; margin-bottom:4px; }
+  .card-top p { font-size:13px; opacity:.85; margin-bottom:12px; }
+  .card-body { padding:24px; }
+  .school-icon { font-size:36px; margin-bottom:8px; }
+  .session-badge { display:inline-flex; align-items:center; gap:6px;
+    background:rgba(255,255,255,.18); border-radius:20px; padding:4px 12px;
+    font-size:12px; font-weight:600; }
+  .session-badge span:first-child { color:#4ade80; animation:blink 1.4s infinite; }
+  @keyframes blink { 0%,100%{opacity:1}50%{opacity:.3} }
+  .user-badge { display:none; align-items:center; gap:10px;
+    background:rgba(255,255,255,.18); border-radius:20px; padding:6px 14px; }
+  .user-avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; }
+  .user-name { font-size:13px; font-weight:700; }
+  .user-email { font-size:11px; opacity:.8; }
 
-  .card { position:relative; width:100%; max-width:480px; background:var(--surface); border-radius:24px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.07),0 20px 60px -10px rgba(59,130,246,0.15); overflow:hidden; }
-  .card-top { background:linear-gradient(135deg,#1e40af,#0369a1); padding:36px 36px 32px; text-align:center; position:relative; overflow:hidden; }
-  .card-top::before { content:''; position:absolute; inset:0; background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='20'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); }
-  .school-icon { position:relative; width:64px; height:64px; background:rgba(255,255,255,0.15); border-radius:18px; display:flex; align-items:center; justify-content:center; font-size:32px; margin:0 auto 16px; border:1px solid rgba(255,255,255,0.2); }
-  .card-top h1 { position:relative; color:white; font-size:20px; font-weight:700; margin-bottom:4px; }
-  .card-top p { position:relative; color:rgba(255,255,255,0.7); font-size:13px; }
-  .session-badge { position:relative; display:inline-flex; align-items:center; gap:5px; margin-top:14px; padding:5px 12px; background:rgba(255,255,255,0.15); border-radius:20px; color:rgba(255,255,255,0.9); font-size:11px; font-family:'JetBrains Mono',monospace; border:1px solid rgba(255,255,255,0.2); }
-  .user-badge { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:14px; padding:8px 14px; background:rgba(255,255,255,0.15); border-radius:20px; border:1px solid rgba(255,255,255,0.25); }
-  .user-avatar { width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,0.4); object-fit:cover; }
-  .user-name { color:white; font-size:13px; font-weight:600; }
-  .user-email { color:rgba(255,255,255,0.6); font-size:10px; }
-
-  .card-body { padding:32px 36px; }
+  /* ===== 状態管理 ===== */
   .state { display:none; }
   .state.active { display:block; }
-  .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 16px; }
+  .spinner { width:36px; height:36px; border:3px solid var(--border);
+    border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite;
+    margin:0 auto 12px; }
   @keyframes spin { to{transform:rotate(360deg)} }
 
-  .google-btn { width:100%; padding:14px; background:white; color:#3c4043; border:1px solid #dadce0; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
-  .google-btn:hover { background:#f8f9fa; box-shadow:0 2px 8px rgba(0,0,0,0.12); transform:translateY(-1px); }
+  /* ログインボタン */
+  .google-btn { display:flex; align-items:center; justify-content:center; gap:10px;
+    width:100%; padding:13px 20px; border:1.5px solid var(--border); border-radius:12px;
+    background:#fff; font-size:15px; font-weight:600; cursor:pointer; transition:.15s;
+    color:var(--text); }
+  .google-btn:hover:not(:disabled) { background:#f8fafc; border-color:#2563eb; }
+  .google-btn:disabled { opacity:.6; cursor:not-allowed; }
   .google-icon { width:20px; height:20px; flex-shrink:0; }
 
-  .info-list { list-style:none; margin:20px 0; }
-  .info-list li { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); font-size:13px; line-height:1.5; }
-  .info-list li:last-child { border-bottom:none; }
-  .info-list .icon { width:26px; height:26px; border-radius:7px; background:#eff6ff; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; margin-top:1px; }
-  .info-list .label { color:var(--text-muted); font-size:11px; margin-bottom:1px; }
+  /* エラー */
+  #error-msg { color:#dc2626; font-size:14px; margin-top:12px; text-align:center; }
+  .retry-btn { display:block; margin:16px auto 0; padding:8px 20px;
+    background:var(--accent); color:#fff; border:none; border-radius:8px;
+    font-size:13px; cursor:pointer; }
 
-  .share-btn { width:100%; padding:15px; background:var(--accent); color:white; border:none; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:15px; font-weight:700; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:8px; }
-  .share-btn:hover { background:var(--accent-dark); transform:translateY(-1px); box-shadow:0 6px 20px rgba(59,130,246,0.35); }
-  .share-btn.disabled { background:#94a3b8; cursor:not-allowed; transform:none; box-shadow:none; }
-  .footer-note { margin-top:14px; text-align:center; font-size:12px; color:var(--text-muted); line-height:1.5; }
+  /* ===== メイン画面 ===== */
+  #state-connected { display:none; }
+  #state-connected.active { display:block; }
+  .share-btn { width:100%; padding:14px; border-radius:14px; border:none;
+    font-size:15px; font-weight:700; cursor:pointer; margin-bottom:12px;
+    background:linear-gradient(135deg,#2563eb,#7c3aed); color:#fff; transition:.15s; }
+  .share-btn:hover { opacity:.9; }
+  .share-btn.stop { background:#ef4444; }
+  .status-bar { font-size:12px; color:var(--text-muted); text-align:center;
+    margin-bottom:16px; min-height:18px; }
+  .share-note { font-size:12px; color:var(--text-muted); text-align:center; padding-top:8px; }
 
-  .live-indicator { display:flex; align-items:center; justify-content:center; gap:8px; padding:14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; margin-bottom:20px; }
-  .live-dot { width:9px; height:9px; border-radius:50%; background:var(--green); animation:livepulse 1.5s infinite; }
-  @keyframes livepulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,0.4)}50%{opacity:0.8;box-shadow:0 0 0 5px rgba(16,185,129,0)} }
-  .live-text { color:#065f46; font-weight:700; font-size:14px; }
-  .preview-container { border-radius:10px; overflow:hidden; background:#000; aspect-ratio:16/9; margin-bottom:16px; position:relative; }
-  #preview-video { width:100%; height:100%; object-fit:contain; }
-  .preview-label { position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.6); color:white; font-size:10px; padding:3px 7px; border-radius:5px; }
-  .stop-btn { width:100%; padding:12px; background:transparent; color:var(--red); border:1px solid #fecaca; border-radius:10px; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; }
-  .stop-btn:hover { background:#fef2f2; }
-
-  .error-box { padding:20px; background:#fef2f2; border:1px solid #fecaca; border-radius:12px; text-align:center; }
-  .error-icon { font-size:28px; margin-bottom:8px; }
-  .error-title { font-weight:700; color:#991b1b; margin-bottom:4px; }
-  .error-msg { font-size:12px; color:#b91c1c; line-height:1.5; }
-  .retry-btn { margin-top:14px; padding:9px 22px; background:var(--accent); color:white; border:none; border-radius:8px; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
-
-  /* ===== FOCUS OVERLAY ===== */
-  #focus-overlay { display:none; position:fixed; inset:0; z-index:9999; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:40px; overflow:hidden; }
+  /* ===== 集中モード ===== */
+  #focus-overlay { display:none; position:fixed; inset:0; z-index:9000;
+    background:linear-gradient(135deg,#1e3a5f,#0f172a); color:#fff;
+    flex-direction:column; align-items:center; justify-content:center; text-align:center; }
   #focus-overlay.show { display:flex; }
-  #focus-overlay::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,#1e1b4b,#312e81,#1e40af); z-index:0; }
-  #focus-overlay::after { content:''; position:absolute; width:600px; height:600px; border-radius:50%; background:radial-gradient(circle,rgba(99,102,241,0.3) 0%,transparent 70%); animation:focuspulse 3s ease-in-out infinite; z-index:0; }
-  @keyframes focuspulse { 0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.2);opacity:1} }
-  .focus-content { position:relative; z-index:1; }
-  .focus-emoji { font-size:80px; margin-bottom:20px; display:block; animation:focusbounce 2.5s ease-in-out infinite; }
-  @keyframes focusbounce { 0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)} }
-  .focus-title { color:white; font-size:42px; font-weight:900; margin-bottom:12px; letter-spacing:0.04em; text-shadow:0 0 40px rgba(99,102,241,0.8); line-height:1.1; }
-  .focus-sub { color:rgba(255,255,255,0.6); font-size:16px; line-height:1.6; }
+  #focus-overlay h2 { font-size:24px; font-weight:700; margin-bottom:12px; }
+  #focus-overlay p { font-size:14px; opacity:.8; }
 
-  /* ===== WATCH OVERLAY (生徒画面を視聴) ===== */
-  #watch-overlay { display:none; position:fixed; inset:0; z-index:9999; background:#000; flex-direction:column; }
-  #watch-overlay.show { display:flex; }
-  .watch-header { padding:10px 20px; background:rgba(17,24,39,0.9); display:flex; align-items:center; gap:10px; }
-  .watch-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; background:rgba(6,182,212,0.2); border:1px solid rgba(6,182,212,0.4); border-radius:20px; color:#67e8f9; font-size:12px; font-weight:600; }
-  .watch-dot { width:7px; height:7px; border-radius:50%; background:#06b6d4; animation:livepulse 1.5s infinite; }
-  #watch-video { flex:1; width:100%; object-fit:contain; background:#000; }
-
-  /* ===== MESSAGE POPUP ===== */
-  /* ===== TEACHER WATCH OVERLAY ===== */
-  #teacher-overlay { display:none; position:fixed; inset:0; z-index:9600; background:#000; flex-direction:column; }
+  /* ===== 先生画面オーバーレイ ===== */
+  #teacher-overlay { display:none; position:fixed; inset:0; z-index:8000;
+    background:#000; flex-direction:column; }
   #teacher-overlay.show { display:flex; }
-  #img-overlay { display:none; position:fixed; inset:0; z-index:9700; flex-direction:column; background:#f8f9fa; touch-action:none; }
-  #img-overlay.show { display:flex; }
-  #img-header { flex-shrink:0; background:white; border-bottom:2px solid #e2e8f0; display:flex; align-items:center; min-height:54px; padding:0 12px; gap:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
-  #img-instruction-bar { flex:1; display:flex; align-items:center; gap:8px; background:#fffbeb; border:1.5px solid #fcd34d; border-radius:10px; padding:8px 12px; min-height:40px; }
-  #img-overlay-title { font-size:13px; font-weight:700; color:#92400e; flex:1; }
-  #img-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
-  #img-canvas { display:block; width:100%; height:100%; cursor:crosshair; touch-action:none; }
-  #img-toolbar { flex-shrink:0; background:white; border-top:2px solid #e2e8f0; padding:8px 12px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 -2px 8px rgba(0,0,0,0.06); flex-wrap:wrap; }
-  .img-submit-btn { padding:9px 16px; background:#2563eb; color:white; border:none; border-radius:10px; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:5px; white-space:nowrap; }
-  .img-submit-btn.submitted { background:#10b981; }
-  .teacher-header { padding:10px 20px; background:rgba(17,24,39,0.9); display:flex; align-items:center; gap:10px; }
-  .teacher-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 14px; background:rgba(59,130,246,0.2); border:1px solid rgba(59,130,246,0.4); border-radius:20px; color:#93c5fd; font-size:12px; font-weight:600; }
-  .teacher-dot { width:7px; height:7px; border-radius:50%; background:#3b82f6; animation:livepulse 1.5s infinite; }
-  #teacher-video { flex:1; width:100%; object-fit:contain; background:#000; }
+  #teacher-video { width:100%; height:100%; object-fit:contain; }
+  .teacher-close { position:absolute; top:12px; right:12px; background:rgba(255,255,255,.2);
+    color:#fff; border:none; border-radius:8px; padding:6px 12px; cursor:pointer; z-index:1; }
 
-  /* ===== SURVEY OVERLAY ===== */
-  #survey-overlay { display:none; position:fixed; inset:0; z-index:9500; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; padding:20px; }
+  /* ===== アンケート ===== */
+  #survey-overlay { display:none; position:fixed; inset:0; z-index:7000;
+    background:rgba(15,23,42,.7); align-items:center; justify-content:center; padding:16px; }
   #survey-overlay.show { display:flex; }
-  .survey-card { background:white; border-radius:20px; padding:28px; width:100%; max-width:460px; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
-  .survey-card-title { font-size:13px; font-weight:700; color:#64748b; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
-  .survey-question { font-size:18px; font-weight:700; color:#1e293b; margin-bottom:20px; line-height:1.5; }
-  /* Choice buttons */
-  .choice-btn { width:100%; padding:14px 16px; margin-bottom:10px; background:white; border:2px solid #e2e8f0; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:14px; font-weight:600; color:#1e293b; cursor:pointer; transition:all 0.2s; text-align:left; display:flex; align-items:center; gap:10px; }
-  .choice-btn:hover { border-color:#3b82f6; background:#eff6ff; }
-  .choice-btn.selected { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
-  .choice-btn.answered { cursor:default; }
-  .choice-label-badge { width:28px; height:28px; border-radius:8px; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
-  .choice-btn.selected .choice-label-badge { background:#3b82f6; color:white; }
-  /* Free text */
-  .survey-textarea { width:100%; padding:12px 14px; border:2px solid #e2e8f0; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:14px; color:#1e293b; resize:vertical; min-height:100px; outline:none; transition:border-color 0.2s; }
-  .survey-textarea:focus { border-color:#3b82f6; }
-  .survey-submit-btn { width:100%; padding:13px; background:#3b82f6; color:white; border:none; border-radius:12px; font-family:'Noto Sans JP',sans-serif; font-size:15px; font-weight:700; cursor:pointer; margin-top:14px; transition:all 0.2s; }
-  .survey-submit-btn:hover { background:#2563eb; }
-  .survey-submit-btn:disabled { background:#94a3b8; cursor:not-allowed; }
-  .survey-answered { text-align:center; padding:16px 0; }
-  .survey-answered-icon { font-size:40px; margin-bottom:8px; }
-  .survey-answered-text { font-size:15px; font-weight:700; color:#065f46; }
+  .survey-card { background:#fff; border-radius:20px; padding:24px; width:100%; max-width:420px; }
+  .survey-header { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+  .survey-type-icon { font-size:24px; }
+  .survey-type-label { font-size:12px; color:var(--accent); font-weight:700; }
+  .survey-q { font-size:16px; font-weight:700; margin-bottom:16px; line-height:1.5; }
+  .choice-btn { display:flex; align-items:center; gap:10px; width:100%; padding:12px 16px;
+    border:2px solid var(--border); border-radius:12px; background:#fff;
+    font-size:14px; cursor:pointer; margin-bottom:8px; transition:.15s; text-align:left; }
+  .choice-btn:hover { border-color:var(--accent); background:#eff6ff; }
+  .choice-btn.selected { border-color:var(--accent); background:#eff6ff; }
+  .choice-label-badge { background:var(--accent); color:#fff; border-radius:6px;
+    padding:2px 8px; font-size:12px; font-weight:700; flex-shrink:0; }
+  .survey-textarea { width:100%; border:1.5px solid var(--border); border-radius:10px;
+    padding:10px 12px; font-size:14px; font-family:inherit; resize:vertical; min-height:80px;
+    outline:none; margin-bottom:10px; }
+  .survey-textarea:focus { border-color:var(--accent); }
+  .survey-submit-btn { width:100%; padding:12px; background:var(--accent); color:#fff;
+    border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+  .survey-submitted { text-align:center; color:var(--accent); font-weight:700;
+    padding:20px 0; font-size:16px; }
 
-  #msg-popup { display:none; position:fixed; top:24px; left:50%; transform:translateX(-50%) translateY(-100px); z-index:10000; background:white; border-radius:16px; padding:20px 24px; box-shadow:0 20px 60px rgba(0,0,0,0.2); max-width:380px; width:calc(100% - 40px); text-align:center; transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1),opacity 0.3s; opacity:0; }
-  #msg-popup.show { display:block; transform:translateX(-50%) translateY(0); opacity:1; }
-  .msg-popup-icon { font-size:32px; margin-bottom:8px; }
-  .msg-popup-from { font-size:11px; color:var(--text-muted); font-weight:600; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:6px; }
-  .msg-popup-text { font-size:18px; font-weight:700; color:var(--text); line-height:1.4; }
-  .msg-popup-close { margin-top:14px; padding:8px 20px; background:var(--accent); color:white; border:none; border-radius:8px; font-family:'Noto Sans JP',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
-  /* ===== WHITEBOARD OVERLAY ===== */
-  #wb-overlay { display:none; position:fixed; inset:0; z-index:9800; flex-direction:column; background:#f8f9fa; touch-action:none; }
+  /* ===== メッセージ ===== */
+  #msg-overlay { display:none; position:fixed; inset:0; z-index:6500;
+    background:rgba(15,23,42,.6); align-items:center; justify-content:center; padding:16px; }
+  #msg-overlay.show { display:flex; }
+  .msg-card { background:#fff; border-radius:16px; padding:24px; width:100%; max-width:360px;
+    text-align:center; }
+  .msg-icon { font-size:32px; margin-bottom:10px; }
+  .msg-text { font-size:15px; font-weight:600; line-height:1.6; margin-bottom:16px; }
+  .msg-close { padding:10px 28px; background:var(--accent); color:#fff; border:none;
+    border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+
+  /* ===== ホワイトボード ===== */
+  #wb-overlay { display:none; position:fixed; inset:0; z-index:5000;
+    background:#fff; flex-direction:column; }
   #wb-overlay.show { display:flex; }
-
-  /* 上部ヘッダー */
-  #wb-header { flex-shrink:0; background:white; border-bottom:2px solid #e2e8f0; display:flex; align-items:center; min-height:54px; padding:0 12px; gap:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
-  #wb-instruction-bar { flex:1; display:flex; align-items:center; gap:8px; background:#fffbeb; border:1.5px solid #fcd34d; border-radius:10px; padding:8px 12px; min-height:40px; }
-  #wb-instruction-icon { font-size:16px; flex-shrink:0; }
-  #wb-instruction-text { font-size:13px; font-weight:600; color:#1e293b; line-height:1.4; flex:1; }
-  #wb-instruction-text.empty { color:#94a3b8; font-weight:400; font-style:italic; }
-
-  /* ツールバー */
-  #wb-toolbar { flex-shrink:0; background:white; border-top:2px solid #e2e8f0; padding:8px 12px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 -2px 8px rgba(0,0,0,0.06); flex-wrap:wrap; }
-  .wbt { width:42px; height:42px; border-radius:10px; border:2px solid #e2e8f0; background:white; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; transition:all 0.15s; font-family:'Noto Sans JP',sans-serif; font-weight:700; color:#334155; flex-shrink:0; }
-  .wbt:active { transform:scale(0.9); }
-  .wbt.active { border-color:#3b82f6; background:#eff6ff; color:#2563eb; }
-  .wb-sep { width:1px; height:30px; background:#e2e8f0; flex-shrink:0; }
-  .wbc { width:30px; height:30px; border-radius:50%; border:3px solid transparent; cursor:pointer; transition:all 0.15s; flex-shrink:0; }
-  .wbc.active { border-color:#1e293b; transform:scale(1.2); }
-  .wbc:active { transform:scale(0.88); }
-  #wb-size { width:56px; height:36px; border:2px solid #e2e8f0; border-radius:8px; background:white; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:600; color:#1e293b; outline:none; text-align:center; cursor:pointer; }
-  .wb-submit-btn { padding:9px 16px; background:#2563eb; color:white; border:none; border-radius:10px; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:5px; white-space:nowrap; }
-  .wb-submit-btn:active { transform:scale(0.95); }
-  .wb-submit-btn.submitted { background:#10b981; }
-
-  /* キャンバス */
+  #wb-header { display:flex; align-items:center; gap:10px; padding:10px 14px;
+    border-bottom:1px solid var(--border); background:#fff; }
+  #wb-header h3 { font-size:14px; font-weight:700; flex:1; }
+  #wb-instruction-text { font-size:12px; color:var(--text-muted); flex:2; line-height:1.4; }
+  #wb-instruction-text.empty { color:#cbd5e1; font-style:italic; }
+  .wb-submit-btn { padding:7px 16px; background:var(--accent); color:#fff; border:none;
+    border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; flex-shrink:0; }
   #wb-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
-  #wb-canvas { display:block; width:100%; height:100%; cursor:crosshair; touch-action:none; }
-
-  /* テキスト入力 */
-  #wb-text-overlay { display:none; }  /* 使用停止 */
+  #wb-canvas { position:absolute; inset:0; touch-action:none; }
   #wb-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
-  /* テキストラベル（ドラッグ可能） */
-  #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
+  #wb-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px;
+    border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
+  .wbt { padding:6px 10px; border:1.5px solid var(--border); border-radius:8px;
+    background:#fff; font-size:13px; cursor:pointer; font-weight:600; transition:.1s; }
+  .wbt.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .wb-sep { width:1px; height:24px; background:var(--border); margin:0 2px; }
+  .wbc { width:24px; height:24px; border-radius:50%; border:2px solid transparent;
+    cursor:pointer; transition:.1s; }
+  .wbc.active { border-color:#1e293b; box-shadow:0 0 0 2px #fff,0 0 0 4px #1e293b; }
+  #wb-size { border:1.5px solid var(--border); border-radius:8px; padding:4px 6px;
+    font-size:13px; font-family:inherit; }
+  #wb-toast { position:absolute; bottom:70px; left:50%; transform:translateX(-50%);
+    background:rgba(30,41,59,.9); color:#fff; padding:8px 16px; border-radius:20px;
+    font-size:13px; white-space:nowrap; opacity:0; transition:opacity .3s; pointer-events:none; z-index:100; }
+  #wb-toast.show { opacity:1; }
+
+  /* ===== テキストラベル共通 ===== */
   .img-label { position:absolute; pointer-events:all; user-select:none;
-    background:rgba(255,255,255,0.88); border-radius:6px; padding:6px 8px 6px 8px;
+    background:rgba(255,255,255,0.88); border-radius:6px; padding:6px 8px;
     font-family:'Noto Sans JP',sans-serif; line-height:1.4;
     box-shadow:0 2px 10px rgba(0,0,0,0.22); cursor:move; }
-  /* 削除ボタン：ラベル外の右上に浮かせる */
   .img-label-del { position:absolute; top:-10px; right:-10px; width:22px; height:22px;
     border-radius:50%; background:#ef4444; color:white; font-size:13px; font-weight:700;
     display:flex; align-items:center; justify-content:center;
-    cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.3); line-height:1;
+    cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.3);
     opacity:0; transition:opacity 0.15s; pointer-events:all; }
   .img-label:hover .img-label-del { opacity:1; }
   .img-label-textarea { border:none; outline:none; background:transparent; resize:both;
     font-family:'Noto Sans JP',sans-serif; line-height:1.4; padding:0; cursor:text;
     min-width:80px; min-height:28px; width:160px; word-break:break-all; display:block; }
-  /* テキスト入力インライン */
-  #img-text-overlay { display:none; position:fixed; inset:0; z-index:9800; pointer-events:none; }
-  #img-text-overlay.show { display:block; }
-  #img-text-input { position:absolute; pointer-events:all; background:rgba(255,255,255,0.92);
-    border:none; border-bottom:2.5px solid #2563eb; border-radius:4px 4px 0 0; outline:none;
-    font-family:'Noto Sans JP',sans-serif; padding:4px 8px; caret-color:#2563eb;
-    min-width:80px; max-width:300px; box-shadow:0 2px 10px rgba(0,0,0,0.18); }
 
-  /* トースト */
-  #wb-toast { position:fixed; top:64px; left:50%; transform:translateX(-50%) translateY(-70px); background:rgba(30,41,59,0.9); color:white; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:600; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index:9900; white-space:nowrap; }
-  #wb-toast.show { transform:translateX(-50%) translateY(0); }
-
+  /* ===== 画像配布オーバーレイ ===== */
+  #img-overlay { display:none; position:fixed; inset:0; z-index:4000;
+    background:#fff; flex-direction:column; }
+  #img-overlay.show { display:flex; }
+  #img-header { display:flex; align-items:center; gap:10px; padding:10px 14px;
+    border-bottom:1px solid var(--border); background:#fff; }
+  #img-header h3 { font-size:14px; font-weight:700; flex:1; }
+  .img-submit-btn { padding:7px 16px; background:var(--accent); color:#fff; border:none;
+    border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; flex-shrink:0; }
+  .img-submit-btn.submitted { background:#22c55e; }
+  #img-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
+  #img-canvas { position:absolute; inset:0; touch-action:none; }
+  #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
+  #img-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px;
+    border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -221,152 +213,91 @@
         <div style="font-size:16px;font-weight:700;margin-bottom:6px;">ログインしてください</div>
         <div style="font-size:13px;color:var(--text-muted);line-height:1.6;">Googleアカウントでログインすると<br>先生にあなたの名前が表示されます</div>
       </div>
-      <button class="google-btn" onclick="signInWithGoogle()">
-        <svg class="google-icon" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      <button class="google-btn" id="google-login-btn" onclick="signInWithGoogle()">
+        <svg class="google-icon" viewBox="0 0 48 48">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
         Googleアカウントでログイン
       </button>
-      <div style="margin-top:12px;text-align:center;font-size:12px;color:var(--text-muted);">学校のGoogleアカウントを使用してください</div>
     </div>
 
-    <div class="state" id="state-prompt">
-      <ul class="info-list">
-        <li><div class="icon">👁</div><div><div class="label">内容</div>先生があなたの画面を見ることができます</div></li>
-        <li><div class="icon">🖥</div><div><div class="label">共有範囲</div>「画面全体」のみ選択可能です</div></li>
-        <li><div class="icon">🛑</div><div><div class="label">停止</div>いつでも「共有を停止」ボタンで終了できます</div></li>
-      </ul>
-      <button class="share-btn" id="share-btn" onclick="startShare()"><span>📡</span> 画面共有を開始する</button>
-      <div class="footer-note">ボタンを押すとブラウザから「画面共有の許可」を求めるダイアログが表示されます</div>
-    </div>
-
-    <div class="state" id="state-live">
-      <div class="live-indicator"><div class="live-dot"></div><span class="live-text">画面共有中です</span></div>
-      <div class="preview-container">
-        <video id="preview-video" autoplay muted playsinline></video>
-        <div class="preview-label">プレビュー</div>
-      </div>
-      <button class="stop-btn" onclick="stopShare()">⏹ 画面共有を停止する</button>
-      <div class="footer-note">先生に画面が表示されています</div>
+    <div class="state" id="state-connected">
+      <p class="status-bar" id="status-bar">画面共有を開始してください</p>
+      <button class="share-btn" id="share-btn" onclick="toggleShare()">📡 画面を共有する</button>
+      <p class="share-note">「画面全体」を選択してください</p>
     </div>
 
     <div class="state" id="state-error">
-      <div class="error-box">
-        <div class="error-icon">⚠️</div>
-        <div class="error-title">エラーが発生しました</div>
-        <div class="error-msg" id="error-msg">不明なエラー</div>
-        <button class="retry-btn" onclick="location.reload()">再試行</button>
-      </div>
-    </div>
-
-    <div class="state" id="state-disconnected">
       <div style="text-align:center;padding:20px 0;">
-        <div style="font-size:44px;margin-bottom:14px;">🔌</div>
-        <p style="font-weight:700;margin-bottom:6px;">セッションが終了しました</p>
-        <p style="font-size:12px;color:var(--text-muted);">先生がセッションを終了しました</p>
+        <div style="font-size:40px;margin-bottom:12px;">⚠️</div>
+        <p id="error-msg" style="color:#dc2626;font-size:14px;"></p>
+        <button class="retry-btn" onclick="location.reload()">再読み込み</button>
       </div>
     </div>
 
   </div>
 </div>
 
-<!-- Focus overlay（黒板に集中） -->
+<!-- 集中モード -->
 <div id="focus-overlay">
-  <div class="focus-content">
-    <span class="focus-emoji">🎯</span>
-    <div class="focus-title">黒板に集中！</div>
-    <div class="focus-sub">先生の指示に従ってください<br>画面から目を離して黒板を見ましょう</div>
-  </div>
+  <h2>🎯 集中してください</h2>
+  <p>先生の指示に従ってください</p>
 </div>
 
-<!-- Watch overlay（他の生徒の画面を視聴） -->
-<div id="watch-overlay">
-  <div class="watch-header">
-    <div class="watch-badge"><div class="watch-dot"></div>クラスメートの画面を表示中</div>
-    <span style="font-size:12px;color:rgba(255,255,255,0.4);margin-left:8px;">先生が選んだ生徒の画面です</span>
-  </div>
-  <video id="watch-video" autoplay playsinline muted></video>
-</div>
-
-<!-- Teacher screen overlay -->
+<!-- 先生画面オーバーレイ -->
 <div id="teacher-overlay">
-  <div class="teacher-header">
-    <div class="teacher-badge"><div class="teacher-dot"></div>先生の画面を表示中</div>
-  </div>
   <video id="teacher-video" autoplay playsinline></video>
+  <button class="teacher-close" onclick="hideTeacher()">✕ 閉じる</button>
 </div>
 
-<!-- Survey overlay -->
+<!-- アンケートオーバーレイ -->
 <div id="survey-overlay">
-  <div class="survey-card" id="survey-card">
-    <div class="survey-card-title"><span id="survey-type-icon">📊</span><span id="survey-type-label">アンケート</span></div>
-    <div class="survey-question" id="survey-q-text"></div>
+  <div class="survey-card">
+    <div class="survey-header">
+      <div class="survey-type-icon" id="survey-type-icon">📊</div>
+      <div>
+        <div class="survey-type-label" id="survey-type-label">アンケート</div>
+        <div style="font-size:11px;color:var(--text-muted);">先生からの質問</div>
+      </div>
+    </div>
+    <div class="survey-q" id="survey-q-text"></div>
     <div id="survey-body"></div>
   </div>
 </div>
 
-<!-- Message popup -->
-<div id="msg-popup">
-  <div class="msg-popup-icon">💬</div>
-  <div class="msg-popup-from">先生からのメッセージ</div>
-  <div class="msg-popup-text" id="msg-popup-text"></div>
-  <button class="msg-popup-close" onclick="closeMsgPopup()">OK</button>
-</div>
-<div id="img-overlay">
-  <div id="img-header">
-    <div id="img-instruction-bar">
-      <span>🖼️</span>
-      <span id="img-overlay-title">画像に書き込みましょう</span>
-    </div>
-    <button class="img-submit-btn" id="img-submit-btn" onclick="distImgSubmit()">📤 提出</button>
-  </div>
-  <div id="img-canvas-wrap">
-    <canvas id="img-canvas"></canvas>
-    <div id="img-labels"></div>
-  </div>
-  <div id="img-text-overlay">
-    <input type="text" id="img-text-input" />
-  </div>
-  <div id="img-toolbar">
-    <button class="wbt active" id="imgt-pen" onclick="setImgTool('pen')" title="ペン">✏️</button>
-    <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🩹</button>
-    <button class="wbt" id="imgt-text" onclick="setImgTool('text')" title="テキスト">T</button>
-    <div class="wb-sep"></div>
-    <div class="wbc active" style="background:#1e293b;" data-color="#1e293b" onclick="imgSetColor(this)"></div>
-    <div class="wbc" style="background:#2563eb;" data-color="#2563eb" onclick="imgSetColor(this)"></div>
-    <div class="wbc" style="background:#ef4444;" data-color="#ef4444" onclick="imgSetColor(this)"></div>
-    <div class="wbc" style="background:#10b981;" data-color="#10b981" onclick="imgSetColor(this)"></div>
-    <div class="wbc" style="background:#f59e0b;" data-color="#f59e0b" onclick="imgSetColor(this)"></div>
-    <div class="wb-sep"></div>
-    <select id="img-size" onchange="imgSetSize(this.value)" style="width:56px;height:36px;border:2px solid #e2e8f0;border-radius:8px;background:white;font-family:'Noto Sans JP',sans-serif;font-size:12px;font-weight:600;color:#1e293b;outline:none;text-align:center;cursor:pointer;">
-      <option value="2">細</option>
-      <option value="4">中</option>
-      <option value="8" selected>太</option>
-      <option value="16">極太</option>
-    </select>
-    <div class="wb-sep"></div>
-    <button class="wbt" onclick="distImgClear()" title="全消し">🗑️</button>
+<!-- メッセージオーバーレイ -->
+<div id="msg-overlay">
+  <div class="msg-card">
+    <div class="msg-icon">💬</div>
+    <div class="msg-text" id="msg-text"></div>
+    <button class="msg-close" onclick="document.getElementById('msg-overlay').classList.remove('show')">閉じる</button>
   </div>
 </div>
+
+<!-- ホワイトボードオーバーレイ -->
 <div id="wb-overlay">
   <div id="wb-header">
-    <div id="wb-instruction-bar">
-      <span id="wb-instruction-icon">📋</span>
-      <span id="wb-instruction-text" class="empty">先生の指示を待っています...</span>
-    </div>
+    <h3>📋 ホワイトボード</h3>
+    <div id="wb-instruction-text" class="empty">先生の指示を待っています...</div>
+    <button class="wb-submit-btn" id="wb-submit-btn" onclick="wbSubmit()">📤 提出</button>
   </div>
   <div id="wb-canvas-wrap">
     <canvas id="wb-canvas"></canvas>
     <div id="wb-labels"></div>
+    <div id="wb-toast"></div>
   </div>
   <div id="wb-toolbar">
     <button class="wbt active" id="wbt-pen" onclick="wbSetTool('pen')" title="ペン">✏️</button>
     <button class="wbt" id="wbt-eraser" onclick="wbSetTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="wbt-text" onclick="wbSetTool('text')" title="テキスト">T</button>
     <div class="wb-sep"></div>
-    <div class="wbc active" style="background:#1e293b;" data-color="#1e293b" onclick="wbSetColor(this)"></div>
-    <div class="wbc" style="background:#2563eb;" data-color="#2563eb" onclick="wbSetColor(this)"></div>
-    <div class="wbc" style="background:#ef4444;" data-color="#ef4444" onclick="wbSetColor(this)"></div>
-    <div class="wbc" style="background:#10b981;" data-color="#10b981" onclick="wbSetColor(this)"></div>
-    <div class="wbc" style="background:#f59e0b;" data-color="#f59e0b" onclick="wbSetColor(this)"></div>
+    <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="wbSetColor(this)"></div>
+    <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="wbSetColor(this)"></div>
+    <div class="wbc" data-color="#2563eb" style="background:#2563eb" onclick="wbSetColor(this)"></div>
+    <div class="wbc" data-color="#16a34a" style="background:#16a34a" onclick="wbSetColor(this)"></div>
     <div class="wb-sep"></div>
     <select id="wb-size" onchange="wbSetSize(this.value)">
       <option value="2">細</option>
@@ -374,40 +305,72 @@
       <option value="8" selected>太</option>
       <option value="16">極太</option>
     </select>
-    <div class="wb-sep"></div>
     <button class="wbt" onclick="wbClear()" title="全消し">🗑️</button>
-    <button class="wb-submit-btn" id="wb-submit-btn" onclick="wbSubmit()">📤 提出</button>
   </div>
 </div>
-<div id="wb-toast"></div>
 
+<!-- 画像配布オーバーレイ -->
+<div id="img-overlay">
+  <div id="img-header">
+    <h3>🖼 配布画像</h3>
+    <button class="img-submit-btn" id="img-submit-btn" onclick="distImgSubmit()">📤 提出</button>
+  </div>
+  <div id="img-canvas-wrap">
+    <canvas id="img-canvas"></canvas>
+    <div id="img-labels"></div>
+  </div>
+  <div id="img-toolbar">
+    <button class="wbt active" id="imgt-pen" onclick="setImgTool('pen')" title="ペン">✏️</button>
+    <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🩹</button>
+    <button class="wbt" id="imgt-text" onclick="setImgTool('text')" title="テキスト">T</button>
+    <div class="wb-sep"></div>
+    <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="imgSetColor(this)"></div>
+    <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="imgSetColor(this)"></div>
+    <div class="wbc" data-color="#2563eb" style="background:#2563eb" onclick="imgSetColor(this)"></div>
+    <div class="wbc" data-color="#16a34a" style="background:#16a34a" onclick="imgSetColor(this)"></div>
+    <div class="wb-sep"></div>
+    <select id="img-size" onchange="imgSetSize(this.value)">
+      <option value="2">細</option>
+      <option value="4">中</option>
+      <option value="8" selected>太</option>
+      <option value="16">極太</option>
+    </select>
+    <button class="wbt" onclick="distImgClear()" title="全消し">🗑️</button>
+  </div>
+</div>
 
 <script type="module">
+
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
   import { getDatabase, ref, set, update, onValue, onChildAdded } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
+  // ===== 状態管理 =====
   function showState(name) {
     document.querySelectorAll('.state').forEach(el => el.classList.remove('active'));
     document.getElementById('state-' + name)?.classList.add('active');
   }
 
-  // auth をモジュールスコープで保持（main()完了前にログインボタンが押されても対応）
+  // ===== Googleログイン =====
+  // _auth は main() 内で Firebase 初期化完了後にセットされる
   let _auth = null;
 
   window.signInWithGoogle = async function() {
-    if (!_auth) {
-      // まだFirebase初期化中 → 少し待ってリトライ
-      showState('loading');
-      setTimeout(() => { if (!_auth) showState('error'); }, 5000);
-      const wait = setInterval(() => {
-        if (_auth) { clearInterval(wait); showState('login'); window.signInWithGoogle(); }
-      }, 200);
-      return;
-    }
+    const btn = document.querySelector('.google-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '接続中...'; }
     try {
+      // _auth が準備できるまで最大5秒待つ
+      for (let i = 0; i < 50 && !_auth; i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      if (!_auth) {
+        alert('Firebase接続に失敗しました。ページを再読み込みしてください。');
+        location.reload();
+        return;
+      }
       await signInWithPopup(_auth, new GoogleAuthProvider());
     } catch(e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg class="google-icon" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Googleアカウントでログイン'; }
       if (e.code !== 'auth/popup-closed-by-user') {
         showState('error');
         document.getElementById('error-msg').textContent = 'ログインエラー: ' + e.message;
@@ -415,8 +378,6 @@
     }
   };
 
-  // ページ読み込み直後にloginを表示
-  showState('login');
 
   async function main() {
     const params = new URLSearchParams(location.search);
@@ -1743,6 +1704,7 @@
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2500);
   }
+
 
 </script>
 </body>

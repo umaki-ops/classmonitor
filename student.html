@@ -660,6 +660,15 @@
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
       }
+      // localStream のトラックを追加（未追加の場合のみ）
+      if (localStream) {
+        const senders = pc.getSenders();
+        localStream.getTracks().forEach(track => {
+          if (!senders.find(s => s.track === track)) {
+            pc.addTrack(track, localStream);
+          }
+        });
+      }
       await pc.setRemoteDescription({type:'offer', sdp});
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -874,7 +883,25 @@
         imgCtx.strokeStyle=imgColor; imgCtx.lineWidth=imgSize; imgCtx.stroke();
       }
     }
-    window.imgSetTool = t => { imgTool = t; };
+    window.imgSetTool = function(t) { imgTool = t; };
+    window.setImgTool = function(t) {
+      imgTool = t;
+      document.querySelectorAll('#img-toolbar .wbt').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById('imgt-' + t);
+      if (btn) btn.classList.add('active');
+      if (t === 'text') {
+        const text = prompt('テキストを入力:');
+        if (text) {
+          imgLabels.push({text, x: imgCanvas ? imgCanvas.width/2 - 40 : 50, y: imgCanvas ? imgCanvas.height/2 : 50});
+          imgRenderLabels();
+        }
+        imgTool = 'pen';
+        document.querySelectorAll('#img-toolbar .wbt').forEach(b => b.classList.remove('active'));
+        const penBtn = document.getElementById('imgt-pen');
+        if (penBtn) penBtn.classList.add('active');
+      }
+    };
+    window.distImgSubmit = window.imgSubmit;
     window.imgSetColor = el => { imgColor = el.dataset.color; document.querySelectorAll('#img-colors .icolor').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
     window.imgSetSize = v => { imgSize = parseInt(v); };
     window.imgAddLabel = () => {

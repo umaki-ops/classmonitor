@@ -929,7 +929,12 @@
       window._shareActive = true;
       try {
         localStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { displaySurface: 'monitor' },
+          video: {
+            displaySurface: 'monitor',
+            width:  { ideal: 2560, max: 3840 },
+            height: { ideal: 1440, max: 2160 },
+            frameRate: { ideal: 30, max: 60 }
+          },
           audio: false,
           selfBrowserSurface: 'exclude',
           preferCurrentTab: false,

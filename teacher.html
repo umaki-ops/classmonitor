@@ -1008,7 +1008,7 @@ function stopTS(){
   toast('⏹ 先生の画面共有を停止しました');
 }
 // 送信ビットレートを上げるヘルパー（teacher→生徒 配信用）
-async function setHighBitrate(pc, kbps=4000){
+async function setHighBitrate(pc, kbps=8000){
   const senders = pc.getSenders();
   for(const sender of senders){
     if(!sender.track || sender.track.kind !== 'video') continue;
@@ -1035,7 +1035,7 @@ async function setupTWPc(sid){
     pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
     pc.onconnectionstatechange=()=>{
       console.log('[TW->'+sid+']',pc.connectionState);
-      if(pc.connectionState==='connected') setHighBitrate(pc,4000);
+      if(pc.connectionState==='connected') setHighBitrate(pc,8000);
     };
     const offer=await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -1090,7 +1090,7 @@ async function setupStudentBcastPc(sid,stream){
     pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'watch-ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
     pc.onconnectionstatechange=()=>{
       console.log('[Watch->'+sid+']',pc.connectionState);
-      if(pc.connectionState==='connected') setHighBitrate(pc,3000);
+      if(pc.connectionState==='connected') setHighBitrate(pc,6000);
     };
     const offer=await pc.createOffer();
     await pc.setLocalDescription(offer);

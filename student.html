@@ -644,7 +644,460 @@
           handleCommand(data);
         });
       });
+      listenMyGroup();
     }); // end onAuthStateChanged
+
+    // ===== WebRTC =====
+    async function handleOffer(sdp) {
+      if (!pc) {
+        pc = new RTCPeerConnection(ICE);
+        pc.onicecandidate = e => {
+          if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_${Math.random().toString(36).slice(2)}`), {
+            type:'ice-answer', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
+          });
+        };
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'failed') { pc.close(); pc = null; }
+        };
+      }
+      await pc.setRemoteDescription({type:'offer', sdp});
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_ans`), {
+        type:'answer', from:studentId, to:'teacher', sdp:answer.sdp
+      });
+    }
+    async function handleTeacherIce(candidate) {
+      if (!pc || !candidate) return;
+      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+    }
+    async function handleWatchOffer(fromId, sdp, sourceName) {
+      watchPc = new RTCPeerConnection(ICE);
+      watchPc.ontrack = e => {
+        const el = document.getElementById('watch-video');
+        if (el) el.srcObject = e.streams[0];
+      };
+      watchPc.onicecandidate = e => {
+        if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wi`), {
+          type:'watch-ice-answer', from:studentId, to:fromId, candidate:e.candidate.toJSON()
+        });
+      };
+      await watchPc.setRemoteDescription({type:'offer', sdp});
+      const ans = await watchPc.createAnswer();
+      await watchPc.setLocalDescription(ans);
+      set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wa`), {
+        type:'watch-answer', from:studentId, to:fromId, sdp:ans.sdp
+      });
+      showWatch(sourceName);
+    }
+    async function handleWatchIce(candidate) {
+      if (!watchPc || !candidate) return;
+      try { await watchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+    }
+    async function handleTeacherWatchOffer(sdp) {
+      const twPc = new RTCPeerConnection(ICE);
+      twPc.ontrack = e => {
+        const el = document.getElementById('teacher-video');
+        if (el) { el.srcObject = e.streams[0]; showTeacher(); }
+      };
+      twPc.onicecandidate = e => {
+        if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twi`), {
+          type:'tw-ice-answer', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
+        });
+      };
+      await twPc.setRemoteDescription({type:'offer', sdp});
+      const ans = await twPc.createAnswer();
+      await twPc.setLocalDescription(ans);
+      set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twa`), {
+        type:'tw-answer', from:studentId, to:'teacher', sdp:ans.sdp
+      });
+    }
+    function showTeacher() {
+      const el = document.getElementById('teacher-overlay');
+      if (el) el.classList.add('show');
+    }
+    function hideTeacher() {
+      const el = document.getElementById('teacher-overlay');
+      if (el) { el.classList.remove('show'); }
+      const v = document.getElementById('teacher-video');
+      if (v) v.srcObject = null;
+    }
+
+    // ===== 画面共有 =====
+    window.startShare = async function() {
+      window._shareActive = true;
+      try {
+        localStream = await navigator.mediaDevices.getDisplayMedia({video:true, audio:false});
+      } catch(e) {
+        window._shareActive = false;
+        showState('connected');
+        return;
+      }
+      const v = document.getElementById('preview-video');
+      if (v) v.srcObject = localStream;
+      showState('live');
+      localStream.getVideoTracks()[0].onended = () => window.stopShare();
+      set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
+    };
+    window.stopShare = function() {
+      window._shareActive = false;
+      if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
+      if (pc) { pc.close(); pc = null; }
+      showState('connected');
+      set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
+    };
+
+    // ===== フォーカス =====
+    let focusActive = false;
+    function showFocus() {
+      focusActive = true;
+      const el = document.getElementById('focus-overlay');
+      if (el) el.classList.add('show');
+    }
+    function hideFocus() {
+      focusActive = false;
+      const el = document.getElementById('focus-overlay');
+      if (el) el.classList.remove('show');
+    }
+    function showMsgPopup(text) {
+      const el = document.getElementById('msg-popup');
+      const txt = document.getElementById('msg-popup-text');
+      if (!el || !txt) return;
+      txt.textContent = text || '';
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 4000);
+    }
+
+    // ===== 視聴 =====
+    function showWatch(name) {
+      const el = document.getElementById('watch-overlay');
+      if (el) el.classList.add('show');
+      const lbl = document.getElementById('watch-label');
+      if (lbl && name) lbl.textContent = name + ' の画面';
+    }
+    function hideWatch() {
+      const el = document.getElementById('watch-overlay');
+      if (el) el.classList.remove('show');
+      if (watchPc) { watchPc.close(); watchPc = null; }
+      const v = document.getElementById('watch-video');
+      if (v) v.srcObject = null;
+    }
+
+    // ===== 配布画像 =====
+    let imgCanvas = null, imgBgCanvas = null, imgCtx = null, imgBgCtx = null;
+    let imgTool = 'pen', imgColor = '#ef4444', imgSize = 3;
+    let imgDrawing = false, imgLX = 0, imgLY = 0;
+    let imgLabels = [];
+
+    function showDistImg(dataUrl) {
+      const overlay = document.getElementById('dist-img-overlay');
+      if (overlay) overlay.classList.add('show');
+      imgInitOnce();
+      imgDrawBg(dataUrl);
+    }
+    window.hideDistImg = function() {
+      const overlay = document.getElementById('dist-img-overlay');
+      if (overlay) overlay.classList.remove('show');
+    };
+
+    function imgInitOnce() {
+      if (imgCtx) return;
+      imgCanvas = document.getElementById('img-canvas');
+      imgBgCanvas = document.getElementById('img-bg-canvas');
+      if (!imgCanvas || !imgBgCanvas) return;
+      imgCtx = imgCanvas.getContext('2d');
+      imgBgCtx = imgBgCanvas.getContext('2d');
+      imgResize();
+      window.addEventListener('resize', imgResize);
+      imgCanvas.addEventListener('pointerdown', e => {
+        imgDrawing = true;
+        const r = imgCanvas.getBoundingClientRect();
+        imgLX = (e.clientX-r.left)*imgCanvas.width/r.width;
+        imgLY = (e.clientY-r.top)*imgCanvas.height/r.height;
+      });
+      imgCanvas.addEventListener('pointermove', e => {
+        if (!imgDrawing) return;
+        const r = imgCanvas.getBoundingClientRect();
+        const x = (e.clientX-r.left)*imgCanvas.width/r.width;
+        const y = (e.clientY-r.top)*imgCanvas.height/r.height;
+        imgDraw(imgLX, imgLY, x, y);
+        imgLX = x; imgLY = y;
+        imgSignalDrawing();
+      });
+      imgCanvas.addEventListener('pointerup', () => { imgDrawing = false; imgScheduleSnapshot(); });
+      imgCanvas.addEventListener('pointerleave', () => { imgDrawing = false; });
+    }
+    function imgResize() {
+      if (!imgCanvas) return;
+      const wrap = imgCanvas.parentElement;
+      imgCanvas.width = wrap.offsetWidth;
+      imgCanvas.height = wrap.offsetHeight;
+      if (imgBgCanvas) { imgBgCanvas.width = wrap.offsetWidth; imgBgCanvas.height = wrap.offsetHeight; }
+    }
+    function imgDrawBg(dataUrl) {
+      if (!imgBgCtx || !dataUrl) return;
+      const img = new Image();
+      img.onload = () => {
+        const c = imgBgCanvas;
+        imgBgCtx.fillStyle = 'white';
+        imgBgCtx.fillRect(0, 0, c.width, c.height);
+        const scale = Math.min(c.width/img.width, c.height/img.height);
+        const x = (c.width - img.width*scale)/2;
+        const y = (c.height - img.height*scale)/2;
+        imgBgCtx.drawImage(img, x, y, img.width*scale, img.height*scale);
+      };
+      img.src = dataUrl;
+    }
+    function imgDraw(x1, y1, x2, y2) {
+      if (!imgCtx) return;
+      imgCtx.beginPath(); imgCtx.moveTo(x1,y1); imgCtx.lineTo(x2,y2);
+      imgCtx.lineCap='round'; imgCtx.lineJoin='round';
+      if (imgTool==='eraser') {
+        imgCtx.clearRect(x2-imgSize*3, y2-imgSize*3, imgSize*6, imgSize*6);
+      } else {
+        imgCtx.strokeStyle=imgColor; imgCtx.lineWidth=imgSize; imgCtx.stroke();
+      }
+    }
+    window.imgSetTool = t => { imgTool = t; };
+    window.imgSetColor = el => { imgColor = el.dataset.color; document.querySelectorAll('#img-colors .icolor').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
+    window.imgSetSize = v => { imgSize = parseInt(v); };
+    window.imgAddLabel = () => {
+      const text = prompt('テキストを入力:'); if (!text) return;
+      imgLabels.push({text, x:50, y:50});
+      imgRenderLabels();
+    };
+    function imgRenderLabels() {
+      const wrap = document.getElementById('img-labels');
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      imgLabels.forEach((lb, i) => {
+        const el = document.createElement('div');
+        el.className = 'wb-label';
+        el.style.cssText = `left:${lb.x}px;top:${lb.y}px;`;
+        el.textContent = lb.text;
+        el.draggable = true;
+        el.addEventListener('dragend', ev => { lb.x = ev.offsetX; lb.y = ev.offsetY; imgRenderLabels(); });
+        wrap.appendChild(el);
+      });
+    }
+    function imgExportWithLabels() {
+      const merged = document.createElement('canvas');
+      merged.width = imgCanvas.width; merged.height = imgCanvas.height;
+      const ctx = merged.getContext('2d');
+      ctx.drawImage(imgBgCanvas, 0, 0);
+      ctx.drawImage(imgCanvas, 0, 0);
+      return merged.toDataURL('image/jpeg', 0.85);
+    }
+    let imgSnapTimer = null;
+    function imgScheduleSnapshot() {
+      clearTimeout(imgSnapTimer);
+      imgSnapTimer = setTimeout(() => {
+        if (!imgCanvas) return;
+        const dataUrl = imgExportWithLabels();
+        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), dataUrl);
+      }, 1000);
+    }
+    function imgSignalDrawing() {
+      set(ref(db, `sessions/${sessionId}/distImg/drawing/${studentId}`), true);
+      setTimeout(() => set(ref(db, `sessions/${sessionId}/distImg/drawing/${studentId}`), false), 2000);
+    }
+    window.imgSubmit = async function() {
+      if (!imgCanvas) return;
+      const dataUrl = imgExportWithLabels();
+      await set(ref(db, `sessions/${sessionId}/distImg/submissions/${studentId}`), {
+        name: window.wbName || studentId, image: dataUrl, submittedAt: Date.now()
+      });
+      alert('提出しました！');
+    };
+    window.distImgClear = function() {
+      if (imgCtx) imgCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+      imgLabels = [];
+      imgRenderLabels();
+    };
+
+    // ===== ホワイトボード =====
+    let wbCanvas = null, wbCtx = null;
+    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 3;
+    let wbDrawing = false, wbLX = 0, wbLY = 0;
+    let wbLabels = [];
+
+    function wbInit() {
+      wbCanvas = document.getElementById('wb-canvas');
+      if (!wbCanvas || wbCtx) return;
+      wbCtx = wbCanvas.getContext('2d');
+      wbResize();
+      window.addEventListener('resize', wbResize);
+      wbCanvas.addEventListener('pointerdown', e => {
+        wbDrawing = true;
+        const r = wbCanvas.getBoundingClientRect();
+        wbLX = (e.clientX-r.left)*wbCanvas.width/r.width;
+        wbLY = (e.clientY-r.top)*wbCanvas.height/r.height;
+      });
+      wbCanvas.addEventListener('pointermove', e => {
+        if (!wbDrawing) return;
+        const r = wbCanvas.getBoundingClientRect();
+        const x = (e.clientX-r.left)*wbCanvas.width/r.width;
+        const y = (e.clientY-r.top)*wbCanvas.height/r.height;
+        wbDraw(wbLX, wbLY, x, y);
+        wbLX = x; wbLY = y;
+        wbSignalDrawing();
+      });
+      wbCanvas.addEventListener('pointerup', () => { wbDrawing = false; wbScheduleSnapshot(); });
+      wbCanvas.addEventListener('pointerleave', () => { wbDrawing = false; });
+    }
+    function wbResize() {
+      if (!wbCanvas) return;
+      const wrap = wbCanvas.parentElement;
+      wbCanvas.width = wrap.offsetWidth;
+      wbCanvas.height = wrap.offsetHeight;
+      wbCtx.fillStyle = 'white';
+      wbCtx.fillRect(0, 0, wbCanvas.width, wbCanvas.height);
+    }
+    function wbDraw(x1, y1, x2, y2) {
+      if (!wbCtx) return;
+      wbCtx.beginPath(); wbCtx.moveTo(x1,y1); wbCtx.lineTo(x2,y2);
+      wbCtx.lineCap='round'; wbCtx.lineJoin='round';
+      if (wbTool==='eraser') {
+        wbCtx.strokeStyle='white'; wbCtx.lineWidth=wbSize*5;
+      } else {
+        wbCtx.strokeStyle=wbColor; wbCtx.lineWidth=wbSize;
+      }
+      wbCtx.stroke();
+    }
+    function wbOpen() {
+      const overlay = document.getElementById('wb-overlay');
+      if (overlay) overlay.classList.add('show');
+      wbInit();
+      const inst = window._wbInstruction || '';
+      const el = document.getElementById('wb-instruction-text');
+      if (el) { el.textContent = inst || '先生の指示を待っています...'; el.classList.toggle('empty', !inst); }
+    }
+    function wbClose() {
+      const overlay = document.getElementById('wb-overlay');
+      if (overlay) overlay.classList.remove('show');
+    }
+    window.wbClear = function() {
+      if (wbCtx) { wbCtx.fillStyle='white'; wbCtx.fillRect(0,0,wbCanvas.width,wbCanvas.height); }
+      wbLabels = [];
+      const wrap = document.getElementById('wb-labels');
+      if (wrap) wrap.innerHTML = '';
+    };
+    window.wbSetTool = t => { wbTool = t; document.querySelectorAll('.wbt').forEach(b=>b.classList.remove('active')); };
+    window.wbSetColor = el => { wbColor = el.dataset.color; document.querySelectorAll('.wcolor').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
+    window.wbSetSize = v => { wbSize = parseInt(v); };
+    window.wbAddLabel = () => {
+      const text = prompt('テキストを入力:'); if (!text) return;
+      wbLabels.push({text, x:50, y:50});
+      wbRenderLabels();
+    };
+    function wbRenderLabels() {
+      const wrap = document.getElementById('wb-labels');
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      wbLabels.forEach((lb, i) => {
+        const el = document.createElement('div');
+        el.className = 'wb-label';
+        el.style.cssText = `left:${lb.x}px;top:${lb.y}px;`;
+        el.textContent = lb.text;
+        wrap.appendChild(el);
+      });
+    }
+    function wbExportWithLabels() {
+      const merged = document.createElement('canvas');
+      merged.width = wbCanvas.width; merged.height = wbCanvas.height;
+      const ctx = merged.getContext('2d');
+      ctx.drawImage(wbCanvas, 0, 0);
+      return merged.toDataURL('image/jpeg', 0.85);
+    }
+    let wbSnapTimer = null;
+    function wbScheduleSnapshot() {
+      clearTimeout(wbSnapTimer);
+      wbSnapTimer = setTimeout(() => wbSendSnapshot(), 1500);
+    }
+    function wbSendSnapshot() {
+      if (!wbCanvas) return;
+      const dataUrl = wbExportWithLabels();
+      set(ref(db, `sessions/${sessionId}/wb/snapshots/${studentId}`), dataUrl);
+    }
+    function wbSignalDrawing() {
+      set(ref(db, `sessions/${sessionId}/wb/drawing/${studentId}`), true);
+      setTimeout(() => set(ref(db, `sessions/${sessionId}/wb/drawing/${studentId}`), false), 2000);
+    }
+    window.wbSubmit = async function() {
+      if (!wbCanvas) return;
+      const dataUrl = wbExportWithLabels();
+      await set(ref(db, `sessions/${sessionId}/wb/submissions/${studentId}`), {
+        name: window.wbName || studentId, image: dataUrl, submittedAt: Date.now()
+      });
+      wbToast('✅ 提出しました！');
+    };
+    function wbApplyBgImage(dataUrl) {
+      if (!wbCtx || !dataUrl) { wbInit(); }
+      const img = new Image();
+      img.onload = () => {
+        wbInit();
+        const c = wbCanvas;
+        wbCtx.fillStyle = 'white';
+        wbCtx.fillRect(0,0,c.width,c.height);
+        const scale = Math.min(c.width/img.width, c.height/img.height);
+        const x = (c.width-img.width*scale)/2;
+        const y = (c.height-img.height*scale)/2;
+        wbCtx.drawImage(img, x, y, img.width*scale, img.height*scale);
+        wbScheduleSnapshot();
+      };
+      img.src = dataUrl;
+    }
+    function wbToast(msg) {
+      const t = document.getElementById('wb-toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    // ===== アンケート =====
+    function showSurvey(sv) {
+      const overlay = document.getElementById('survey-overlay');
+      if (overlay) overlay.classList.add('show');
+      const q = document.getElementById('survey-question');
+      if (q) q.textContent = sv.question || '';
+      const area = document.getElementById('survey-choices');
+      if (!area) return;
+      area.innerHTML = '';
+      if (sv.type === 'choice' && sv.choices) {
+        sv.choices.forEach((c, i) => {
+          const btn = document.createElement('button');
+          btn.className = 'survey-choice-btn';
+          btn.textContent = c;
+          btn.onclick = () => submitSurvey(c);
+          area.appendChild(btn);
+        });
+      } else {
+        const ta = document.createElement('textarea');
+        ta.id = 'survey-free-text';
+        ta.placeholder = '回答を入力...';
+        ta.style.cssText = 'width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-size:14px;min-height:80px;resize:vertical;';
+        area.appendChild(ta);
+        const btn = document.createElement('button');
+        btn.className = 'survey-choice-btn';
+        btn.textContent = '送信';
+        btn.onclick = () => submitSurvey(document.getElementById('survey-free-text')?.value || '');
+        area.appendChild(btn);
+      }
+    }
+    function hideSurvey() {
+      const overlay = document.getElementById('survey-overlay');
+      if (overlay) overlay.classList.remove('show');
+    }
+    async function submitSurvey(answer) {
+      await set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
+        name: window.wbName || studentId, answer, ts: Date.now()
+      });
+      hideSurvey();
+    }
+
+    // ===== グループ監視 =====
+    // listenMyGroup はこの後に定義
 
     function handleCommand(data) {
       if (data.command === 'focus') {
@@ -820,1179 +1273,60 @@
       wbToast('✅ 提出しました！');
     };
 
+    let _myGroupId = null;
+    let _wbUnsub = null, _imgUnsub = null;
+
     function listenMyGroup() {
+      // groupsノードを監視して自分の班を特定
       onValue(ref(db, `sessions/${sessionId}/groups`), snap => {
         if (!snap.exists()) { gWbClose(); return; }
-        let myGroupId = null, myGroupData = null;
+
+        // 自分の班を探す
+        let foundGroupId = null, foundGroupData = null;
         snap.forEach(child => {
           const g = child.val();
-          if (g.members && g.members[studentId]) { myGroupId = child.key; myGroupData = g; }
-        });
-        if (!myGroupId) { gWbClose(); return; }
-        onValue(ref(db, `sessions/${sessionId}/groups/${myGroupId}/wb`), wbSnap => {
-          if (!wbSnap.exists()) return;
-          const wbData = wbSnap.val();
-          if (wbData.active) {
-            gWbOpen(myGroupId, wbData);
-            const lbl = document.getElementById('gwb-active-label');
-            if (lbl) lbl.textContent = `メンバー: ${Object.keys(myGroupData.members || {}).length}人`;
-          } else {
-            gWbClose();
+          if (g.members && g.members[studentId]) {
+            foundGroupId = child.key;
+            foundGroupData = g;
           }
         });
-        onValue(ref(db, `sessions/${sessionId}/groups/${myGroupId}/distImg`), imgSnap => {
-          if (!imgSnap.exists()) return;
-          const imgData = imgSnap.val();
-          if (imgData.active && imgData.dataUrl) showDistImg(imgData.dataUrl);
-        });
-      });
-    }
 
-    // グループ監視開始
-    listenMyGroup();
+        if (!foundGroupId) { gWbClose(); return; }
 
-    // ===== FOCUS =====
-    let focusActive = false;
-    let fsRetryTimer = null;
+        // 班が変わった場合は古いリスナーを解除
+        if (_myGroupId !== foundGroupId) {
+          if (_wbUnsub) { _wbUnsub(); _wbUnsub = null; }
+          if (_imgUnsub) { _imgUnsub(); _imgUnsub = null; }
+          _myGroupId = foundGroupId;
 
-    function showFocus() {
-      focusActive = true;
-      const overlay = document.getElementById('focus-overlay');
-      overlay.classList.add('show');
-      // 全キー・全マウス操作をブロック
-      document.addEventListener('keydown', blockKeys, true);
-      document.addEventListener('keyup', blockKeys, true);
-      document.addEventListener('keypress', blockKeys, true);
-      document.addEventListener('mousedown', blockMouse, true);
-      document.addEventListener('contextmenu', blockMouse, true);
-      // タブ切替・非表示検知
-      document.addEventListener('visibilitychange', onVisibilityChange);
-      // フルスクリーン要求（Chromeではユーザー操作起点が必要なため少し遅延）
-      requestFocusFullscreen();
-      // フルスクリーンが解除されたら即再要求
-      document.addEventListener('fullscreenchange', onFullscreenChange);
-    }
-
-    function hideFocus() {
-      focusActive = false;
-      document.getElementById('focus-overlay').classList.remove('show');
-      document.removeEventListener('keydown', blockKeys, true);
-      document.removeEventListener('keyup', blockKeys, true);
-      document.removeEventListener('keypress', blockKeys, true);
-      document.removeEventListener('mousedown', blockMouse, true);
-      document.removeEventListener('contextmenu', blockMouse, true);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      document.removeEventListener('fullscreenchange', onFullscreenChange);
-      if (fsRetryTimer) { clearTimeout(fsRetryTimer); fsRetryTimer = null; }
-      try { document.exitFullscreen && document.exitFullscreen(); } catch(e) {}
-    }
-
-    function requestFocusFullscreen() {
-      const overlay = document.getElementById('focus-overlay');
-      try {
-        const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen || overlay.mozRequestFullScreen;
-        if (req) req.call(overlay);
-      } catch(e) {}
-    }
-
-    function onFullscreenChange() {
-      // フルスクリーンが解除されたら（ESCなど）即再要求
-      if (focusActive && !document.fullscreenElement) {
-        fsRetryTimer = setTimeout(() => {
-          if (focusActive) requestFocusFullscreen();
-        }, 200);
-      }
-    }
-
-    function blockKeys(e) {
-      // 全てのキー操作をブロック（フルスクリーン中はほぼ全部止める）
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }
-
-    function blockMouse(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }
-
-    function onVisibilityChange() {
-      if (document.hidden && focusActive) {
-        setTimeout(() => { if (focusActive) requestFocusFullscreen(); }, 200);
-      }
-    }
-
-    // ===== WATCH (他の生徒の画面を視聴) =====
-    async function handleWatchOffer(from, sdp, sourceName) {
-      console.log('[Watch] offer received from', from, 'type:', typeof sdp);
-      try {
-        if (watchPc) { watchPc.close(); watchPc = null; }
-        watchPc = new RTCPeerConnection(ICE);
-        watchPc.ontrack = event => {
-          console.log('[Watch] ontrack', event.track.kind);
-          const vid = document.getElementById('watch-video');
-          if (event.streams && event.streams[0]) {
-            vid.srcObject = event.streams[0];
-          } else {
-            const ms = new MediaStream();
-            ms.addTrack(event.track);
-            vid.srcObject = ms;
-          }
-          vid.play().catch(() => {});
-          showWatch();
-        };
-        watchPc.onicecandidate = event => {
-          if (event.candidate) {
-            set(ref(db, `sessions/${sessionId}/signals/watch_${studentId}_teacher_${Date.now()}`), {
-              type: 'watch-answer-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
-            });
-          }
-        };
-        watchPc.onconnectionstatechange = () => {
-          console.log('[Watch] connectionState:', watchPc.connectionState);
-        };
-        const desc = (sdp && typeof sdp === 'object' && sdp.sdp)
-          ? new RTCSessionDescription(sdp)
-          : new RTCSessionDescription({type:'offer', sdp: String(sdp)});
-        await watchPc.setRemoteDescription(desc);
-        const answer = await watchPc.createAnswer();
-        await watchPc.setLocalDescription(answer);
-        set(ref(db, `sessions/${sessionId}/signals/watchans_${studentId}_${Date.now()}`), {
-          type: 'watch-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
-        });
-        console.log('[Watch] answer sent');
-      } catch(e) {
-        console.error('[Watch] handleWatchOffer error:', e);
-      }
-    }
-
-    async function handleWatchIce(candidate) {
-      if (!watchPc) return;
-      try { await watchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
-    }
-
-    function showWatch() {
-      document.getElementById('watch-overlay').classList.add('show');
-    }
-
-    function hideWatch() {
-      document.getElementById('watch-overlay').classList.remove('show');
-      document.getElementById('watch-video').srcObject = null;
-      if (watchPc) { watchPc.close(); watchPc = null; }
-    }
-
-    // ===== SHARE =====
-    window.startShare = async function() {
-      window._shareActive = true;
-      const btn = document.getElementById('share-btn');
-      btn.classList.add('disabled');
-      btn.textContent = '許可を求めています...';
-      try {
-        // 画面全体のみ許可：それ以外は即キャンセルして再要求
-        let attempts = 0;
-        while (attempts < 3) {
-          attempts++;
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              displaySurface: 'monitor',
-              frameRate: {ideal:30, max:60},
-              width: {ideal:1920, max:2560},
-              height: {ideal:1080, max:1440}
-            },
-            audio: false,
-            selfBrowserSurface: 'exclude',
-            surfaceSwitching: 'exclude',
-            preferCurrentTab: false
+          // WBの監視
+          _wbUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/wb`), wbSnap => {
+            if (!wbSnap.exists()) { gWbClose(); return; }
+            const wbData = wbSnap.val();
+            if (wbData.active) {
+              gWbOpen(_myGroupId, wbData);
+              const lbl = document.getElementById('gwb-active-label');
+              if (lbl) lbl.textContent = `メンバー: ${Object.keys(foundGroupData.members || {}).length}人`;
+            } else {
+              gWbClose();
+            }
           });
-          const track = stream.getVideoTracks()[0];
-          const settings = track.getSettings();
-          if (settings.displaySurface && settings.displaySurface !== 'monitor') {
-            // タブやウィンドウが選ばれた場合はキャンセルして再要求
-            stream.getTracks().forEach(t => t.stop());
-            btn.classList.remove('disabled');
-            btn.innerHTML = '<span>⚠️</span> 「画面全体」を選んでください';
-            btn.style.background = '#f59e0b';
-            await new Promise(r => setTimeout(r, 500));
-            btn.style.background = '';
-            btn.innerHTML = '<span>📡</span> 画面共有を開始する（画面全体のみ）';
-            continue;
-          }
-          localStream = stream;
-          break;
+
+          // 画像配布の監視
+          _imgUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/distImg`), imgSnap => {
+            if (!imgSnap.exists()) return;
+            const imgData = imgSnap.val();
+            if (imgData.active && imgData.dataUrl) {
+              showDistImg(imgData.dataUrl);
+            }
+          });
         }
-        if (!localStream) { btn.classList.remove('disabled'); btn.innerHTML = '<span>📡</span> 画面共有を開始する'; return; }
-        document.getElementById('preview-video').srcObject = localStream;
-        showState('live');
-        // 共有タイプを記録
-        const track = localStream.getVideoTracks()[0];
-        const settings = track.getSettings();
-        const surfaceType = settings.displaySurface || 'unknown';
-        const surfaceLabel = surfaceType === 'monitor' ? '画面全体' : surfaceType === 'browser' ? 'タブ' : surfaceType === 'window' ? 'ウィンドウ' : '不明';
-        // shareType と status を同時に書き込む（別々に書くと onChildChanged が2回発火して待機中になる）
-        update(ref(db, `sessions/${sessionId}/students/${studentId}`), {
-          shareType: surfaceLabel,
-          status: 'sharing'
-        });
-        localStream.getVideoTracks()[0].onended = () => stopShare();
-        setupPeerConnection(); // 必ずPCを作り直す
-        // 保留中のofferがあれば処理する
-        if (window._pendingOffer) {
-          const pending = window._pendingOffer;
-          window._pendingOffer = null;
-          handleOffer(pending);
-        }
-      } catch(e) {
-        btn.classList.remove('disabled');
-        btn.innerHTML = '<span>📡</span> 画面共有を開始する';
-        if (e.name !== 'NotAllowedError') {
-          showState('error');
-          document.getElementById('error-msg').textContent = 'エラー: ' + e.message;
-        }
-      }
-    };
-
-    // 送信側ビットレートを上げるヘルパー
-    async function setStudentHighBitrate(pc) {
-      const senders = pc.getSenders();
-      for (const sender of senders) {
-        if (!sender.track || sender.track.kind !== 'video') continue;
-        try {
-          const params = sender.getParameters();
-          if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-          params.encodings[0].maxBitrate = 3000 * 1000; // 3Mbps
-          params.encodings[0].maxFramerate = 30;
-          await sender.setParameters(params);
-        } catch(e) { console.warn('setParameters:', e); }
-      }
-    }
-
-    function setupPeerConnection() {
-      if (pc) { try { pc.close(); } catch(e) {} }
-      pc = new RTCPeerConnection(ICE);
-      if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-      pc.onicecandidate = event => {
-        if (event.candidate) sendSignal({type:'ice', from:studentId, to:'teacher', candidate:event.candidate.toJSON()});
-      };
-      pc.oniceconnectionstatechange = () => {
-        const state = pc.iceConnectionState;
-        console.log('[ICE]', state);
-        if (state === 'failed') {
-          handleOffer._pendingRestart = true;
-          sendSignal({type:'ice-restart-request', from:studentId, to:'teacher'});
-        }
-      };
-      pc.onconnectionstatechange = () => {
-        console.log('[PC state]', pc.connectionState);
-        // 接続確立後に高ビットレートを設定
-        if (pc.connectionState === 'connected') setStudentHighBitrate(pc);
-      };
-    }
-
-    async function handleOffer(sdp) {
-      if (!localStream) {
-        // まだ画面共有が開始されていない → pendingとして保存しstartShare後に処理
-        window._pendingOffer = sdp;
-        return;
-      }
-      // PCが存在しないか、すでにclosed/failedなら作り直す
-      if (!pc || pc.signalingState === 'closed' ||
-          pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        setupPeerConnection();
-      }
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:answer.sdp}});
-      } catch(e) {
-        console.error('[handleOffer error]', e);
-        // signalingStateがおかしい場合はPCを作り直して再試行
-        if (e.name === 'InvalidStateError') {
-          setupPeerConnection();
-          try {
-            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendSignal({type:'answer', from:studentId, to:'teacher', sdp:{type:answer.type, sdp:answer.sdp}});
-          } catch(e2) { console.error('[retry failed]', e2); }
-        }
-      }
-    }
-
-    async function handleTeacherIce(candidate) {
-      if (!pc) return;
-      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
-    }
-
-    function sendSignal(data) {
-      set(ref(db, `sessions/${sessionId}/signals/${data.from}_${data.to}_${Date.now()}`), data);
-    }
-
-    window.stopShare = function() {
-      window._shareActive = false;
-      if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
-      if (pc) { pc.close(); pc=null; }
-      if (studentId) set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
-      showState('connected');
-      const btn = document.getElementById('share-btn');
-      btn.classList.remove('disabled');
-      btn.innerHTML = '<span>📡</span> 画面共有を再開する';
-    };
-
-    window.toggleShare = async function() {
-      if (localStream) {
-        window.stopShare();
-      } else {
-        await window.startShare();
-      }
-    };
-
-    // ===== TEACHER SCREEN WATCH =====
-    let teacherWatchPc = null;
-
-    async function handleTeacherWatchOffer(sdp) {
-      console.log('[TW] offer received', typeof sdp, sdp && sdp.type);
-      try {
-        if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
-        teacherWatchPc = new RTCPeerConnection(ICE);
-        teacherWatchPc.ontrack = event => {
-          console.log('[TW] ontrack', event.track.kind);
-          const vid = document.getElementById('teacher-video');
-          if (event.streams && event.streams[0]) {
-            vid.srcObject = event.streams[0];
-          } else {
-            const ms = new MediaStream();
-            ms.addTrack(event.track);
-            vid.srcObject = ms;
-          }
-          vid.play().catch(() => {});
-          showTeacher();
-        };
-        teacherWatchPc.onicecandidate = event => {
-          if (event.candidate) {
-            set(ref(db, `sessions/${sessionId}/signals/tw_ans_ice_${studentId}_${Date.now()}`), {
-              type: 'tw-ice', from: studentId, to: 'teacher', candidate: event.candidate.toJSON()
-            });
-          }
-        };
-        teacherWatchPc.onconnectionstatechange = () => {
-          console.log('[TW] connectionState:', teacherWatchPc.connectionState);
-        };
-        teacherWatchPc.oniceconnectionstatechange = () => {
-          console.log('[TW] iceState:', teacherWatchPc.iceConnectionState);
-        };
-        // sdp は {type, sdp} のプレーンオブジェクト
-        const desc = (sdp && typeof sdp === 'object' && sdp.sdp)
-          ? new RTCSessionDescription(sdp)
-          : new RTCSessionDescription({type:'offer', sdp: String(sdp)});
-        await teacherWatchPc.setRemoteDescription(desc);
-        const answer = await teacherWatchPc.createAnswer();
-        await teacherWatchPc.setLocalDescription(answer);
-        set(ref(db, `sessions/${sessionId}/signals/tw_ans_${studentId}_${Date.now()}`), {
-          type: 'tw-answer', from: studentId, to: 'teacher', sdp: {type:answer.type,sdp:answer.sdp}
-        });
-        console.log('[TW] answer sent');
-      } catch(e) {
-        console.error('[TW] handleTeacherWatchOffer error:', e);
-      }
-    }
-
-    async function handleTeacherWatchIce(candidate) {
-      if (!teacherWatchPc) return;
-      try { await teacherWatchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
-    }
-
-    // ===== 配布画像 描画エンジン（WBと同一構造）=====
-    let imgCtx = null, imgTool = 'pen', imgColor = '#1e293b', imgSize = 4;
-    let imgDrawing = false, imgLX = 0, imgLY = 0;
-    let imgSnapshotTimer = null;
-    let imgInitDone = false;
-    let imgBgImage = null;   // 背景画像をImageオブジェクトとして保持
-
-    // WBのwbInitと完全同構造
-    function imgInitOnce() {
-      console.log('[img] imgInitOnce called, done:', imgInitDone);
-      if (imgInitDone) return;
-      imgInitDone = true;
-      const canvas   = document.getElementById('img-canvas');
-      const bgCanvas = document.getElementById('img-bg-canvas');
-      const wrap     = document.getElementById('img-canvas-wrap');
-      imgCtx = canvas.getContext('2d');
-      const bgCtx = bgCanvas.getContext('2d');
-
-      function imgResize() {
-        // ペン描画の内容を退避
-        const prev = (canvas.width > 1 && canvas.height > 1) ? canvas.toDataURL() : null;
-        const w = wrap.offsetWidth || window.innerWidth;
-        const h = wrap.offsetHeight || window.innerHeight;
-        canvas.width   = w; canvas.height   = h;
-        bgCanvas.width = w; bgCanvas.height = h;
-        // 背景canvasに背景画像を再描画
-        if (imgBgImage) imgDrawBg();
-        // ペンcanvasの内容を復元
-        if (prev) {
-          const tmp = new Image();
-          tmp.onload = () => imgCtx.drawImage(tmp, 0, 0);
-          tmp.src = prev;
-        }
-      }
-      imgResize();
-      window.addEventListener('resize', () => {
-        if (document.getElementById('img-overlay').classList.contains('show')) imgResize();
       });
-
-      // CSS表示サイズ → canvas内部解像度のスケール比率
-      function getScaledPos(clientX, clientY) {
-        const r = canvas.getBoundingClientRect();
-        return [
-          (clientX - r.left) * (canvas.width  / (r.width  || 1)),
-          (clientY - r.top)  * (canvas.height / (r.height || 1))
-        ];
-      }
-
-      // touchstart/touchmove/touchend
-      canvas.addEventListener('touchstart', e => {
-        e.preventDefault();
-        if (imgTool === 'text') { imgAddLabel(e.touches[0].clientX, e.touches[0].clientY); return; }
-        imgDrawing = true;
-        [imgLX, imgLY] = getScaledPos(e.touches[0].clientX, e.touches[0].clientY);
-        imgSignalDrawing(true);
-      }, { passive: false });
-      canvas.addEventListener('touchmove', e => {
-        e.preventDefault();
-        if (!imgDrawing) return;
-        imgDraw(...getScaledPos(e.touches[0].clientX, e.touches[0].clientY));
-      }, { passive: false });
-      canvas.addEventListener('touchend', () => {
-        imgDrawing = false;
-        imgSignalDrawing(false);
-        imgScheduleSnapshot();
-      });
-
-      // mousedown/mousemove/mouseup
-      canvas.addEventListener('mousedown', e => {
-        if (imgTool === 'text') { imgAddLabel(e.clientX, e.clientY); return; }
-        imgDrawing = true;
-        [imgLX, imgLY] = getScaledPos(e.clientX, e.clientY);
-        imgSignalDrawing(true);
-      });
-      canvas.addEventListener('mousemove', e => {
-        if (!imgDrawing) return;
-        imgDraw(...getScaledPos(e.clientX, e.clientY));
-      });
-      canvas.addEventListener('mouseup',    () => { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); });
-      canvas.addEventListener('mouseleave', () => { if (imgDrawing) { imgDrawing = false; imgSignalDrawing(false); imgScheduleSnapshot(); } });
-
-
     }
 
-    // ===== ドラッグ可能テキストラベル管理 =====
-    let imgLabels = [];
-
-    function imgAddLabel(clientX, clientY) {
-      const wrap = document.getElementById('img-canvas-wrap');
-      const wr   = wrap.getBoundingClientRect();
-      let lx = Math.max(0, clientX - wr.left - 4);
-      let ly = Math.max(0, clientY - wr.top  - 4);
-
-      const el = document.createElement('div');
-      el.className = 'img-label';
-      el.style.left = lx + 'px';
-      el.style.top  = ly + 'px';
-
-      // 削除ボタン（ラベル外右上、ホバーで表示）
-      const del = document.createElement('div');
-      del.className = 'img-label-del';
-      del.textContent = '×';
-      del.addEventListener('click', e => {
-        e.stopPropagation();
-        el.remove();
-        imgLabels = imgLabels.filter(l => l.el !== el);
-        imgScheduleSnapshot();
-      });
-
-      // textarea
-      const ta = document.createElement('textarea');
-      ta.className = 'img-label-textarea';
-      ta.style.color    = imgColor;
-      ta.style.fontSize = Math.max(12, imgSize * 3.5) + 'px';
-      ta.placeholder = 'テキストを入力...';
-      ta.rows = 2;
-      ta.addEventListener('input', () => imgScheduleSnapshot());
-      // textarea上でのマウス操作はドラッグに使わない
-      ta.addEventListener('mousedown', e => e.stopPropagation());
-      ta.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
-
-      el.appendChild(del);
-      el.appendChild(ta);
-
-      // ===== ドラッグ：ラベル本体（taの外）=====
-      let drag = false, dx = 0, dy = 0;
-
-      el.addEventListener('mousedown', e => {
-        if (e.target === ta || e.target === del) return;
-        drag = true;
-        const er = el.getBoundingClientRect();
-        dx = e.clientX - er.left;
-        dy = e.clientY - er.top;
-        e.preventDefault();
-      });
-      el.addEventListener('touchstart', e => {
-        if (e.target === ta || e.target === del) return;
-        drag = true;
-        const er = el.getBoundingClientRect();
-        dx = e.touches[0].clientX - er.left;
-        dy = e.touches[0].clientY - er.top;
-      }, { passive: true });
-
-      document.addEventListener('mousemove', e => {
-        if (!drag) return;
-        const wr2 = wrap.getBoundingClientRect();
-        el.style.left = Math.max(0, e.clientX - wr2.left - dx) + 'px';
-        el.style.top  = Math.max(0, e.clientY - wr2.top  - dy) + 'px';
-      });
-      document.addEventListener('touchmove', e => {
-        if (!drag) return;
-        const t = e.touches[0];
-        const wr2 = wrap.getBoundingClientRect();
-        el.style.left = Math.max(0, t.clientX - wr2.left - dx) + 'px';
-        el.style.top  = Math.max(0, t.clientY - wr2.top  - dy) + 'px';
-      }, { passive: true });
-      document.addEventListener('mouseup',  () => { if (drag) { drag = false; imgScheduleSnapshot(); } });
-      document.addEventListener('touchend', () => { if (drag) { drag = false; imgScheduleSnapshot(); } });
-
-      document.getElementById('img-labels').appendChild(el);
-      imgLabels.push({ el, ta });
-      setTimeout(() => ta.focus(), 30);
-    }
-
-    window.setImgTool = function(tool) {
-      imgTool = tool;
-      document.getElementById('imgt-pen').classList.toggle('active', tool === 'pen');
-      document.getElementById('imgt-eraser').classList.toggle('active', tool === 'eraser');
-      document.getElementById('imgt-text').classList.toggle('active', tool === 'text');
-      document.getElementById('img-canvas').style.cursor = tool === 'text' ? 'text' : 'crosshair';
-    };
-
-    window.imgSetColor = function(el) {
-      imgColor = el.dataset.color;
-      document.querySelectorAll('#img-toolbar .wbc').forEach(d => d.classList.remove('active'));
-      el.classList.add('active');
-      if (imgTool === 'eraser') window.setImgTool('pen');
-    };
-
-    window.imgSetSize = function(v) { imgSize = parseInt(v); };
-
-    window.distImgClear = function() {
-      if (!imgCtx) return;
-      const canvas = document.getElementById('img-canvas');
-      imgCtx.clearRect(0, 0, canvas.width, canvas.height);
-      document.getElementById('img-labels').innerHTML = '';
-      imgLabels = [];
-      imgScheduleSnapshot();
-    };
-
-    window.distImgSubmit = function() {
-      if (!imgCtx) return;
-      set(ref(db, `sessions/${sessionId}/distImg/submissions/${studentId}`), {
-        name: window._studentName || user.displayName || user.email,
-        image: imgExportWithLabels(),
-        submittedAt: Date.now()
-      });
-      const btn = document.getElementById('img-submit-btn');
-      btn.innerHTML = '✅ 提出済'; btn.classList.add('submitted');
-    };
-
-    window.hideDistImg = function() {
-      document.getElementById('img-overlay').classList.remove('show');
-      document.getElementById('img-labels').innerHTML = '';
-      imgLabels = [];
-      imgBgImage = null;
-      if (imgCtx) {
-        const canvas = document.getElementById('img-canvas');
-        imgCtx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-    };
-
-    function showDistImg(dataUrl) {
-      const img = new Image();
-      img.onload = () => {
-        imgBgImage = img;
-        imgTool = 'pen'; imgColor = '#1e293b'; imgSize = 8;
-        document.getElementById('imgt-pen').classList.add('active');
-        document.getElementById('imgt-eraser').classList.remove('active');
-        document.getElementById('imgt-text').classList.remove('active');
-        document.getElementById('img-canvas').style.cursor = 'crosshair';
-        document.getElementById('img-labels').innerHTML = '';
-        imgLabels = [];
-        document.querySelectorAll('#img-toolbar .wbc').forEach((d, i) => d.classList.toggle('active', i === 0));
-        document.getElementById('img-size').value = '8';
-        document.getElementById('img-submit-btn').innerHTML = '📤 提出';
-        document.getElementById('img-submit-btn').classList.remove('submitted');
-        document.getElementById('img-overlay').classList.add('show');
-        setTimeout(() => {
-          imgInitOnce();
-          const canvas   = document.getElementById('img-canvas');
-          const bgCanvas = document.getElementById('img-bg-canvas');
-          const wrap     = document.getElementById('img-canvas-wrap');
-          const w = wrap.offsetWidth || window.innerWidth;
-          const h = wrap.offsetHeight || window.innerHeight;
-          canvas.width   = w; canvas.height   = h;
-          bgCanvas.width = w; bgCanvas.height = h;
-          imgCtx = canvas.getContext('2d');
-          imgCtx.clearRect(0, 0, w, h);
-          imgDrawBg();
-        }, 50);
-      };
-      img.src = dataUrl;
-    }
-
-    function imgScheduleSnapshot() {
-      clearTimeout(imgSnapshotTimer);
-      imgSnapshotTimer = setTimeout(() => {
-        const snap = imgExportWithLabels(0.5);
-        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), snap);
-      }, 500);
-    }
-
-    function imgSignalDrawing(val) {
-      set(ref(db, `sessions/${sessionId}/distImg/drawing/${studentId}`), val || null);
-    }
-
-    // ペン・消しゴム描画
-    function imgDraw(x, y) {
-      imgCtx.beginPath();
-      imgCtx.moveTo(imgLX, imgLY);
-      imgCtx.lineTo(x, y);
-      imgCtx.globalCompositeOperation = 'source-over';
-      if (imgTool === 'eraser') {
-        imgCtx.globalCompositeOperation = 'destination-out';
-        imgCtx.strokeStyle = 'rgba(0,0,0,1)';
-        imgCtx.lineWidth = imgSize * 5;
-      } else {
-        imgCtx.globalCompositeOperation = 'source-over';
-        imgCtx.strokeStyle = imgColor;
-        imgCtx.lineWidth = imgSize;
-      }
-      imgCtx.lineCap = 'round';
-      imgCtx.lineJoin = 'round';
-      imgCtx.stroke();
-      imgCtx.globalCompositeOperation = 'source-over';
-      imgLX = x; imgLY = y;
-      imgSignalDrawing(true);
-    }
-
-    // 背景画像をcanvasにフィット描画
-    function imgDrawBg() {
-      if (!imgBgImage) return;
-      const bgCanvas = document.getElementById('img-bg-canvas');
-      if (!bgCanvas) return;
-      const bgCtx = bgCanvas.getContext('2d');
-      bgCtx.fillStyle = 'white';
-      bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
-      const scale = Math.min(bgCanvas.width / imgBgImage.width, bgCanvas.height / imgBgImage.height);
-      const x = (bgCanvas.width  - imgBgImage.width  * scale) / 2;
-      const y = (bgCanvas.height - imgBgImage.height * scale) / 2;
-      bgCtx.drawImage(imgBgImage, x, y, imgBgImage.width * scale, imgBgImage.height * scale);
-    }
-
-    function imgExportWithLabels(quality = 0.8) {
-      const canvas   = document.getElementById('img-canvas');
-      const bgCanvas = document.getElementById('img-bg-canvas');
-      const wrap     = document.getElementById('img-canvas-wrap');
-      const wr       = wrap.getBoundingClientRect();
-      const scX      = canvas.width  / (wr.width  || 1);
-      const scY      = canvas.height / (wr.height || 1);
-      const sc       = (scX + scY) / 2;
-
-      const merged = document.createElement('canvas');
-      merged.width  = canvas.width;
-      merged.height = canvas.height;
-      const ctx = merged.getContext('2d');
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, merged.width, merged.height);
-      // 背景canvasを先に描画してからペンcanvasを重ねる
-      if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0);
-      ctx.drawImage(canvas, 0, 0);
-
-      // ラベルを canvas 座標に変換して複数行描画
-      imgLabels.forEach(({ el, ta }) => {
-        const text = ta.value.trim();
-        if (!text) return;
-        const elr = el.getBoundingClientRect();
-        // el の wrap 内 CSS 座標 → canvas座標
-        const cx = (elr.left - wr.left) * scX;
-        const cy = (elr.top  - wr.top)  * scY;
-        const fs = parseFloat(ta.style.fontSize || '20') * sc;
-        const lh = fs * 1.4;
-        // textarea の幅に合わせた折り返し幅（canvas px）
-        const boxW = ta.offsetWidth * scX;
-
-        ctx.font      = `${fs}px 'Noto Sans JP', sans-serif`;
-        ctx.fillStyle = ta.style.color || '#1e293b';
-
-        // 背景（半透明白）
-        const lines = wrapText(ctx, text, boxW);
-        const padX  = 6 * scX;
-        const padY  = 6 * scY;
-        const bgH   = lines.length * lh + padY * 2;
-        const bgW   = Math.max(...lines.map(l => ctx.measureText(l).width)) + padX * 2;
-        ctx.fillStyle = 'rgba(255,255,255,0.88)';
-        ctx.beginPath();
-        ctx.roundRect(cx, cy, bgW, bgH, 4 * sc);
-        ctx.fill();
-
-        // テキスト描画
-        ctx.fillStyle = ta.style.color || '#1e293b';
-        lines.forEach((line, i) => {
-          ctx.fillText(line, cx + padX, cy + padY + fs + i * lh);
-        });
-      });
-      return merged.toDataURL('image/jpeg', quality);
-    }
-
-    // canvas上での折り返し計算
-    function wrapText(ctx, text, maxWidth) {
-      const result = [];
-      const rawLines = text.split('\n');
-      rawLines.forEach(rawLine => {
-        if (!rawLine) { result.push(''); return; }
-        let line = '';
-        for (const char of rawLine) {
-          const test = line + char;
-          if (maxWidth > 0 && ctx.measureText(test).width > maxWidth && line) {
-            result.push(line);
-            line = char;
-          } else {
-            line = test;
-          }
-        }
-        result.push(line);
-      });
-      return result;
-    }
-
-
-
-    function showTeacher() {
-      hideSurvey(); // アンケート表示中でも先生画面を優先
-      document.getElementById('teacher-overlay').classList.add('show');
-    }
-    function hideTeacher() {
-      document.getElementById('teacher-overlay').classList.remove('show');
-      onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
-        if (snap.exists() && snap.val().active) showSurvey(snap.val());
-      }, {onlyOnce: true});
-      document.getElementById('teacher-video').srcObject = null;
-      if (teacherWatchPc) { teacherWatchPc.close(); teacherWatchPc = null; }
-    }
-
-    // ===== SURVEY =====
-    let surveyAnswered = false;
-    const LABELS = ['A','B','C','D'];
-
-    function showSurvey(sv) {
-      surveyAnswered = false;
-      document.getElementById('survey-type-icon').textContent = sv.type === 'choice' ? '📊' : '✏️';
-      document.getElementById('survey-type-label').textContent = sv.type === 'choice' ? '選択式アンケート' : '自由記述アンケート';
-      document.getElementById('survey-q-text').textContent = sv.question;
-      const body = document.getElementById('survey-body');
-      body.innerHTML = '';
-      if (sv.type === 'choice') {
-        sv.choices.forEach((ch, i) => {
-          const btn = document.createElement('button');
-          btn.className = 'choice-btn'; btn.id = `choice-${i}`;
-          const badge = document.createElement('span');
-          badge.className = 'choice-label-badge'; badge.textContent = LABELS[i];
-          const txt = document.createTextNode(ch);
-          btn.appendChild(badge); btn.appendChild(txt);
-          btn.addEventListener('click', () => selectChoice(ch));
-          body.appendChild(btn);
-        });
-      } else {
-        const ta = document.createElement('textarea');
-        ta.className = 'survey-textarea'; ta.id = 'free-ans';
-        ta.placeholder = '回答を入力してください...';
-        const submitBtn = document.createElement('button');
-        submitBtn.className = 'survey-submit-btn';
-        submitBtn.textContent = '📤 回答を送信';
-        submitBtn.addEventListener('click', submitFree);
-        body.appendChild(ta); body.appendChild(submitBtn);
-      }
-      document.getElementById('survey-overlay').classList.add('show');
-    }
-
-    function hideSurvey() { document.getElementById('survey-overlay').classList.remove('show'); }
-
-    window.selectChoice = function(choice) {
-      if (surveyAnswered) return;
-      surveyAnswered = true;
-      document.querySelectorAll('.choice-btn').forEach(b => { b.classList.remove('selected'); b.classList.add('answered'); });
-      // find matching button
-      document.querySelectorAll('.choice-btn').forEach(b => {
-        if (b.textContent.trim().slice(1).trim() === choice) b.classList.add('selected');
-      });
-      set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
-        name: document.getElementById('user-name-display').textContent || studentId,
-        answer: choice, ts: Date.now()
-      });
-      // Show answered state
-      setTimeout(() => {
-        document.getElementById('survey-body').innerHTML =
-          `<div class="survey-answered"><div class="survey-answered-icon">✅</div><div class="survey-answered-text">回答しました！</div></div>`;
-      }, 400);
-    };
-
-    window.submitFree = function() {
-      const text = document.getElementById('free-ans')?.value.trim();
-      if (!text) return;
-      surveyAnswered = true;
-      set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
-        name: document.getElementById('user-name-display').textContent || studentId,
-        answer: text, ts: Date.now()
-      });
-      document.getElementById('survey-body').innerHTML =
-        `<div class="survey-answered"><div class="survey-answered-icon">✅</div><div class="survey-answered-text">回答を送信しました！</div></div>`;
-    };
-
-    function showMsgPopup(text) {
-      document.getElementById('msg-popup-text').textContent = text;
-      document.getElementById('msg-popup').classList.add('show');
-    }
-    window.closeMsgPopup = function() { document.getElementById('msg-popup').classList.remove('show'); };
-
-
-
-
-    // WB用グローバル公開（canvas event closureから使用）
-    window.wbDb = db;
-    window.wbSid = studentId;
-    // wbName is set in main() after auth
-    window.wbSessionId = sessionId;
 
   } // end main
   main();
-
-  // ===== WHITEBOARD ENGINE (グローバルスコープ) =====
-  let wbCtx = null, wbTool = 'pen', wbColor = '#1e293b', wbSize = 8;
-  let wbLabels = [];
-  let wbDrawing = false, wbLX = 0, wbLY = 0;
-  let wbSnapshotTimer = null, wbIsOpen = false;
-  let wbDrawingSignaled = false, wbDrawingTimer = null;
-
-  function wbInit() {
-    const canvas = document.getElementById('wb-canvas');
-    const wrap = document.getElementById('wb-canvas-wrap');
-    wbCtx = canvas.getContext('2d');
-    function wbResize() {
-      // toDataURL で保存してから resize（putImageData より確実）
-      const prev = (canvas.width > 1 && canvas.height > 1) ? canvas.toDataURL() : null;
-      canvas.width  = wrap.offsetWidth  || window.innerWidth;
-      canvas.height = wrap.offsetHeight || window.innerHeight;
-      // まず全体を白で塗りつぶす（透明→黒になるのを防ぐ）
-      wbCtx.fillStyle = 'white';
-      wbCtx.fillRect(0, 0, canvas.width, canvas.height);
-      // 以前の描画を上に重ねる
-      if (prev) {
-        const tmp = new Image();
-        tmp.onload = () => wbCtx.drawImage(tmp, 0, 0);
-        tmp.src = prev;
-      }
-    }
-    wbResize();
-    window.addEventListener('resize', wbResize);
-
-    canvas.addEventListener('touchstart', e => {
-      e.preventDefault();
-      if (wbTool === 'text') { wbAddLabel(e.touches[0].clientX, e.touches[0].clientY); return; }
-      wbDrawing = true;
-      const r = canvas.getBoundingClientRect();
-      wbLX = e.touches[0].clientX - r.left;
-      wbLY = e.touches[0].clientY - r.top;
-    }, { passive: false });
-    canvas.addEventListener('touchmove', e => {
-      e.preventDefault();
-      if (!wbDrawing) return;
-      const r = canvas.getBoundingClientRect();
-      wbDraw(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
-    }, { passive: false });
-    canvas.addEventListener('touchend', () => { wbDrawing = false; wbScheduleSnapshot(); });
-    canvas.addEventListener('mousedown', e => {
-      if (wbTool === 'text') { wbAddLabel(e.clientX, e.clientY); return; }
-      wbDrawing = true;
-      const r = canvas.getBoundingClientRect();
-      wbLX = e.clientX - r.left; wbLY = e.clientY - r.top;
-    });
-    canvas.addEventListener('mousemove', e => {
-      if (!wbDrawing) return;
-      const r = canvas.getBoundingClientRect();
-      wbDraw(e.clientX - r.left, e.clientY - r.top);
-    });
-    canvas.addEventListener('mouseup', () => { wbDrawing = false; wbScheduleSnapshot(); });
-
-
-  }
-
-  function wbDraw(x, y) {
-    wbCtx.beginPath(); wbCtx.moveTo(wbLX, wbLY); wbCtx.lineTo(x, y);
-    if (wbTool === 'eraser') {
-      wbCtx.globalCompositeOperation = 'destination-out';
-      wbCtx.strokeStyle = 'rgba(0,0,0,1)'; wbCtx.lineWidth = wbSize * 5;
-    } else {
-      wbCtx.globalCompositeOperation = 'source-over';
-      wbCtx.strokeStyle = wbColor; wbCtx.lineWidth = wbSize;
-    }
-    wbCtx.lineCap = 'round'; wbCtx.lineJoin = 'round'; wbCtx.stroke();
-    wbCtx.globalCompositeOperation = 'source-over'; // 必ず戻す
-    wbLX = x; wbLY = y;
-    wbSignalDrawing();
-  }
-
-  function wbAddLabel(clientX, clientY) {
-    const wrap = document.getElementById('wb-canvas-wrap');
-    const wr   = wrap.getBoundingClientRect();
-    let lx = Math.max(0, clientX - wr.left - 4);
-    let ly = Math.max(0, clientY - wr.top  - 4);
-
-    const el = document.createElement('div');
-    el.className = 'img-label';   // imgと同じCSSクラスを流用
-    el.style.left = lx + 'px';
-    el.style.top  = ly + 'px';
-
-    const del = document.createElement('div');
-    del.className = 'img-label-del';
-    del.textContent = '×';
-    del.addEventListener('click', e => {
-      e.stopPropagation();
-      el.remove();
-      wbLabels = wbLabels.filter(l => l.el !== el);
-      wbScheduleSnapshot();
-    });
-
-    const ta = document.createElement('textarea');
-    ta.className = 'img-label-textarea';
-    ta.style.color    = wbColor;
-    ta.style.fontSize = Math.max(12, wbSize * 3.5) + 'px';
-    ta.placeholder = 'テキストを入力...';
-    ta.rows = 2;
-    ta.addEventListener('input', () => wbScheduleSnapshot());
-    ta.addEventListener('mousedown', e => e.stopPropagation());
-    ta.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
-
-    el.appendChild(del);
-    el.appendChild(ta);
-
-    let drag = false, dx = 0, dy = 0;
-    el.addEventListener('mousedown', e => {
-      if (e.target === ta || e.target === del) return;
-      drag = true;
-      const er = el.getBoundingClientRect();
-      dx = e.clientX - er.left; dy = e.clientY - er.top;
-      e.preventDefault();
-    });
-    el.addEventListener('touchstart', e => {
-      if (e.target === ta || e.target === del) return;
-      drag = true;
-      const er = el.getBoundingClientRect();
-      dx = e.touches[0].clientX - er.left; dy = e.touches[0].clientY - er.top;
-    }, { passive: true });
-    document.addEventListener('mousemove', e => {
-      if (!drag) return;
-      const wr2 = wrap.getBoundingClientRect();
-      el.style.left = Math.max(0, e.clientX - wr2.left - dx) + 'px';
-      el.style.top  = Math.max(0, e.clientY - wr2.top  - dy) + 'px';
-    });
-    document.addEventListener('touchmove', e => {
-      if (!drag) return;
-      const t = e.touches[0];
-      const wr2 = wrap.getBoundingClientRect();
-      el.style.left = Math.max(0, t.clientX - wr2.left - dx) + 'px';
-      el.style.top  = Math.max(0, t.clientY - wr2.top  - dy) + 'px';
-    }, { passive: true });
-    document.addEventListener('mouseup',  () => { if (drag) { drag = false; wbScheduleSnapshot(); } });
-    document.addEventListener('touchend', () => { if (drag) { drag = false; wbScheduleSnapshot(); } });
-
-    document.getElementById('wb-labels').appendChild(el);
-    wbLabels.push({ el, ta });
-    setTimeout(() => ta.focus(), 30);
-  }
-
-  // ラベルをcanvasに合成してexport
-  function wbExportWithLabels(quality = 0.4) {
-    const canvas = document.getElementById('wb-canvas');
-    const wrap   = document.getElementById('wb-canvas-wrap');
-    const wr     = wrap.getBoundingClientRect();
-    const scX    = canvas.width  / (wr.width  || 1);
-    const scY    = canvas.height / (wr.height || 1);
-    const sc     = (scX + scY) / 2;
-
-    const merged = document.createElement('canvas');
-    merged.width  = canvas.width;
-    merged.height = canvas.height;
-    const ctx = merged.getContext('2d');
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, merged.width, merged.height);
-    ctx.drawImage(canvas, 0, 0);
-
-    wbLabels.forEach(({ el, ta }) => {
-      const text = ta.value.trim();
-      if (!text) return;
-      const elr = el.getBoundingClientRect();
-      const cx  = (elr.left - wr.left) * scX;
-      const cy  = (elr.top  - wr.top)  * scY;
-      const fs  = parseFloat(ta.style.fontSize || '28') * sc;
-      const lh  = fs * 1.4;
-      const boxW = ta.offsetWidth * scX;
-
-      ctx.font      = `${fs}px 'Noto Sans JP', sans-serif`;
-      ctx.fillStyle = ta.style.color || '#1e293b';
-
-      const rawLines = text.split('\n');
-      const lines = [];
-      rawLines.forEach(rawLine => {
-        if (!rawLine) { lines.push(''); return; }
-        let line = '';
-        for (const char of rawLine) {
-          const test = line + char;
-          if (boxW > 0 && ctx.measureText(test).width > boxW && line) {
-            lines.push(line); line = char;
-          } else { line = test; }
-        }
-        lines.push(line);
-      });
-
-      const padX = 6 * scX, padY = 6 * scY;
-      const bgW  = Math.max(...lines.map(l => ctx.measureText(l).width)) + padX * 2;
-      const bgH  = lines.length * lh + padY * 2;
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(cx, cy, bgW, bgH, 4 * sc);
-      else ctx.rect(cx, cy, bgW, bgH);
-      ctx.fill();
-      ctx.fillStyle = ta.style.color || '#1e293b';
-      lines.forEach((line, i) => ctx.fillText(line, cx + padX, cy + padY + fs + i * lh));
-    });
-    return merged.toDataURL('image/jpeg', quality);
-  }
-
-  function wbScheduleSnapshot() {
-    clearTimeout(wbSnapshotTimer);
-    wbSnapshotTimer = setTimeout(wbSendSnapshot, 800);
-  }
-
-  function wbSendSnapshot() {
-    if (!window.wbSid || !window.FBDB || !wbCtx) return;
-    const c = document.getElementById('wb-canvas');
-    if (c.width < 10 || c.height < 10) return;
-    const data = wbExportWithLabels(0.4);
-    const { ref, set } = window.FBDB;
-    set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/snapshots/${window.wbSid}`), data);
-  }
-
-  window.wbSetTool = function(t) {
-    wbTool = t;
-    ['pen','eraser','text'].forEach(n => document.getElementById('wbt-'+n)?.classList.toggle('active', n===t));
-    document.getElementById('wb-canvas').style.cursor = t==='text' ? 'text' : 'crosshair';
-  };
-
-  window.wbSetColor = function(el) {
-    wbColor = el.dataset.color;
-    document.querySelectorAll('.wbc').forEach(d => d.classList.remove('active'));
-    el.classList.add('active');
-    wbSetTool('pen');
-  };
-
-  window.wbSetSize = function(v) { wbSize = parseInt(v); };
-
-  window.wbClear = function() {
-    if (!wbCtx) return;
-    const c = document.getElementById('wb-canvas');
-    wbCtx.fillStyle = 'white';
-    wbCtx.fillRect(0, 0, c.width, c.height);
-    document.getElementById('wb-labels').innerHTML = '';
-    wbLabels = [];
-    wbScheduleSnapshot();
-  };
-
-  window.wbSubmit = async function() {
-    if (!window.wbSid || !window.FBDB || !wbCtx) return;
-    const c = document.getElementById('wb-canvas');
-    if (c.width < 10) return;
-    const data = wbExportWithLabels(0.8);
-    const { ref, set } = window.FBDB;
-    const name = window.wbName || '';
-    await set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/submissions/${window.wbSid}`), {
-      name, image: data, submittedAt: Date.now()
-    });
-    const btn = document.getElementById('wb-submit-btn');
-    if (btn) { btn.textContent = '✅ 提出済み'; btn.disabled = true; }
-    wbSendSnapshot();
-  };
-
-  function wbOpen() {
-    if (wbIsOpen) return;
-    wbIsOpen = true;
-    document.getElementById('wb-overlay').classList.add('show');
-    setTimeout(() => {
-      if (!wbCtx) wbInit();
-      const text = window._wbInstruction || '';
-      const el = document.getElementById('wb-instruction-text');
-      if (el) {
-        if (text) { el.textContent = text; el.classList.remove('empty'); }
-        else { el.textContent = '先生の指示を待っています...'; el.classList.add('empty'); }
-      }
-      if (window._wbBgImage) setTimeout(() => wbApplyBgImage(window._wbBgImage), 50);
-    }, 50);
-    wbToast('📋 ホワイトボードが配布されました');
-  }
-
-  function wbClose() {
-    wbIsOpen = false;
-    document.getElementById('wb-overlay').classList.remove('show');
-    document.getElementById('wb-labels').innerHTML = '';
-    wbLabels = [];
-  }
-
-  function wbSignalDrawing() {
-    if (!window.wbSid || !window.FBDB) return;
-    clearTimeout(wbDrawingTimer);
-    if (!wbDrawingSignaled) {
-      wbDrawingSignaled = true;
-      const { ref, set } = window.FBDB;
-      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), true);
-    }
-    wbDrawingTimer = setTimeout(() => {
-      wbDrawingSignaled = false;
-      const { ref, set } = window.FBDB;
-      set(ref(window.wbDb, `sessions/${window.wbSessionId}/wb/drawing/${window.wbSid}`), null);
-    }, 1500);
-  }
-
-  function wbApplyBgImage(dataUrl) {
-    if (!wbCtx) return;
-    const img = new Image();
-    img.onload = () => {
-      const c = document.getElementById('wb-canvas');
-      wbCtx.fillStyle = 'white';
-      wbCtx.fillRect(0, 0, c.width, c.height);
-      const scale = Math.min(c.width / img.width, c.height / img.height);
-      const x = (c.width  - img.width  * scale) / 2;
-      const y = (c.height - img.height * scale) / 2;
-      wbCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
-      wbScheduleSnapshot();
-    };
-    img.src = dataUrl;
-  }
-
-  function wbToast(msg) {
-    const t = document.getElementById('wb-toast');
-    if (!t) return;
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2500);
-  }
-
 
 </script>
 </body>

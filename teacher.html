@@ -378,7 +378,17 @@
   </div>
   <div id="group-content-area" style="display:none;">
     <h3 style="font-size:15px;margin-bottom:12px;">📤 班へのコンテンツ配布</h3>
-    <div id="group-list" style="display:flex;flex-direction:column;gap:16px;"></div>
+    <!-- ⑨ 一括操作ボタン -->
+  <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">
+    <h3 style="margin:0 0 10px;font-size:14px;">📡 全班への一括操作</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="openAllGroupWb()">📋 全班にWB配布</button>
+      <button class="btn btn-outline" style="color:#ef4444;" onclick="closeAllGroupWb()">📋 全班のWB回収</button>
+      <button class="btn btn-outline" onclick="sendAllGroupImg()">🖼 全班に画像配布</button>
+      <button class="btn btn-outline" style="color:#ef4444;" onclick="collectAllGroupImg()">🖼 全班の画像回収</button>
+    </div>
+  </div>
+  <div id="group-list" style="display:flex;flex-direction:column;gap:16px;"></div>
   </div>
 </div>
 
@@ -867,6 +877,8 @@ function listenStudents(){
     if(d.status==='sharing'){
       setupPC(sid);
     }
+    // 班別表示も更新
+    if(currentView==='group') updateGroupScreens();
   });
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{
@@ -966,9 +978,10 @@ async function startTS(){
   try{
     teacherStream=await navigator.mediaDevices.getDisplayMedia({
       video:{
-        width:{ideal:1920,max:2560},
-        height:{ideal:1080,max:1440},
-        frameRate:{ideal:30,max:60}
+        width:{ideal:3840,max:3840},
+        height:{ideal:2160,max:2160},
+        frameRate:{ideal:30,max:60},
+        displaySurface:'monitor'
       },
       audio:false
     });
@@ -1103,7 +1116,9 @@ window.startSurvey=async function(){
   if(surveyType==='choice'){choices=Array.from(document.querySelectorAll('.ci')).map(i=>i.value.trim()).filter(Boolean);if(choices.length<2){toast('⚠️ 選択肢を2つ以上入力してください');return;}}
   const{ref,set,remove}=window.FB;
   await remove(ref(db,`sessions/${sessionId}/surveyAnswers`));
-  await set(ref(db,`sessions/${sessionId}/survey`),{type:surveyType,question:q,choices,active:true,ts:Date.now()});
+  const surveyData={type:surveyType,question:q,choices,active:true,ts:Date.now()};
+  await set(ref(db,`sessions/${sessionId}/survey`),surveyData);
+  cmd('all','survey-open',{survey:surveyData});
   surveyActive=true;namesVisible=false;
   document.getElementById('survey-panel').classList.remove('show');
   document.getElementById('results-panel').classList.add('show');
@@ -1150,6 +1165,14 @@ window.sendMessage=function(){const text=document.getElementById('minput').value
 
 function sig(to,data){const{ref,set}=window.FB;set(ref(db,`sessions/${sessionId}/signals/${data.from}_${to}_${Date.now()}`),data);}
 function cmd(target,command,extra={}){const{ref,set}=window.FB;set(ref(db,`sessions/${sessionId}/commands/${target}`),{command,...extra,ts:Date.now()});}
+function sendMsg(target) {
+  const msg = prompt(target === 'all' ? '全員へのメッセージ:' : `${students[target]?.name || target} へのメッセージ:`);
+  if (!msg) return;
+  cmd(target, 'message', {text: msg});
+  toast(`メッセージを送りました`);
+}
+window.sendMsgToAll = () => sendMsg('all');
+window.sendMsgToStudent = (sid) => sendMsg(sid);
 
 // ===== Cards =====
 function addCard(sid,data){
@@ -1296,6 +1319,7 @@ function renderAssignUI() {
   unassigned.innerHTML = '';
 
   // 班の列を作成
+  setTimeout(updateGroupScreens, 500);
   Object.entries(groupDefs).forEach(([gid, g]) => {
     const col = document.createElement('div');
     col.style.cssText = 'flex:1;min-width:120px;background:var(--surface);border-radius:8px;padding:8px;border:1px solid var(--border);';
@@ -1385,10 +1409,13 @@ window.clearGroups = async function() {
 function renderGroupContentArea() {
   const list = document.getElementById('group-list');
   list.innerHTML = '';
+  const bulkPanel = document.getElementById('group-bulk-panel');
   if (!groupDefs || Object.keys(groupDefs).length === 0) {
     list.innerHTML = '<p style="color:var(--muted);font-size:13px;">班が設定されていません</p>';
+    if (bulkPanel) bulkPanel.style.display = 'none';
     return;
   }
+  if (bulkPanel) bulkPanel.style.display = 'block';
   Object.entries(groupDefs).forEach(([gid, g]) => {
     const memberNames = Object.keys(g.members || {})
       .map(uid => students[uid]?.name || uid).join('、');
@@ -1408,7 +1435,8 @@ function renderGroupContentArea() {
           <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;background:#7c3aed;color:#fff;" onclick="sendGroupMsg('${gid}')">💬 メッセージ</button>
         </div>
       </div>
-      <div id="group-wb-prev-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="group-wb-prev-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
+      <div id="group-screens-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;"></div>
     `;
     list.appendChild(card);
     listenGroupWbSnapshots(gid);
@@ -1445,6 +1473,79 @@ window.collectGroupImg = async function(gid) {
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/active`), false);
   toast(`${groupDefs[gid]?.name} の画像を回収しました`);
 };
+
+// ⑨ 全班一括操作
+window.openAllGroupWb = async function() {
+  if (!groupDefs) return;
+  for (const gid of Object.keys(groupDefs)) await window.openGroupWb(gid);
+  toast('全班にホワイトボードを配布しました');
+};
+window.closeAllGroupWb = async function() {
+  if (!groupDefs) return;
+  for (const gid of Object.keys(groupDefs)) await window.closeGroupWb(gid);
+  toast('全班のホワイトボードを回収しました');
+};
+window.sendAllGroupImg = async function() {
+  if (!groupDefs) return;
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      const { ref, set } = window.FB;
+      for (const gid of Object.keys(groupDefs)) {
+        await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), {dataUrl, active:true, ts:Date.now()});
+      }
+      toast('全班に画像を配布しました');
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+};
+window.collectAllGroupImg = async function() {
+  if (!groupDefs) return;
+  const { ref, set } = window.FB;
+  for (const gid of Object.keys(groupDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/active`), false);
+  }
+  toast('全班の画像を回収しました');
+};
+
+// ⑨ 班ごとに生徒の映像サムネイルを表示
+function updateGroupScreens() {
+  if (!groupDefs) return;
+  Object.entries(groupDefs).forEach(([gid, g]) => {
+    const container = document.getElementById(`group-screens-${gid}`);
+    if (!container) return;
+    const members = Object.keys(g.members || {});
+    container.innerHTML = '';
+    members.forEach(uid => {
+      const stu = students[uid];
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'text-align:center;';
+      const name = document.createElement('div');
+      name.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      name.textContent = stu?.name || uid.slice(0,6);
+      // 既存の映像要素があれば流用
+      const existingVideo = document.getElementById('v-' + uid);
+      if (existingVideo && existingVideo.srcObject) {
+        const clone = document.createElement('video');
+        clone.srcObject = existingVideo.srcObject;
+        clone.autoplay = true; clone.muted = true; clone.playsInline = true;
+        clone.style.cssText = 'width:80px;height:50px;object-fit:cover;border-radius:6px;border:1px solid var(--border);background:#000;';
+        wrap.appendChild(clone); wrap.appendChild(name);
+      } else {
+        const ph = document.createElement('div');
+        ph.style.cssText = 'width:80px;height:50px;border-radius:6px;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px;';
+        ph.textContent = stu?.status === 'sharing' ? '📺' : '⏳';
+        wrap.appendChild(ph); wrap.appendChild(name);
+      }
+      container.appendChild(wrap);
+    });
+  });
+}
 
 window.sendGroupMsg = function(gid) {
   const name = groupDefs[gid]?.name || gid;

@@ -190,17 +190,37 @@
   /* ===== テキストボックス ===== */
   .txt-box-wrap {
     position: absolute;
-    min-width: 80px; min-height: 40px;
-    cursor: grab;
+    min-width: 80px; min-height: 60px;
+    cursor: default;
     user-select: none;
     touch-action: none;
+    display: flex;
+    flex-direction: column;
   }
-  .txt-box-wrap:active { cursor: grabbing; }
+  /* 移動バー（上部） */
+  .txt-move-bar {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 8px 8px 0 0;
+    height: 28px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: grab;
+    touch-action: none;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+  .txt-move-bar:active { cursor: grabbing; background: #1d4ed8; }
+  .txt-box-wrap.selected .txt-move-bar { display: flex; }
   .txt-box-input {
-    width: 100%; height: 100%;
+    flex: 1;
+    width: 100%;
     background: rgba(255,255,255,0.93);
     border: 2px solid rgba(37,99,235,0.45);
-    border-radius: 8px;
+    border-radius: 0 0 8px 8px;
     padding: 6px 34px 6px 8px;
     font-size: 18px; font-weight: 700;
     font-family: 'Noto Sans JP', sans-serif;
@@ -215,7 +235,12 @@
   }
   .txt-box-wrap.selected .txt-box-input {
     border-color: #2563eb;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
     box-shadow: 0 0 0 3px rgba(37,99,235,0.22);
+  }
+  .txt-box-wrap:not(.selected) .txt-box-input {
+    border-radius: 8px;
   }
   /* 削除ボタン（右上） */
   .txt-del-btn {
@@ -1028,14 +1053,19 @@
 
       const wrap = document.createElement('div');
       wrap.className = 'txt-box-wrap';
-      wrap.style.cssText = 'left:40px;top:40px;width:180px;height:56px;';
+      wrap.style.cssText = 'left:40px;top:40px;width:180px;height:88px;';
+
+      // 移動バー（上部・選択時に表示）
+      const moveBar = document.createElement('div');
+      moveBar.className = 'txt-move-bar';
+      moveBar.innerHTML = '✥ ドラッグで移動';
 
       // テキストエリア
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input';
       ta.placeholder = 'テキストを入力...';
       ta.style.color = color || '#1e293b';
-      ta.rows = 1;
+      ta.rows = 2;
 
       // 削除ボタン（右上に固定）
       const delBtn = document.createElement('button');
@@ -1048,6 +1078,7 @@
       resizeHandle.className = 'txt-resize-handle';
       resizeHandle.innerHTML = '⤡';
 
+      wrap.appendChild(moveBar);
       wrap.appendChild(ta);
       wrap.appendChild(delBtn);
       wrap.appendChild(resizeHandle);
@@ -1064,20 +1095,18 @@
       };
       labelsArr.push(lblObj);
 
-      // ===== 移動: wrap全体をドラッグ（テキストエリア以外） =====
+      // ===== 移動: moveBar をドラッグ =====
       let moveDrag = false, moveSX, moveSY, moveOX, moveOY;
-      wrap.addEventListener('pointerdown', e => {
-        // テキストエリアや削除・リサイズは除外
-        if (e.target === ta || e.target === delBtn || e.target === resizeHandle) return;
+      moveBar.addEventListener('pointerdown', e => {
         e.preventDefault(); e.stopPropagation();
         selectTxt(wrap);
         moveDrag = true;
-        wrap.setPointerCapture(e.pointerId);
+        moveBar.setPointerCapture(e.pointerId);
         moveSX = e.clientX; moveSY = e.clientY;
         moveOX = parseInt(wrap.style.left) || 0;
         moveOY = parseInt(wrap.style.top)  || 0;
       });
-      wrap.addEventListener('pointermove', e => {
+      moveBar.addEventListener('pointermove', e => {
         if (!moveDrag) return;
         const parent = wrap.parentElement;
         const maxX = parent ? parent.offsetWidth  - wrap.offsetWidth  : 9999;
@@ -1085,8 +1114,15 @@
         wrap.style.left = Math.max(0, Math.min(maxX, moveOX + e.clientX - moveSX)) + 'px';
         wrap.style.top  = Math.max(0, Math.min(maxY, moveOY + e.clientY - moveSY)) + 'px';
       });
-      wrap.addEventListener('pointerup', () => { moveDrag = false; });
-      wrap.addEventListener('pointercancel', () => { moveDrag = false; });
+      moveBar.addEventListener('pointerup',     () => { moveDrag = false; });
+      moveBar.addEventListener('pointercancel', () => { moveDrag = false; });
+
+      // wrap タップで選択（moveBar・ta・delBtn・resizeHandle以外）
+      wrap.addEventListener('pointerdown', e => {
+        if (e.target === moveBar || e.target === ta || e.target === delBtn || e.target === resizeHandle) return;
+        e.stopPropagation();
+        selectTxt(wrap);
+      });
 
       // ===== テキストエリアタップで選択 =====
       ta.addEventListener('pointerdown', e => {

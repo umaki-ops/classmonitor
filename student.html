@@ -184,6 +184,59 @@
   #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   #img-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px;
     border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
+
+  /* ===== テキストボックス ===== */
+  .txt-box-wrap {
+    position: absolute;
+    min-width: 80px; min-height: 36px;
+    cursor: move;
+    user-select: none;
+    touch-action: none;
+  }
+  .txt-box-wrap.selected .txt-box-ctrl { display: flex; }
+  .txt-box-input {
+    width: 100%; height: 100%;
+    background: rgba(255,255,255,0.92);
+    border: 2px solid #2563eb;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 18px; font-weight: 700;
+    font-family: 'Noto Sans JP', sans-serif;
+    color: #1e293b;
+    resize: none;
+    outline: none;
+    overflow: hidden;
+    word-break: break-all;
+    box-sizing: border-box;
+    min-height: 36px;
+  }
+  .txt-box-ctrl {
+    display: none;
+    position: absolute;
+    top: -38px; left: 0;
+    gap: 4px;
+    z-index: 10;
+    white-space: nowrap;
+  }
+  .txt-box-ctrl button {
+    padding: 4px 10px;
+    border: none; border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+  }
+  .txt-ctrl-move  { background: #2563eb; }
+  .txt-ctrl-resize{ background: #7c3aed; }
+  .txt-ctrl-del   { background: #ef4444; }
+  .txt-resize-handle {
+    position: absolute;
+    right: -6px; bottom: -6px;
+    width: 16px; height: 16px;
+    background: #2563eb;
+    border-radius: 50%;
+    cursor: se-resize;
+    touch-action: none;
+  }
 </style>
 </head>
 <body>
@@ -653,7 +706,7 @@
         pc = new RTCPeerConnection(ICE);
         pc.onicecandidate = e => {
           if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_${Math.random().toString(36).slice(2)}`), {
-            type:'ice-answer', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
+            type:'ice', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
           });
         };
         pc.onconnectionstatechange = () => {
@@ -669,7 +722,7 @@
           }
         });
       }
-      await pc.setRemoteDescription({type:'offer', sdp});
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_ans`), {
@@ -810,7 +863,7 @@
 
     // ===== 配布画像 =====
     let imgCanvas = null, imgBgCanvas = null, imgCtx = null, imgBgCtx = null;
-    let imgTool = 'pen', imgColor = '#ef4444', imgSize = 3;
+    let imgTool = 'pen', imgColor = '#1e293b', imgSize = 8;
     let imgDrawing = false, imgLX = 0, imgLY = 0;
     let imgLabels = [];
 
@@ -849,7 +902,7 @@
         imgLX = x; imgLY = y;
         imgSignalDrawing();
       });
-      imgCanvas.addEventListener('pointerup', () => { imgDrawing = false; imgScheduleSnapshot(); });
+      imgCanvas.addEventListener('pointerup', () => { imgDrawing = false; imgScheduleSnapshot(); deselectTxt(); });
       imgCanvas.addEventListener('pointerleave', () => { imgDrawing = false; });
     }
     function imgResize() {
@@ -890,11 +943,7 @@
       const btn = document.getElementById('imgt-' + t);
       if (btn) btn.classList.add('active');
       if (t === 'text') {
-        const text = prompt('テキストを入力:');
-        if (text) {
-          imgLabels.push({text, x: imgCanvas ? imgCanvas.width/2 - 40 : 50, y: imgCanvas ? imgCanvas.height/2 : 50});
-          imgRenderLabels();
-        }
+        makeTxtBox('img-labels', imgLabels, imgColor);
         imgTool = 'pen';
         document.querySelectorAll('#img-toolbar .wbt').forEach(b => b.classList.remove('active'));
         const penBtn = document.getElementById('imgt-pen');
@@ -902,33 +951,17 @@
       }
     };
     window.distImgSubmit = window.imgSubmit;
-    window.imgSetColor = el => { imgColor = el.dataset.color; document.querySelectorAll('#img-colors .icolor').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
+    window.imgSetColor = el => { imgColor = el.dataset.color; document.querySelectorAll('#img-toolbar .wbc').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
     window.imgSetSize = v => { imgSize = parseInt(v); };
-    window.imgAddLabel = () => {
-      const text = prompt('テキストを入力:'); if (!text) return;
-      imgLabels.push({text, x:50, y:50});
-      imgRenderLabels();
-    };
-    function imgRenderLabels() {
-      const wrap = document.getElementById('img-labels');
-      if (!wrap) return;
-      wrap.innerHTML = '';
-      imgLabels.forEach((lb, i) => {
-        const el = document.createElement('div');
-        el.className = 'wb-label';
-        el.style.cssText = `left:${lb.x}px;top:${lb.y}px;`;
-        el.textContent = lb.text;
-        el.draggable = true;
-        el.addEventListener('dragend', ev => { lb.x = ev.offsetX; lb.y = ev.offsetY; imgRenderLabels(); });
-        wrap.appendChild(el);
-      });
-    }
+    window.imgAddLabel = () => { makeTxtBox('img-labels', imgLabels, imgColor); };
+    function imgRenderLabels() { /* テキストボックスはmakeTxtBoxで管理 */ }
     function imgExportWithLabels() {
       const merged = document.createElement('canvas');
       merged.width = imgCanvas.width; merged.height = imgCanvas.height;
       const ctx = merged.getContext('2d');
       ctx.drawImage(imgBgCanvas, 0, 0);
       ctx.drawImage(imgCanvas, 0, 0);
+      burnTxtBoxes(ctx, imgLabels, imgCanvas);
       return merged.toDataURL('image/jpeg', 0.85);
     }
     let imgSnapTimer = null;
@@ -955,12 +988,151 @@
     window.distImgClear = function() {
       if (imgCtx) imgCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
       imgLabels = [];
-      imgRenderLabels();
+      const wrap = document.getElementById('img-labels');
+      if (wrap) wrap.innerHTML = '';
+      _selectedTxt = null;
     };
+
+
+    // ===== テキストボックスエンジン（WB・img共用）=====
+    let _selectedTxt = null; // 現在選択中のtxt-box-wrap
+
+    function makeTxtBox(containerId, labelsArr, color) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'txt-box-wrap';
+      wrap.style.cssText = 'left:60px;top:60px;width:160px;height:52px;';
+
+      const ctrl = document.createElement('div');
+      ctrl.className = 'txt-box-ctrl';
+
+      const moveBtn = document.createElement('button');
+      moveBtn.className = 'txt-ctrl-move';
+      moveBtn.textContent = '✥ 移動';
+
+      const resizeBtn = document.createElement('button');
+      resizeBtn.className = 'txt-ctrl-resize';
+      resizeBtn.textContent = '⤡ サイズ';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'txt-ctrl-del';
+      delBtn.textContent = '✕ 削除';
+
+      ctrl.appendChild(moveBtn); ctrl.appendChild(resizeBtn); ctrl.appendChild(delBtn);
+
+      const ta = document.createElement('textarea');
+      ta.className = 'txt-box-input';
+      ta.placeholder = 'テキストを入力...';
+      ta.style.color = color || '#1e293b';
+      ta.rows = 1;
+
+      const resizeHandle = document.createElement('div');
+      resizeHandle.className = 'txt-resize-handle';
+
+      wrap.appendChild(ctrl);
+      wrap.appendChild(ta);
+      wrap.appendChild(resizeHandle);
+      container.appendChild(wrap);
+
+      const lblObj = { el: wrap, getText: () => ta.value, getStyle: () => ({
+        left: parseInt(wrap.style.left), top: parseInt(wrap.style.top),
+        width: parseInt(wrap.style.width), height: parseInt(wrap.style.height),
+        color: ta.style.color, text: ta.value
+      })};
+      labelsArr.push(lblObj);
+
+      // クリックで選択
+      wrap.addEventListener('pointerdown', e => {
+        e.stopPropagation();
+        selectTxt(wrap);
+      });
+
+      // 移動（moveBtn ドラッグ）
+      let moveDrag = false, moveSX, moveSY, moveOX, moveOY;
+      moveBtn.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        moveDrag = true; moveBtn.setPointerCapture(e.pointerId);
+        moveSX = e.clientX; moveSY = e.clientY;
+        moveOX = parseInt(wrap.style.left)||0; moveOY = parseInt(wrap.style.top)||0;
+      });
+      moveBtn.addEventListener('pointermove', e => {
+        if (!moveDrag) return;
+        wrap.style.left = (moveOX + e.clientX - moveSX) + 'px';
+        wrap.style.top  = (moveOY + e.clientY - moveSY) + 'px';
+      });
+      moveBtn.addEventListener('pointerup', () => { moveDrag = false; });
+
+      // リサイズ（resizeHandle ドラッグ）
+      let rDrag = false, rSX, rSY, rOW, rOH;
+      resizeHandle.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        rDrag = true; resizeHandle.setPointerCapture(e.pointerId);
+        rSX = e.clientX; rSY = e.clientY;
+        rOW = wrap.offsetWidth; rOH = wrap.offsetHeight;
+      });
+      resizeHandle.addEventListener('pointermove', e => {
+        if (!rDrag) return;
+        const nw = Math.max(80, rOW + e.clientX - rSX);
+        const nh = Math.max(36, rOH + e.clientY - rSY);
+        wrap.style.width = nw + 'px'; wrap.style.height = nh + 'px';
+        ta.style.height = nh + 'px';
+      });
+      resizeHandle.addEventListener('pointerup', () => { rDrag = false; });
+
+      // 削除
+      delBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const idx = labelsArr.indexOf(lblObj);
+        if (idx >= 0) labelsArr.splice(idx, 1);
+        wrap.remove();
+        _selectedTxt = null;
+      });
+
+      // フォーカス時に選択
+      ta.addEventListener('focus', () => selectTxt(wrap));
+
+      selectTxt(wrap);
+      ta.focus();
+      return lblObj;
+    }
+
+    function selectTxt(wrap) {
+      if (_selectedTxt && _selectedTxt !== wrap) {
+        _selectedTxt.classList.remove('selected');
+      }
+      _selectedTxt = wrap;
+      wrap.classList.add('selected');
+    }
+
+    // canvas外クリックで選択解除
+    function deselectTxt() {
+      if (_selectedTxt) { _selectedTxt.classList.remove('selected'); _selectedTxt = null; }
+    }
+
+    // テキストボックスをcanvasに焼き込む（提出・スナップショット用）
+    function burnTxtBoxes(ctx, labelsArr, canvasEl) {
+      labelsArr.forEach(lb => {
+        const st = lb.getStyle();
+        const scaleX = canvasEl.width / canvasEl.offsetWidth;
+        const scaleY = canvasEl.height / canvasEl.offsetHeight;
+        ctx.save();
+        ctx.font = `bold 18px 'Noto Sans JP', sans-serif`;
+        ctx.fillStyle = st.color || '#1e293b';
+        const x = (st.left + 8) * scaleX;
+        let y = (st.top + 24) * scaleY;
+        const lines = (st.text || '').split('\n');
+        lines.forEach(line => {
+          ctx.fillText(line, x, y);
+          y += 22 * scaleY;
+        });
+        ctx.restore();
+      });
+    }
 
     // ===== ホワイトボード =====
     let wbCanvas = null, wbCtx = null;
-    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 3;
+    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 8;
     let wbDrawing = false, wbLX = 0, wbLY = 0;
     let wbLabels = [];
 
@@ -985,7 +1157,7 @@
         wbLX = x; wbLY = y;
         wbSignalDrawing();
       });
-      wbCanvas.addEventListener('pointerup', () => { wbDrawing = false; wbScheduleSnapshot(); });
+      wbCanvas.addEventListener('pointerup', () => { wbDrawing = false; wbScheduleSnapshot(); deselectTxt(); });
       wbCanvas.addEventListener('pointerleave', () => { wbDrawing = false; });
     }
     function wbResize() {
@@ -1024,32 +1196,31 @@
       wbLabels = [];
       const wrap = document.getElementById('wb-labels');
       if (wrap) wrap.innerHTML = '';
+      _selectedTxt = null;
     };
-    window.wbSetTool = t => { wbTool = t; document.querySelectorAll('.wbt').forEach(b=>b.classList.remove('active')); };
-    window.wbSetColor = el => { wbColor = el.dataset.color; document.querySelectorAll('.wcolor').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
+    window.wbSetTool = function(t) {
+      wbTool = t;
+      document.querySelectorAll('#wb-toolbar .wbt').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById('wbt-' + t);
+      if (btn) btn.classList.add('active');
+      if (t === 'text') {
+        makeTxtBox('wb-labels', wbLabels, wbColor);
+        wbTool = 'pen';
+        document.querySelectorAll('#wb-toolbar .wbt').forEach(b => b.classList.remove('active'));
+        const penBtn = document.getElementById('wbt-pen');
+        if (penBtn) penBtn.classList.add('active');
+      }
+    };
+    window.wbSetColor = el => { wbColor = el.dataset.color; document.querySelectorAll('#wb-toolbar .wbc').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
     window.wbSetSize = v => { wbSize = parseInt(v); };
-    window.wbAddLabel = () => {
-      const text = prompt('テキストを入力:'); if (!text) return;
-      wbLabels.push({text, x:50, y:50});
-      wbRenderLabels();
-    };
-    function wbRenderLabels() {
-      const wrap = document.getElementById('wb-labels');
-      if (!wrap) return;
-      wrap.innerHTML = '';
-      wbLabels.forEach((lb, i) => {
-        const el = document.createElement('div');
-        el.className = 'wb-label';
-        el.style.cssText = `left:${lb.x}px;top:${lb.y}px;`;
-        el.textContent = lb.text;
-        wrap.appendChild(el);
-      });
-    }
+    window.wbAddLabel = () => { makeTxtBox('wb-labels', wbLabels, wbColor); };
+    function wbRenderLabels() { /* テキストボックスはmakeTxtBoxで管理 */ }
     function wbExportWithLabels() {
       const merged = document.createElement('canvas');
       merged.width = wbCanvas.width; merged.height = wbCanvas.height;
       const ctx = merged.getContext('2d');
       ctx.drawImage(wbCanvas, 0, 0);
+      burnTxtBoxes(ctx, wbLabels, wbCanvas);
       return merged.toDataURL('image/jpeg', 0.85);
     }
     let wbSnapTimer = null;

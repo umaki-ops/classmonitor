@@ -271,6 +271,39 @@
     onclick="document.getElementById('watch-overlay').style.display='none';">✕ 閉じる</button>
 </div>
 
+<!-- 班別WBオーバーレイ -->
+<div id="group-wb-overlay" style="display:none;position:fixed;inset:0;z-index:6000;background:var(--bg,#0f172a);flex-direction:column;">
+  <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.1);">
+    <div>
+      <h3 id="group-wb-title" style="margin:0;font-size:15px;">📋 班のホワイトボード</h3>
+      <div id="group-wb-instruction" style="font-size:12px;color:#94a3b8;margin-top:2px;"></div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="wbt active" id="gwb-pen-btn" onclick="gWbSetTool('pen')">✏️</button>
+      <button class="wbt" id="gwb-eraser-btn" onclick="gWbSetTool('eraser')">🩹</button>
+      <button class="wbt" id="gwb-text-btn" onclick="gWbSetTool('text')">T</button>
+      <button onclick="gWbClear()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">全消し</button>
+      <button onclick="gWbSubmit()" style="background:#22c55e;color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;">📤 提出</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;padding:8px 12px;background:rgba(0,0,0,.2);flex-wrap:wrap;">
+    <div id="gwb-colors" style="display:flex;gap:4px;">
+      <div class="wcolor active" style="background:#1e293b;" onclick="gWbSetColor(this)" data-color="#1e293b"></div>
+      <div class="wcolor" style="background:#ef4444;" onclick="gWbSetColor(this)" data-color="#ef4444"></div>
+      <div class="wcolor" style="background:#3b82f6;" onclick="gWbSetColor(this)" data-color="#3b82f6"></div>
+      <div class="wcolor" style="background:#22c55e;" onclick="gWbSetColor(this)" data-color="#22c55e"></div>
+      <div class="wcolor" style="background:#f59e0b;" onclick="gWbSetColor(this)" data-color="#f59e0b"></div>
+      <div class="wcolor" style="background:#a855f7;" onclick="gWbSetColor(this)" data-color="#a855f7"></div>
+    </div>
+    <input type="range" min="1" max="20" value="3" oninput="gWbSetSize(this.value)" style="width:80px;">
+    <span id="gwb-active-label" style="font-size:11px;color:#94a3b8;align-self:center;"></span>
+  </div>
+  <div style="position:relative;flex:1;overflow:hidden;">
+    <canvas id="group-wb-canvas" style="position:absolute;inset:0;touch-action:none;width:100%;height:100%;"></canvas>
+    <div id="group-wb-labels" style="position:absolute;inset:0;pointer-events:none;"></div>
+  </div>
+</div>
+
 <!-- アンケートオーバーレイ -->
 <div id="survey-overlay">
   <div class="survey-card">
@@ -429,6 +462,7 @@
     try {
       app = initializeApp({apiKey, databaseURL:dbUrl, projectId, authDomain:`${projectId}.firebaseapp.com`}, 'student-'+Date.now());
       db = getDatabase(app);
+      window._fbRef = ref; window._fbSet = set;  // group WB用に公開
       auth = getAuth(app);
       _auth = auth;  // モジュールスコープに公開
     } catch(e) {
@@ -633,6 +667,9 @@
         wbClose();
       }
     }
+
+    // グループ監視開始
+    listenMyGroup();
 
     // ===== FOCUS =====
     let focusActive = false;
@@ -1775,6 +1812,235 @@
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2500);
   }
+
+  // ===== 班別WBエンジン =====
+  let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
+  let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3;
+  let gWbGroupId = null, gWbResetTs = 0;
+  let gWbStrokeListenerUnsub = null;
+  let gWbCurrentStroke = null; // 描画中のstroke
+
+  function gWbInit() {
+    const canvas = document.getElementById('group-wb-canvas');
+    if (!canvas || gWbCtx) return;
+    const wrap = canvas.parentElement;
+    canvas.width = wrap.offsetWidth;
+    canvas.height = wrap.offsetHeight;
+    gWbCtx = canvas.getContext('2d');
+    gWbCtx.fillStyle = 'white';
+    gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    canvas.addEventListener('pointerdown', e => {
+      gWbDrawing = true;
+      const r = canvas.getBoundingClientRect();
+      gWbLX = (e.clientX - r.left) * canvas.width / r.width;
+      gWbLY = (e.clientY - r.top) * canvas.height / r.height;
+      // 新しいストロークを開始
+      gWbCurrentStroke = {
+        uid: studentId,
+        tool: gWbTool,
+        color: gWbTool === 'eraser' ? null : gWbColor,
+        size: gWbTool === 'eraser' ? gWbSize * 5 : gWbSize,
+        points: [[gWbLX, gWbLY]],
+        ts: Date.now()
+      };
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!gWbDrawing) return;
+      const r = canvas.getBoundingClientRect();
+      const x = (e.clientX - r.left) * canvas.width / r.width;
+      const y = (e.clientY - r.top) * canvas.height / r.height;
+      gWbDrawSegment(gWbCtx, gWbLX, gWbLY, x, y, gWbTool, gWbColor, gWbSize);
+      gWbLX = x; gWbLY = y;
+      if (gWbCurrentStroke) gWbCurrentStroke.points.push([x, y]);
+    });
+    canvas.addEventListener('pointerup', async () => {
+      if (!gWbDrawing) return;
+      gWbDrawing = false;
+      if (gWbCurrentStroke && gWbGroupId) {
+        // Firebaseにストロークを保存
+        const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
+        const { ref, set } = { ref: window._fbRef, set: window._fbSet };
+        if (ref && set) {
+          await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`),
+            gWbCurrentStroke);
+        }
+        // スナップショットも更新
+        gWbScheduleSnapshot();
+      }
+      gWbCurrentStroke = null;
+    });
+    canvas.addEventListener('pointerleave', () => { gWbDrawing = false; gWbCurrentStroke = null; });
+  }
+
+  function gWbDrawSegment(ctx, x1, y1, x2, y2, tool, color, size) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (tool === 'eraser') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = size * 5;
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = size;
+    }
+    ctx.stroke();
+  }
+
+  function gWbReplayStrokes(strokes) {
+    if (!gWbCtx) return;
+    const canvas = document.getElementById('group-wb-canvas');
+    gWbCtx.fillStyle = 'white';
+    gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
+    // ts順にソートして再描画
+    const sorted = Object.values(strokes).sort((a, b) => a.ts - b.ts);
+    sorted.forEach(stroke => {
+      const pts = stroke.points;
+      if (!pts || pts.length < 2) return;
+      for (let i = 1; i < pts.length; i++) {
+        gWbDrawSegment(gWbCtx, pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1],
+          stroke.tool, stroke.color, stroke.size);
+      }
+    });
+  }
+
+  function gWbListenStrokes(groupId) {
+    if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
+    const unsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/strokes`), snap => {
+      if (!gWbCtx) return;
+      if (!snap.exists()) {
+        const canvas = document.getElementById('group-wb-canvas');
+        gWbCtx.fillStyle = 'white';
+        gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+      gWbReplayStrokes(snap.val());
+    });
+    gWbStrokeListenerUnsub = unsub;
+  }
+
+  let gWbSnapTimer = null;
+  function gWbScheduleSnapshot() {
+    clearTimeout(gWbSnapTimer);
+    gWbSnapTimer = setTimeout(async () => {
+      const canvas = document.getElementById('group-wb-canvas');
+      if (!canvas || !gWbGroupId) return;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      const { ref, set } = { ref: window._fbRef, set: window._fbSet };
+      if (ref && set) {
+        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/snapshots/${studentId}`), dataUrl);
+      }
+    }, 1000);
+  }
+
+  function gWbOpen(groupId, data) {
+    gWbGroupId = groupId;
+    const overlay = document.getElementById('group-wb-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('group-wb-title').textContent = `📋 班のホワイトボード`;
+    document.getElementById('group-wb-instruction').textContent = data.instruction || '';
+
+    // リセット
+    if (data.resetTs !== gWbResetTs) {
+      gWbResetTs = data.resetTs;
+      if (gWbCtx) {
+        const canvas = document.getElementById('group-wb-canvas');
+        gWbCtx.fillStyle = 'white';
+        gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    setTimeout(() => {
+      gWbInit();
+      gWbListenStrokes(groupId);
+    }, 100);
+  }
+
+  function gWbClose() {
+    document.getElementById('group-wb-overlay').style.display = 'none';
+    if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
+    gWbGroupId = null;
+  }
+
+  window.gWbSetTool = function(tool) {
+    gWbTool = tool;
+    document.getElementById('gwb-pen-btn').classList.toggle('active', tool === 'pen');
+    document.getElementById('gwb-eraser-btn').classList.toggle('active', tool === 'eraser');
+    document.getElementById('gwb-text-btn').classList.toggle('active', tool === 'text');
+  };
+  window.gWbSetColor = function(el) {
+    gWbColor = el.dataset.color;
+    document.querySelectorAll('#gwb-colors .wcolor').forEach(e => e.classList.remove('active'));
+    el.classList.add('active');
+  };
+  window.gWbSetSize = function(v) { gWbSize = parseInt(v); };
+
+  window.gWbClear = async function() {
+    if (!gWbGroupId) return;
+    if (!confirm('班全員のホワイトボードをリセットします')) return;
+    const { ref, set } = { ref: window._fbRef, set: window._fbSet };
+    if (ref && set) {
+      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`), null);
+      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/resetTs`), Date.now());
+    }
+  };
+
+  window.gWbSubmit = async function() {
+    const canvas = document.getElementById('group-wb-canvas');
+    if (!canvas || !gWbGroupId) return;
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const { ref, set } = { ref: window._fbRef, set: window._fbSet };
+    if (ref && set) {
+      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/submissions/${studentId}`), {
+        name: currentUser?.displayName || studentId,
+        image: dataUrl,
+        submittedAt: Date.now()
+      });
+    }
+    wbToast('✅ 提出しました！');
+  };
+
+  // グループの監視（自分が所属する班を検出）
+  function listenMyGroup() {
+    onValue(ref(db, `sessions/${sessionId}/groups`), snap => {
+      if (!snap.exists()) { gWbClose(); return; }
+      let myGroupId = null, myGroupData = null;
+      snap.forEach(child => {
+        const g = child.val();
+        if (g.members && g.members[studentId]) {
+          myGroupId = child.key;
+          myGroupData = g;
+        }
+      });
+      if (!myGroupId) { gWbClose(); return; }
+
+      // 班のWBアクティブ状態を監視
+      onValue(ref(db, `sessions/${sessionId}/groups/${myGroupId}/wb`), wbSnap => {
+        if (!wbSnap.exists()) return;
+        const wbData = wbSnap.val();
+        if (wbData.active) {
+          gWbOpen(myGroupId, wbData);
+          document.getElementById('gwb-active-label').textContent =
+            `メンバー: ${Object.keys(myGroupData.members || {}).length}人`;
+        } else {
+          gWbClose();
+        }
+      });
+
+      // 班の画像配布を監視
+      onValue(ref(db, `sessions/${sessionId}/groups/${myGroupId}/distImg`), imgSnap => {
+        if (!imgSnap.exists()) return;
+        const imgData = imgSnap.val();
+        if (imgData.active && imgData.dataUrl) {
+          showDistImg(imgData.dataUrl);
+        }
+      });
+    });
+  }
+
 
 
 </script>

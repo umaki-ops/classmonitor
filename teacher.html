@@ -256,6 +256,7 @@
         <button class="view-tab active" id="tab-monitor" onclick="switchView('monitor')">🖥 モニタリング</button>
         <button class="view-tab" id="tab-wb" onclick="switchView('wb')">📋 ホワイトボード</button>
         <button class="view-tab" id="tab-img" onclick="switchView('img')">🖼 画像</button>
+        <button class="view-tab" id="tab-group" onclick="switchView('group')">👥 班別学習</button>
       </div>
       <select id="grid-size" onchange="updateGridSize()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:7px;font-family:inherit;font-size:11px;outline:none;">
         <option value="2">2列</option><option value="3">3列</option><option value="4" selected>4列</option><option value="5">5列</option>
@@ -352,6 +353,33 @@
     </div>
   </div>
   <img id="fs-wb-img" src="" alt="" style="flex:1;width:100%;object-fit:contain;background:white;"/>
+</div>
+
+<!-- 班別学習パネル -->
+<div id="group-panel" style="display:none;padding:16px;">
+  <div style="background:var(--surface2);border-radius:12px;padding:16px;margin-bottom:16px;">
+    <h3 style="margin:0 0 12px;font-size:15px;">👥 班の設定</h3>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+      <label style="font-size:13px;">班の数：</label>
+      <input type="number" id="group-count" min="2" max="10" value="4"
+        style="width:60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;">
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="initGroups()">班を作成</button>
+      <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;" onclick="autoAssignGroups()">🔀 自動振り分け</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;" onclick="clearGroups()">班を解散</button>
+    </div>
+    <div id="group-assign-area" style="display:none;">
+      <div id="group-columns" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">未割り当て</div>
+        <div id="unassigned-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:36px;background:var(--surface);border-radius:8px;padding:8px;border:1px dashed var(--border);"></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:12px;padding:8px 20px;" onclick="saveGroups()">✅ 班を確定して保存</button>
+    </div>
+  </div>
+  <div id="group-content-area" style="display:none;">
+    <h3 style="font-size:15px;margin-bottom:12px;">📤 班へのコンテンツ配布</h3>
+    <div id="group-list" style="display:flex;flex-direction:column;gap:16px;"></div>
+  </div>
 </div>
 
 <!-- Survey -->
@@ -519,6 +547,7 @@ window.startSession=async function(){
   const dot=document.getElementById('cdot');dot.style.background='var(--green)';dot.style.animation='pulse 2s infinite';
   document.getElementById('cstatus').textContent=sessionId;
   listenStudents();
+  listenGroups();
   toast('✅ セッション開始！URLを生徒に送ってください');
 };
 
@@ -535,12 +564,15 @@ window.switchView=function(v){
   document.getElementById('tab-monitor').classList.toggle('active',v==='monitor');
   document.getElementById('tab-wb').classList.toggle('active',v==='wb');
   document.getElementById('tab-img').classList.toggle('active',v==='img');
+  document.getElementById('tab-group').classList.toggle('active',v==='group');
   document.getElementById('wb-controls').style.display=v==='wb'?'block':'none';
   document.getElementById('img-controls').style.display=v==='img'?'block':'none';
-  document.getElementById('grid').style.display=v==='img'?'none':'';
+  document.getElementById('group-panel').style.display=v==='group'?'block':'none';
+  document.getElementById('grid').style.display=(v==='img'||v==='group')?'none':'';
   Object.keys(students).forEach(sid=>updateCardContent(sid));
   if(v==='wb') listenWbData();
   if(v==='img'){ distImgRefreshUI(); listenDistImgData(); renderDistImgGrid(); }
+  if(v==='group') renderGroupPanel();
 };
 
 // ===== WHITEBOARD =====
@@ -1214,6 +1246,250 @@ window.closeFullscreen=function(){document.getElementById('fs-overlay').classLis
 window.copyUrl=function(){navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(()=>{const b=document.getElementById('copy-btn');b.textContent='✓ コピー済';b.classList.add('copied');setTimeout(()=>{b.textContent='コピー';b.classList.remove('copied');},2000);});};
 window.updateGridSize=function(){document.getElementById('grid').style.gridTemplateColumns=`repeat(${document.getElementById('grid-size').value},1fr)`;};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeWbFullscreen();closeMsgModal();closeSurvey();closeResults();}if(e.key==='ArrowLeft')wbLbNav(-1);if(e.key==='ArrowRight')wbLbNav(1);});
+
+
+// ===== 班別学習 =====
+let groupDefs = {};      // {groupId: {name, members:{uid:true}}}
+let groupListeners = {}; // groupId → unsubscribe関数
+
+function renderGroupPanel() {
+  const saved = Object.keys(groupDefs).length > 0;
+  document.getElementById('group-assign-area').style.display = saved ? 'none' : 'none';
+  document.getElementById('group-content-area').style.display = saved ? 'block' : 'none';
+  if (saved) renderGroupContentArea();
+}
+
+// 班を作成（列UIを表示）
+window.initGroups = function() {
+  const n = parseInt(document.getElementById('group-count').value) || 4;
+  if (n < 2 || n > 10) { toast('⚠️ 班の数は2〜10で指定してください'); return; }
+  groupDefs = {};
+  for (let i = 1; i <= n; i++) {
+    const gid = 'g' + i;
+    groupDefs[gid] = { name: `班${i}`, members: {} };
+  }
+  renderAssignUI();
+  document.getElementById('group-assign-area').style.display = 'block';
+  document.getElementById('group-content-area').style.display = 'none';
+};
+
+// 自動振り分け
+window.autoAssignGroups = function() {
+  const n = parseInt(document.getElementById('group-count').value) || 4;
+  if (n < 2 || n > 10) { toast('⚠️ 班の数は2〜10で指定してください'); return; }
+  groupDefs = {};
+  for (let i = 1; i <= n; i++) groupDefs['g'+i] = { name:`班${i}`, members:{} };
+  const uids = Object.keys(students);
+  uids.sort(() => Math.random() - 0.5);
+  uids.forEach((uid, i) => { groupDefs['g'+((i%n)+1)].members[uid] = true; });
+  renderAssignUI();
+  document.getElementById('group-assign-area').style.display = 'block';
+};
+
+function renderAssignUI() {
+  const cols = document.getElementById('group-columns');
+  const unassigned = document.getElementById('unassigned-list');
+  cols.innerHTML = '';
+  unassigned.innerHTML = '';
+
+  // 班の列を作成
+  Object.entries(groupDefs).forEach(([gid, g]) => {
+    const col = document.createElement('div');
+    col.style.cssText = 'flex:1;min-width:120px;background:var(--surface);border-radius:8px;padding:8px;border:1px solid var(--border);';
+    col.innerHTML = `<div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--accent);">${g.name}</div>`;
+    col.dataset.gid = gid;
+
+    // 班メンバーを表示
+    Object.keys(g.members).forEach(uid => {
+      if (students[uid]) col.appendChild(makeStudentChip(uid, gid));
+    });
+
+    // ドロップ受け入れ
+    col.addEventListener('dragover', e => { e.preventDefault(); col.style.background='var(--surface2)'; });
+    col.addEventListener('dragleave', () => { col.style.background='var(--surface)'; });
+    col.addEventListener('drop', e => {
+      e.preventDefault();
+      col.style.background = 'var(--surface)';
+      const uid = e.dataTransfer.getData('uid');
+      const fromGid = e.dataTransfer.getData('gid');
+      if (fromGid && groupDefs[fromGid]) delete groupDefs[fromGid].members[uid];
+      groupDefs[gid].members[uid] = true;
+      renderAssignUI();
+    });
+    cols.appendChild(col);
+  });
+
+  // 未割り当て生徒
+  const assignedUids = new Set(Object.values(groupDefs).flatMap(g => Object.keys(g.members)));
+  Object.keys(students).forEach(uid => {
+    if (!assignedUids.has(uid)) unassigned.appendChild(makeStudentChip(uid, null));
+  });
+
+  // 未割り当てエリアもドロップ対応
+  unassigned.addEventListener('dragover', e => e.preventDefault());
+  unassigned.addEventListener('drop', e => {
+    e.preventDefault();
+    const uid = e.dataTransfer.getData('uid');
+    const fromGid = e.dataTransfer.getData('gid');
+    if (fromGid && groupDefs[fromGid]) delete groupDefs[fromGid].members[uid];
+    renderAssignUI();
+  });
+}
+
+function makeStudentChip(uid, gid) {
+  const s = students[uid];
+  const chip = document.createElement('div');
+  chip.draggable = true;
+  chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:grab;margin:2px;border:1px solid var(--border);';
+  chip.innerHTML = `<img src="${s.photoURL||''}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'"> ${s.name||s.email||uid}`;
+  chip.dataset.uid = uid;
+  chip.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('uid', uid);
+    e.dataTransfer.setData('gid', gid || '');
+  });
+  return chip;
+}
+
+// 班をFirebaseに保存
+window.saveGroups = async function() {
+  const { ref, set } = window.FB;
+  // 全班データを保存
+  for (const [gid, g] of Object.entries(groupDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groups/${gid}`), {
+      name: g.name,
+      members: g.members,
+      createdAt: Date.now()
+    });
+  }
+  document.getElementById('group-assign-area').style.display = 'none';
+  document.getElementById('group-content-area').style.display = 'block';
+  renderGroupContentArea();
+  toast('✅ 班を保存しました');
+};
+
+// 班を解散
+window.clearGroups = async function() {
+  if (!confirm('班を解散します。よろしいですか？')) return;
+  const { ref, set } = window.FB;
+  await set(ref(db, `sessions/${sessionId}/groups`), null);
+  groupDefs = {};
+  document.getElementById('group-assign-area').style.display = 'none';
+  document.getElementById('group-content-area').style.display = 'none';
+  toast('班を解散しました');
+};
+
+// 班コンテンツエリアを描画
+function renderGroupContentArea() {
+  const list = document.getElementById('group-list');
+  list.innerHTML = '';
+  Object.entries(groupDefs).forEach(([gid, g]) => {
+    const memberNames = Object.keys(g.members)
+      .map(uid => students[uid]?.name || uid).join('、');
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface2);border-radius:12px;padding:14px;border:1px solid var(--border);';
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <span style="font-weight:600;font-size:14px;">${g.name}</span>
+          <span style="font-size:12px;color:var(--muted);margin-left:8px;">${memberNames || '未割り当て'}</span>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="openGroupWb('${gid}')">📋 WBを開く</button>
+          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="sendGroupImg('${gid}')">🖼 画像を配布</button>
+          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;color:#ef4444;" onclick="closeGroupWb('${gid}')">✕ WBを閉じる</button>
+        </div>
+      </div>
+      <div id="group-wb-prev-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    `;
+    list.appendChild(card);
+    listenGroupWbSnapshots(gid);
+  });
+}
+
+// 班のWBを開く
+window.openGroupWb = async function(gid) {
+  const { ref, set } = window.FB;
+  const wbInst = document.createElement('input');
+  wbInst.type = 'text';
+  wbInst.placeholder = '指示を入力（任意）';
+  wbInst.style.cssText = 'width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-top:8px;';
+  // シンプルにpromptで指示取得
+  const inst = prompt(`${groupDefs[gid]?.name} へのホワイトボード指示（空白でもOK）：`, '');
+  if (inst === null) return;
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), {
+    active: true,
+    instruction: inst,
+    resetTs: Date.now()
+  });
+  toast(`✅ ${groupDefs[gid]?.name} のWBを開きました`);
+};
+
+// 班のWBを閉じる
+window.closeGroupWb = async function(gid) {
+  const { ref, set } = window.FB;
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), false);
+  toast(`${groupDefs[gid]?.name} のWBを閉じました`);
+};
+
+// 班への画像配布
+window.sendGroupImg = async function(gid) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const { ref, set } = window.FB;
+      await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), {
+        dataUrl: e.target.result,
+        active: true,
+        ts: Date.now()
+      });
+      toast(`✅ ${groupDefs[gid]?.name} に画像を配布しました`);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+};
+
+// 班のWBスナップショットをリアルタイム監視
+function listenGroupWbSnapshots(gid) {
+  if (groupListeners[gid]) return;
+  const { ref, onValue } = window.FB;
+  const unsub = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/snapshots`), snap => {
+    const prev = document.getElementById(`group-wb-prev-${gid}`);
+    if (!prev) return;
+    prev.innerHTML = '';
+    if (!snap.exists()) return;
+    Object.entries(snap.val()).forEach(([uid, imgData]) => {
+      const s = students[uid];
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'text-align:center;';
+      wrap.innerHTML = `
+        <div style="font-size:10px;color:var(--muted);margin-bottom:2px;">${s?.name||uid}</div>
+        <img src="${imgData}" style="width:120px;height:80px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#fff;">
+      `;
+      prev.appendChild(wrap);
+    });
+  });
+  groupListeners[gid] = unsub;
+}
+
+// セッション開始時にグループデータをFirebaseから読み込む
+function listenGroups() {
+  const { ref, onValue } = window.FB;
+  onValue(ref(db, `sessions/${sessionId}/groups`), snap => {
+    if (!snap.exists()) { groupDefs = {}; return; }
+    groupDefs = {};
+    snap.forEach(child => {
+      groupDefs[child.key] = child.val();
+    });
+    if (currentView === 'group') renderGroupPanel();
+  });
+}
+
 </script>
 </body>
 </html>

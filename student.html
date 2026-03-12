@@ -226,7 +226,7 @@
 
     <div class="state" id="state-connected">
       <p class="status-bar" id="status-bar">画面共有を開始してください</p>
-      <button class="share-btn" id="share-btn" onclick="toggleShare()">📡 画面を共有する</button>
+      <button class="share-btn" id="share-btn">📡 画面を共有する</button>
       <p class="share-note">「画面全体」を選択してください</p>
     </div>
 
@@ -383,6 +383,11 @@
   // ログインボタンにイベントリスナーを登録
   // type="module"はdefer扱いなのでDOMは必ず構築済み
   document.getElementById('google-login-btn').addEventListener('click', doSignIn);
+  // 画面共有ボタン
+  document.getElementById('share-btn').addEventListener('click', () => {
+    if (window._shareActive) window.stopShare();
+    else window.startShare();
+  });
 
 
   async function main() {
@@ -458,7 +463,7 @@
       }, 10000);
 
       onValue(ref(db, `sessions/${sessionId}/active`), snap => {
-        if (!snap.exists() || !snap.val()) { clearTimeout(timeout); showState('disconnected'); return; }
+        if (!snap.exists() || !snap.val()) { clearTimeout(timeout); showState('error'); document.getElementById('error-msg').textContent = 'セッションが終了しました。';; return; }
         clearTimeout(timeout);
         sessionConfirmed = true;
         set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
@@ -468,13 +473,13 @@
           joinedAt: Date.now(),
           status: 'waiting'
         });
-        showState('prompt');
+        showState('connected');
       }, {onlyOnce:true});
 
       // セッション終了監視
       onValue(ref(db, `sessions/${sessionId}/active`), snap => {
         if (!snap.exists() || !snap.val()) {
-          showState('disconnected');
+          showState('error'); document.getElementById('error-msg').textContent = 'セッションが終了しました。';;
           if (localStream) localStream.getTracks().forEach(t=>t.stop());
           hideFocus(); hideWatch();
         }
@@ -540,8 +545,12 @@
         if (dataUrl) {
           wbApplyBgImage(dataUrl);
         } else {
-          // 背景画像が削除されたらキャンバスをリセット
-          wbClearBg();
+          // 背景画像が削除されたらキャンバスをリセット（白紙に戻す）
+          if (wbCtx) {
+            const c = document.getElementById('wb-canvas');
+            wbCtx.fillStyle = 'white';
+            wbCtx.fillRect(0, 0, c.width, c.height);
+          }
         }
       });
 
@@ -738,6 +747,7 @@
 
     // ===== SHARE =====
     window.startShare = async function() {
+      window._shareActive = true;
       const btn = document.getElementById('share-btn');
       btn.classList.add('disabled');
       btn.textContent = '許可を求めています...';
@@ -883,13 +893,22 @@
     }
 
     window.stopShare = function() {
+      window._shareActive = false;
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
       if (pc) { pc.close(); pc=null; }
       if (studentId) set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
-      showState('prompt');
+      showState('connected');
       const btn = document.getElementById('share-btn');
       btn.classList.remove('disabled');
       btn.innerHTML = '<span>📡</span> 画面共有を再開する';
+    };
+
+    window.toggleShare = async function() {
+      if (localStream) {
+        window.stopShare();
+      } else {
+        await window.startShare();
+      }
     };
 
     // ===== TEACHER SCREEN WATCH =====

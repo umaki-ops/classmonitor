@@ -396,7 +396,6 @@
   showState('login');
 
   async function main() {
-    showState('loading');  // Firebase初期化中のみloading表示
     const params = new URLSearchParams(location.search);
     const sessionId = params.get('session');
     const dbUrl = params.get('db');

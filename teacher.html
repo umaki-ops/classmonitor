@@ -410,7 +410,7 @@
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
   import{getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
@@ -450,11 +450,46 @@ window.startSession=async function(){
   const pi=document.getElementById('fb-projectid').value.trim();
   if(!ak||!du||!pi){toast('⚠️ Firebase設定を入力してください');return;}
   if(!window.FB){toast('⚠️ Firebase SDKの読み込み中です。しばらく待ってから再度お試しください');return;}
-  let teacherApp;
+
+  // Firebase初期化
+  let teacherApp, teacherAuth;
   try{
     teacherApp=window.FB.initializeApp({apiKey:ak,databaseURL:du,projectId:pi,authDomain:`${pi}.firebaseapp.com`},'t-'+Date.now());
     db=window.FB.getDatabase(teacherApp);
+    teacherAuth=window.FB.getAuth(teacherApp);
   }catch(e){toast('❌ '+e.message);return;}
+
+  // Googleログイン
+  toast('🔐 Googleログインしてください...');
+  let teacherUser;
+  try{
+    // すでにログイン済みなら再利用
+    await new Promise(resolve=>{
+      const unsub=window.FB.onAuthStateChanged(teacherAuth,user=>{
+        unsub(); resolve(user);
+      });
+    }).then(async user=>{
+      if(user){
+        teacherUser=user;
+      } else {
+        const result=await window.FB.signInWithPopup(teacherAuth,new window.FB.GoogleAuthProvider());
+        teacherUser=result.user;
+      }
+    });
+  }catch(e){
+    if(e.code==='auth/popup-closed-by-user'){toast('⚠️ ログインをキャンセルしました');return;}
+    toast('❌ ログインエラー: '+e.message); return;
+  }
+
+  // ヘッダーに教員名表示
+  const nameEl=document.getElementById('teacher-name-display');
+  const logoutBtn=document.getElementById('teacher-logout-btn');
+  if(nameEl) nameEl.textContent=teacherUser.displayName||teacherUser.email;
+  if(logoutBtn){
+    logoutBtn.style.display='inline-flex';
+    logoutBtn.onclick=async()=>{ await window.FB.signOut(teacherAuth); location.reload(); };
+  }
+  toast(`✅ ${teacherUser.displayName||teacherUser.email} でログイン`);
 
   sessionId=gid();
   const{ref,set}=window.FB;

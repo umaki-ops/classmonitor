@@ -763,7 +763,7 @@
       onValue(ref(db, `sessions/${sessionId}/survey`), snap => {
         if (!snap.exists()) { hideSurvey(); return; }
         const sv = snap.val();
-        console.log('[SURVEY-DB] active:', sv.active, 'type:', sv.type, 'q:', sv.question?.slice(0,30), 'choices:', sv.choices?.length);
+        console.log('[SURVEY-DB] full sv:', JSON.stringify(sv));
         if (sv.active) showSurvey(sv);
         else hideSurvey();
       });
@@ -1501,16 +1501,33 @@
 
     // ===== アンケート =====
     function showSurvey(sv) {
-      console.log('[showSurvey] type:', sv.type, 'q:', sv.question, 'choices:', sv.choices);
+      console.log('[showSurvey] called. sv=', JSON.stringify(sv));
+      if (!sv) { console.warn('[showSurvey] sv is null/undefined'); return; }
+
+      // オーバーレイ表示
       const overlay = document.getElementById('survey-overlay');
-      if (overlay) overlay.classList.add('show');
-      const q = document.getElementById('survey-question');
-      if (q) q.textContent = sv.question || '';
-      const area = document.getElementById('survey-choices');
-      if (!area) return;
+      if (!overlay) { console.warn('[showSurvey] survey-overlay NOT FOUND'); return; }
+      overlay.classList.add('show');
+
+      // 質問文
+      const qEl = document.getElementById('survey-q-text');
+      console.log('[showSurvey] survey-q-text el:', !!qEl, 'question:', sv.question);
+      if (qEl) qEl.textContent = sv.question || '（質問なし）';
+
+      // タイプラベル
+      const lbl = document.getElementById('survey-type-label');
+      if (lbl) lbl.textContent = sv.type === 'choice' ? '選択式アンケート' : '自由記述アンケート';
+
+      // 回答エリア
+      const area = document.getElementById('survey-body');
+      console.log('[showSurvey] survey-body el:', !!area, 'type:', sv.type, 'choices:', sv.choices);
+      if (!area) { console.warn('[showSurvey] survey-body NOT FOUND'); return; }
       area.innerHTML = '';
-      if (sv.type === 'choice' && sv.choices) {
-        sv.choices.forEach((c, i) => {
+
+      if (sv.type === 'choice') {
+        const choices = Array.isArray(sv.choices) ? sv.choices : Object.values(sv.choices || {});
+        console.log('[showSurvey] rendering choices:', choices);
+        choices.forEach(c => {
           const btn = document.createElement('button');
           btn.className = 'survey-choice-btn';
           btn.textContent = c;
@@ -1521,20 +1538,25 @@
         const ta = document.createElement('textarea');
         ta.id = 'survey-free-text';
         ta.placeholder = '回答を入力...';
-        ta.style.cssText = 'width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-size:14px;min-height:80px;resize:vertical;';
+        ta.style.cssText = 'width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-size:15px;min-height:80px;resize:vertical;box-sizing:border-box;margin-bottom:8px;';
         area.appendChild(ta);
         const btn = document.createElement('button');
         btn.className = 'survey-choice-btn';
+        btn.style.cssText = 'width:100%;margin-top:4px;';
         btn.textContent = '送信';
-        btn.onclick = () => submitSurvey(document.getElementById('survey-free-text')?.value || '');
+        btn.onclick = () => {
+          const val = document.getElementById('survey-free-text')?.value || '';
+          submitSurvey(val);
+        };
         area.appendChild(btn);
       }
     }
+
     function hideSurvey() {
       const overlay = document.getElementById('survey-overlay');
       if (overlay) overlay.classList.remove('show');
     }
-    async function submitSurvey(answer) {
+    async async function submitSurvey(answer) {
       await set(ref(db, `sessions/${sessionId}/surveyAnswers/${studentId}`), {
         name: window.wbName || studentId, answer, ts: Date.now()
       });

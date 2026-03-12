@@ -208,7 +208,7 @@
   </div>
   <div class="card-body">
 
-    <div class="state active" id="state-loading">
+    <div class="state" id="state-loading">
       <div style="text-align:center;padding:20px 0;">
         <div class="spinner"></div>
         <p style="color:var(--text-muted);font-size:13px;">接続しています...</p>
@@ -387,7 +387,16 @@
   import { getDatabase, ref, set, update, onValue, onChildAdded } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
+  function showState(name) {
+    document.querySelectorAll('.state').forEach(el => el.classList.remove('active'));
+    document.getElementById('state-' + name)?.classList.add('active');
+  }
+
+  // ページ読み込み直後にloginを表示（main()完了を待たない）
+  showState('login');
+
   async function main() {
+    showState('loading');  // Firebase初期化中のみloading表示
     const params = new URLSearchParams(location.search);
     const sessionId = params.get('session');
     const dbUrl = params.get('db');
@@ -397,8 +406,8 @@
     document.getElementById('session-id-text').textContent = 'セッション: ' + (sessionId || '不明');
 
     if (!sessionId || !dbUrl || !apiKey) {
-      showState('error');
-      document.getElementById('error-msg').textContent = 'URLが正しくありません。';
+      // パラメータなし = 直接アクセス → ログイン画面を表示（先生がURLを送るまで待機）
+      showState('login');
       return;
     }
 
@@ -442,8 +451,10 @@
 
     let _initialized = false;
 
-    // Firebase認証の初回コールバックが遅い場合のフォールバック
-    const _authTimeout = setTimeout(() => showState('login'), 3000);
+    // currentUser が即座に取れる場合はすぐ処理、取れない場合は2秒でloginへ
+    const _authTimeout = setTimeout(() => {
+      if (!_initialized) showState('login');
+    }, 2000);
 
     onAuthStateChanged(auth, async (user) => {
       clearTimeout(_authTimeout);
@@ -1389,10 +1400,7 @@
     }
     window.closeMsgPopup = function() { document.getElementById('msg-popup').classList.remove('show'); };
 
-    function showState(name) {
-      document.querySelectorAll('.state').forEach(s=>s.classList.remove('active'));
-      document.getElementById('state-'+name)?.classList.add('active');
-    }
+
 
 
     // WB用グローバル公開（canvas event closureから使用）

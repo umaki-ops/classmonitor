@@ -179,7 +179,8 @@
     border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; flex-shrink:0; }
   .img-submit-btn.submitted { background:#22c55e; }
   #img-canvas-wrap { flex:1; overflow:hidden; position:relative; background:white; }
-  #img-canvas { position:absolute; inset:0; touch-action:none; }
+  #img-bg-canvas { position:absolute; inset:0; }
+  #img-canvas { position:absolute; inset:0; touch-action:none; background:transparent; }
   #img-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   #img-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px;
     border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
@@ -333,6 +334,7 @@
     <button class="img-submit-btn" id="img-submit-btn" onclick="distImgSubmit()">📤 提出</button>
   </div>
   <div id="img-canvas-wrap">
+    <canvas id="img-bg-canvas"></canvas>
     <canvas id="img-canvas"></canvas>
     <div id="img-labels"></div>
   </div>
@@ -996,18 +998,22 @@
       console.log('[img] imgInitOnce called, done:', imgInitDone);
       if (imgInitDone) return;
       imgInitDone = true;
-      const canvas = document.getElementById('img-canvas');
-      const wrap   = document.getElementById('img-canvas-wrap');
+      const canvas   = document.getElementById('img-canvas');
+      const bgCanvas = document.getElementById('img-bg-canvas');
+      const wrap     = document.getElementById('img-canvas-wrap');
       imgCtx = canvas.getContext('2d');
+      const bgCtx = bgCanvas.getContext('2d');
 
       function imgResize() {
-        // WBのwbResizeと同じ：内容を保持しながらリサイズ
+        // ペン描画の内容を退避
         const prev = (canvas.width > 1 && canvas.height > 1) ? canvas.toDataURL() : null;
-        canvas.width  = wrap.offsetWidth;
-        canvas.height = wrap.offsetHeight;
-        // 背景画像を再描画
+        const w = wrap.offsetWidth || window.innerWidth;
+        const h = wrap.offsetHeight || window.innerHeight;
+        canvas.width   = w; canvas.height   = h;
+        bgCanvas.width = w; bgCanvas.height = h;
+        // 背景canvasに背景画像を再描画
         if (imgBgImage) imgDrawBg();
-        // 以前の描画内容を上に重ねる
+        // ペンcanvasの内容を復元
         if (prev) {
           const tmp = new Image();
           tmp.onload = () => imgCtx.drawImage(tmp, 0, 0);
@@ -1163,7 +1169,8 @@
 
     window.distImgClear = function() {
       if (!imgCtx) return;
-      imgDrawBg();
+      const canvas = document.getElementById('img-canvas');
+      imgCtx.clearRect(0, 0, canvas.width, canvas.height);
       document.getElementById('img-labels').innerHTML = '';
       imgLabels = [];
       imgScheduleSnapshot();
@@ -1209,11 +1216,15 @@
         document.getElementById('img-overlay').classList.add('show');
         setTimeout(() => {
           imgInitOnce();
-          const canvas = document.getElementById('img-canvas');
-          const wrap   = document.getElementById('img-canvas-wrap');
-          canvas.width  = wrap.offsetWidth;
-          canvas.height = wrap.offsetHeight;
+          const canvas   = document.getElementById('img-canvas');
+          const bgCanvas = document.getElementById('img-bg-canvas');
+          const wrap     = document.getElementById('img-canvas-wrap');
+          const w = wrap.offsetWidth || window.innerWidth;
+          const h = wrap.offsetHeight || window.innerHeight;
+          canvas.width   = w; canvas.height   = h;
+          bgCanvas.width = w; bgCanvas.height = h;
           imgCtx = canvas.getContext('2d');
+          imgCtx.clearRect(0, 0, w, h);
           imgDrawBg();
         }, 50);
       };
@@ -1250,30 +1261,33 @@
       imgCtx.lineCap = 'round';
       imgCtx.lineJoin = 'round';
       imgCtx.stroke();
-      imgCtx.globalCompositeOperation = 'source-over'; // 必ず戻す
+      imgCtx.globalCompositeOperation = 'source-over';
       imgLX = x; imgLY = y;
       imgSignalDrawing(true);
     }
 
     // 背景画像をcanvasにフィット描画
     function imgDrawBg() {
-      if (!imgBgImage || !imgCtx) return;
-      const canvas = document.getElementById('img-canvas');
-      imgCtx.fillStyle = 'white';
-      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
-      const scale = Math.min(canvas.width / imgBgImage.width, canvas.height / imgBgImage.height);
-      const x = (canvas.width  - imgBgImage.width  * scale) / 2;
-      const y = (canvas.height - imgBgImage.height * scale) / 2;
-      imgCtx.drawImage(imgBgImage, x, y, imgBgImage.width * scale, imgBgImage.height * scale);
+      if (!imgBgImage) return;
+      const bgCanvas = document.getElementById('img-bg-canvas');
+      if (!bgCanvas) return;
+      const bgCtx = bgCanvas.getContext('2d');
+      bgCtx.fillStyle = 'white';
+      bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+      const scale = Math.min(bgCanvas.width / imgBgImage.width, bgCanvas.height / imgBgImage.height);
+      const x = (bgCanvas.width  - imgBgImage.width  * scale) / 2;
+      const y = (bgCanvas.height - imgBgImage.height * scale) / 2;
+      bgCtx.drawImage(imgBgImage, x, y, imgBgImage.width * scale, imgBgImage.height * scale);
     }
 
     function imgExportWithLabels(quality = 0.8) {
-      const canvas = document.getElementById('img-canvas');
-      const wrap   = document.getElementById('img-canvas-wrap');
-      const wr     = wrap.getBoundingClientRect();
-      const scX    = canvas.width  / (wr.width  || 1);
-      const scY    = canvas.height / (wr.height || 1);
-      const sc     = (scX + scY) / 2;
+      const canvas   = document.getElementById('img-canvas');
+      const bgCanvas = document.getElementById('img-bg-canvas');
+      const wrap     = document.getElementById('img-canvas-wrap');
+      const wr       = wrap.getBoundingClientRect();
+      const scX      = canvas.width  / (wr.width  || 1);
+      const scY      = canvas.height / (wr.height || 1);
+      const sc       = (scX + scY) / 2;
 
       const merged = document.createElement('canvas');
       merged.width  = canvas.width;
@@ -1281,6 +1295,8 @@
       const ctx = merged.getContext('2d');
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, merged.width, merged.height);
+      // 背景canvasを先に描画してからペンcanvasを重ねる
+      if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0);
       ctx.drawImage(canvas, 0, 0);
 
       // ラベルを canvas 座標に変換して複数行描画

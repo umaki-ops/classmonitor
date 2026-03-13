@@ -189,6 +189,10 @@
   .bc1{background:linear-gradient(90deg,#10b981,#059669);}
   .bc2{background:linear-gradient(90deg,#f59e0b,#d97706);}
   .bc3{background:linear-gradient(90deg,#8b5cf6,#7c3aed);}
+  .bc4{background:linear-gradient(90deg,#ef4444,#dc2626);}
+  .bc5{background:linear-gradient(90deg,#ec4899,#db2777);}
+  .bc6{background:linear-gradient(90deg,#14b8a6,#0d9488);}
+  .bc7{background:linear-gradient(90deg,#f97316,#ea580c);}
 
   /* Msg modal */
   #msg-modal{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;}
@@ -417,7 +421,7 @@
         <div class="choice-row"><span class="clabel">A</span><input type="text" class="si ci" placeholder="選択肢A"/><button class="rm-ch" onclick="removeChoice(this)" style="display:none;">✕</button></div>
         <div class="choice-row"><span class="clabel">B</span><input type="text" class="si ci" placeholder="選択肢B"/><button class="rm-ch" onclick="removeChoice(this)" style="display:none;">✕</button></div>
       </div>
-      <button class="add-ch" id="add-ch-btn" onclick="addChoice()">＋ 選択肢を追加（最大4つ）</button>
+      <button class="add-ch" id="add-ch-btn" onclick="addChoice()">＋ 選択肢を追加（最大8つ）</button>
     </div>
     <div id="free-sec" style="display:none;"><div style="padding:11px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);">生徒が自由にテキストを入力して回答します。</div></div>
     <div class="sactions"><button class="btn btn-outline" onclick="closeSurvey()">キャンセル</button><button class="btn btn-primary" onclick="startSurvey()">📤 送信</button></div>
@@ -532,7 +536,7 @@ let surveyType='choice',surveyActive=false,namesVisible=false;
 let currentView='monitor';
 let wbActive=false;
 let wbSubmissions={}, wbLbKeys=[], wbLbIdx=0;
-const LABELS=['A','B','C','D'];
+const LABELS=['A','B','C','D','E','F','G','H'];
 const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'},{urls:'stun:stun3.l.google.com:19302'}],iceCandidatePoolSize:20,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
 
 function gid(){
@@ -1180,7 +1184,7 @@ window.broadcastUnfocus=function(){cmd('all','unfocus');Object.keys(students).fo
 window.openSurvey=function(t){surveyType=t;document.getElementById('survey-panel').classList.add('show');switchTab(t);};
 window.closeSurvey=function(){document.getElementById('survey-panel').classList.remove('show');};
 window.switchTab=function(t){surveyType=t;document.getElementById('tab-choice').classList.toggle('active',t==='choice');document.getElementById('tab-free').classList.toggle('active',t==='free');document.getElementById('choice-sec').style.display=t==='choice'?'':'none';document.getElementById('free-sec').style.display=t==='free'?'':'none';};
-window.addChoice=function(){const c=document.getElementById('choices');const n=c.children.length;if(n>=4){toast('最大4つです');return;}const row=document.createElement('div');row.className='choice-row';row.innerHTML=`<span class="clabel">${LABELS[n]}</span><input type="text" class="si ci" placeholder="選択肢${LABELS[n]}"/><button class="rm-ch" onclick="removeChoice(this)">✕</button>`;c.appendChild(row);if(n+1>=4)document.getElementById('add-ch-btn').style.display='none';updateRmBtns();};
+window.addChoice=function(){const c=document.getElementById('choices');const n=c.children.length;if(n>=8){toast('最大8つです');return;}const row=document.createElement('div');row.className='choice-row';row.innerHTML=`<span class="clabel">${LABELS[n]}</span><input type="text" class="si ci" placeholder="選択肢${LABELS[n]}"/><button class="rm-ch" onclick="removeChoice(this)">✕</button>`;c.appendChild(row);if(n+1>=8)document.getElementById('add-ch-btn').style.display='none';updateRmBtns();};
 window.removeChoice=function(btn){const c=document.getElementById('choices');btn.closest('.choice-row').remove();Array.from(c.children).forEach((row,i)=>{row.querySelector('.clabel').textContent=LABELS[i];row.querySelector('input').placeholder='選択肢'+LABELS[i];});document.getElementById('add-ch-btn').style.display='';updateRmBtns();};
 function updateRmBtns(){const rows=Array.from(document.getElementById('choices').children);rows.forEach(row=>{const b=row.querySelector('.rm-ch');if(b)b.style.display=rows.length>2?'':'none';});}
 window.startSurvey=async function(){
@@ -1252,7 +1256,7 @@ function renderChoice(sv, answers, c) {
     if (votes[a.answer] !== undefined) { votes[a.answer]++; vnames[a.answer].push(a.name); }
   });
   const total = Object.values(answers).length;
-  const cols = ['bc0','bc1','bc2','bc3'];
+  const cols = ['bc0','bc1','bc2','bc3','bc4','bc5','bc6','bc7'];
   c.innerHTML = choices.map((ch, i) => {
     const cnt = votes[ch] || 0;
     const pct = total > 0 ? Math.round(cnt / total * 100) : 0;

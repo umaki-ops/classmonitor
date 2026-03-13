@@ -1654,7 +1654,6 @@
     let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
     let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3;
     let gWbGroupId = null, gWbResetTs = 0;
-    let gWbLabels = [];
     let gWbFromImg = false; // distImg経由でWBを開いた場合true
     let gWbStrokeListenerUnsub = null;
     let gWbCurrentStroke = null;
@@ -1766,6 +1765,7 @@
         renderGWbTexts(snap.exists() ? snap.val() : {});
       });
     }
+
     function renderGWbTexts(textsObj) {
       const container = document.getElementById('group-wb-labels');
       if (!container) return;
@@ -1805,7 +1805,6 @@
       const doneBtn = document.createElement('button'); doneBtn.className = 'txt-done-btn'; doneBtn.innerHTML = '✓ 完了';
       wrap.appendChild(ta); wrap.appendChild(delBtn); wrap.appendChild(resizeHandle); wrap.appendChild(doneBtn);
       container.appendChild(wrap);
-
       function enterMoveMode() { selectTxt(wrap); wrap.classList.add('selected'); wrap.classList.remove('edit-mode'); }
       function enterEditMode() { selectTxt(wrap); wrap.classList.add('selected','edit-mode'); ta.focus(); const l=ta.value.length; ta.setSelectionRange(l,l); }
       let tapTimer=null, tapCount=0;
@@ -1860,16 +1859,12 @@
 
     function _saveTextToFb(key, wrap, ta) {
       if (!gWbGroupId) return;
-      const parent = wrap.parentElement;
-      const x = parseFloat(wrap.style.left) || 0;
-      const y = parseFloat(wrap.style.top)  || 0;
       set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`), {
-        uid: studentId, x, y, w: wrap.offsetWidth, text: ta.value,
-        color: ta.style.color || gWbColor, ts: Date.now()
+        uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
+        w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor, ts: Date.now()
       });
       gWbScheduleSnapshot();
     }
-
 
     let gWbSnapTimer = null;
     function gWbScheduleSnapshot() {

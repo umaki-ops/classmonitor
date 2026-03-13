@@ -1689,7 +1689,10 @@ function listenGroupPreview(gid) {
         const H = Math.round(parent?.offsetHeight || 158);
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
         const bgUrl = hasImg ? distImgData.dataUrl : null;
-        replayWithBg(canvas, wbActive ? (wbSnapshot?.strokes || null) : null, bgUrl, wbActive ? (wbSnapshot?.texts || null) : null);
+        // WB配布中はwbのstrokes/texts、画像配布中はdistImgのstrokes/textsを使う
+        const strokes = wbActive ? (wbSnapshot?.strokes || null) : (hasImg ? (distImgData?.strokes || null) : null);
+        const texts   = wbActive ? (wbSnapshot?.texts   || null) : (hasImg ? (distImgData?.texts   || null) : null);
+        replayWithBg(canvas, strokes, bgUrl, texts);
       });
     } else {
       canvas.style.display = 'none';
@@ -1708,8 +1711,11 @@ function listenGroupPreview(gid) {
     distImgData = (snap.exists() && snap.val()?.active === true) ? snap.val() : null;
     redraw();
   });
+  // distImg/strokes と distImg/texts も監視してリアルタイム更新
+  const unsubImgStrokes = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`), () => redraw());
+  const unsubImgTexts   = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`),   () => redraw());
 
-  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
+  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); unsubImgStrokes(); unsubImgTexts(); };
 }
 
 // 背景画像＋ストローク＋テキストを正しい順序でcanvasに描画
@@ -1802,7 +1808,9 @@ window.openGroupZoom = function(gid) {
       const H = Math.round(W * 9/16);
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
       const bgUrl = hasImg ? _zoomImgData.dataUrl : null;
-      replayWithBg(canvas, wbActive ? (_zoomWbSnap?.strokes || null) : null, bgUrl, wbActive ? (_zoomWbSnap?.texts || null) : null);
+      const strokes = wbActive ? (_zoomWbSnap?.strokes || null) : (hasImg ? (_zoomImgData?.strokes || null) : null);
+      const texts   = wbActive ? (_zoomWbSnap?.texts   || null) : (hasImg ? (_zoomImgData?.texts   || null) : null);
+      replayWithBg(canvas, strokes, bgUrl, texts);
     });
   }
 
@@ -1814,6 +1822,9 @@ window.openGroupZoom = function(gid) {
     _zoomImgData = (imgSnap.exists() && imgSnap.val()?.active === true) ? imgSnap.val() : null;
     zoomRedraw();
   }));
+  // distImg内のstrokes/textsの変化も監視（画像配布中の書き込みをリアルタイム表示）
+  window._zoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`), () => zoomRedraw()));
+  window._zoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`),   () => zoomRedraw()));
 
   document.getElementById('group-zoom-modal').style.display = 'flex';
 };
@@ -1860,6 +1871,8 @@ window.closeGroupWb = async function(gid) {
 window.collectGroupImg = async function(gid) {
   const { ref, set } = window.FB;
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/active`), false);
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`), null);
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`),   null);
   toast(`${groupDefs[gid]?.name} の画像を回収しました`);
 };
 

@@ -1676,7 +1676,13 @@
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor, ts: Date.now() };
-          if (gWbGroupId) set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${textKey}`), textData);
+          if (gWbGroupId) {
+            if (gWbFromImg) {
+              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${textKey}`), textData);
+            } else {
+              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${textKey}`), textData);
+            }
+          }
           return;
         }
         gWbDrawing = true;
@@ -1704,7 +1710,12 @@
         gWbDrawing = false;
         if (gWbCurrentStroke && gWbGroupId) {
           const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
-          await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
+          if (gWbFromImg) {
+            // 画像配布モード: distImg/strokes に保存（WBストロークと分離）
+            await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
+          } else {
+            await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
+          }
           gWbScheduleSnapshot();
         }
         gWbCurrentStroke = null;
@@ -1751,17 +1762,21 @@
 
     let gWbTextListenerUnsub = null;
 
-    function gWbListenStrokes(groupId) {
+    function gWbListenStrokes(groupId, pathOverride) {
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
-      gWbStrokeListenerUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/strokes`), snap => {
+      const strokesPath = pathOverride || `sessions/${sessionId}/groups/${groupId}/wb/strokes`;
+      gWbStrokeListenerUnsub = onValue(ref(db, strokesPath), snap => {
         if (!gWbCtx) return;
         gWbReplayStrokes(snap.exists() ? snap.val() : null);
       });
     }
 
-    function gWbListenTexts(groupId) {
+    function gWbListenTexts(groupId, pathOverride) {
       if (gWbTextListenerUnsub) { gWbTextListenerUnsub(); gWbTextListenerUnsub = null; }
-      gWbTextListenerUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/texts`), snap => {
+      const textsPath = pathOverride || (gWbFromImg
+        ? `sessions/${sessionId}/groups/${groupId}/distImg/texts`
+        : `sessions/${sessionId}/groups/${groupId}/wb/texts`);
+      gWbTextListenerUnsub = onValue(ref(db, textsPath), snap => {
         renderGWbTexts(snap.exists() ? snap.val() : {});
       });
     }
@@ -1838,7 +1853,10 @@
       resizeHandle.addEventListener('pointerup', () => { if(resDrag){resDrag=false; _saveTextToFb(key,wrap,ta);} });
       resizeHandle.addEventListener('pointercancel', () => { resDrag=false; });
       delBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); });
-      delBtn.addEventListener('click', e => { e.stopPropagation(); wrap.remove(); if(gWbGroupId) set(ref(db,`sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`),null); });
+      delBtn.addEventListener('click', e => { e.stopPropagation(); wrap.remove(); if(gWbGroupId) {
+        if (gWbFromImg) set(ref(db,`sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${key}`),null);
+        else set(ref(db,`sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`),null);
+      }});
       doneBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); });
       doneBtn.addEventListener('click', e => { e.stopPropagation(); wrap.classList.remove('edit-mode'); wrap.classList.add('selected'); ta.blur(); });
       let inputTimer=null;
@@ -1859,10 +1877,13 @@
 
     function _saveTextToFb(key, wrap, ta) {
       if (!gWbGroupId) return;
-      set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`), {
-        uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
-        w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor, ts: Date.now()
-      });
+      const textData = { uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
+        w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor, ts: Date.now() };
+      if (gWbFromImg) {
+        set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${key}`), textData);
+      } else {
+        set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`), textData);
+      }
       gWbScheduleSnapshot();
     }
 
@@ -1910,9 +1931,14 @@
     function gWbSetBgImage(dataUrl) {
       gWbBgImage = dataUrl;
       if (!gWbGroupId) return;
-      get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`)).then(snap => {
-        gWbReplayStrokes(snap.exists() ? snap.val() : null);
-      });
+      if (gWbFromImg) {
+        // 画像配布モード: WBのストロークは描画しない（混入防止）
+        gWbReplayStrokes(null);
+      } else {
+        get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`)).then(snap => {
+          gWbReplayStrokes(snap.exists() ? snap.val() : null);
+        });
+      }
     }
 
     function gWbOpen(groupId, data) {
@@ -1933,7 +1959,16 @@
       }
       // 既に開いている場合は gWbInit・gWbListenStrokes を再実行しない
       if (!alreadyOpen) {
-        setTimeout(() => { gWbInit(); gWbListenStrokes(groupId); gWbListenTexts(groupId); }, 100);
+        setTimeout(() => {
+          gWbInit();
+          if (gWbFromImg) {
+            gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
+            gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
+          } else {
+            gWbListenStrokes(groupId);
+            gWbListenTexts(groupId);
+          }
+        }, 100);
       }
     }
 
@@ -1971,9 +2006,14 @@
     window.gWbClear = async function() {
       if (!gWbGroupId) return;
       if (!confirm('班全員のホワイトボードをリセットします')) return;
-      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`), null);
-      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts`),   null);
-      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/resetTs`), Date.now());
+      if (gWbFromImg) {
+        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes`), null);
+        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts`),   null);
+      } else {
+        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`), null);
+        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts`),   null);
+        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/resetTs`), Date.now());
+      }
       // 背景は維持してキャンバスをクリア
       if (gWbCtx) { gWbReplayStrokes(null); }
     };

@@ -378,23 +378,26 @@
     </div>
   </div>
   <div id="group-content-area" style="display:none;">
-    <!-- 班モニタリング俯瞰エリア -->
-    <div id="group-monitor-area" style="margin-bottom:16px;">
-      <h3 style="font-size:14px;margin:0 0 10px;color:var(--accent);">📺 班別モニタリング（クリックで拡大）</h3>
-      <div id="group-monitor-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;"></div>
+    <!-- ツールバー：列数 + 一括操作 -->
+    <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;margin-right:6px;">
+          <span style="font-size:12px;color:var(--muted);">列数</span>
+          <div style="display:flex;gap:3px;" id="col-switcher">
+            <button onclick="setGroupCols(2)" id="gcol-2" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:12px;cursor:pointer;">2</button>
+            <button onclick="setGroupCols(3)" id="gcol-3" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">3</button>
+            <button onclick="setGroupCols(4)" id="gcol-4" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">4</button>
+          </div>
+        </div>
+        <div style="width:1px;height:24px;background:var(--border);margin:0 2px;"></div>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupWb()">📋 全班WB配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupWb()">📋 全班WB回収</button>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupImg()">🖼 全班画像配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupImg()">🖼 全班画像回収</button>
+      </div>
     </div>
-    <h3 style="font-size:15px;margin-bottom:12px;">📤 班へのコンテンツ配布</h3>
-    <!-- 一括操作ボタン -->
-  <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">
-    <h3 style="margin:0 0 10px;font-size:14px;">📡 全班への一括操作</h3>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="openAllGroupWb()">📋 全班にホワイトボード配布</button>
-      <button class="btn" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupWb()">📋 全班のホワイトボード回収</button>
-      <button class="btn btn-primary" onclick="sendAllGroupImg()">🖼 全班に画像配布</button>
-      <button class="btn" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupImg()">🖼 全班の画像回収</button>
-    </div>
-  </div>
-  <div id="group-list" style="display:flex;flex-direction:column;gap:16px;"></div>
+    <!-- 班カードグリッド -->
+    <div id="group-monitor-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;"></div>
   </div>
 </div>
 
@@ -469,14 +472,36 @@
 </div>
 
 <!-- 班モニタリング拡大モーダル -->
-<div id="group-zoom-modal" style="display:none;position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.85);align-items:center;justify-content:center;" onclick="closeGroupZoom()">
-  <div style="background:var(--surface);border-radius:16px;padding:20px;max-width:700px;width:95%;max-height:90vh;overflow-y:auto;" onclick="event.stopPropagation()">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <span id="group-zoom-title" style="font-weight:700;font-size:16px;"></span>
-      <button onclick="closeGroupZoom()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text);">✕</button>
+<div id="group-zoom-modal" style="display:none;position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.8);align-items:flex-start;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;" onclick="closeGroupZoom()">
+  <div style="background:var(--surface);border-radius:16px;width:100%;max-width:860px;margin:auto;" onclick="event.stopPropagation()">
+    <!-- モーダルヘッダー -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <span id="group-zoom-title" style="font-weight:700;font-size:16px;color:var(--text);"></span>
+      <button onclick="closeGroupZoom()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;">✕</button>
     </div>
-    <div id="group-zoom-screens" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
-    <div id="group-zoom-wb" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"></div>
+    <!-- WB/画像プレビュー（大） -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">ホワイトボード / 配布画像</div>
+      <div id="group-zoom-preview" style="background:#fff;border-radius:10px;border:1px solid var(--border);width:100%;aspect-ratio:16/9;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;">
+        <canvas id="group-zoom-canvas" style="width:100%;height:100%;display:none;"></canvas>
+        <img id="group-zoom-img" style="width:100%;height:100%;object-fit:contain;display:none;" />
+        <div id="group-zoom-nopreview" style="color:var(--muted);font-size:13px;opacity:0.5;">未配布</div>
+      </div>
+    </div>
+    <!-- メンバー一覧 -->
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">メンバー</div>
+      <div id="group-zoom-members" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
+    <!-- 操作ボタン -->
+    <div style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap;">
+      <div id="group-zoom-gid" style="display:none;"></div>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="openGroupWb(document.getElementById('group-zoom-gid').dataset.gid)">📋 WB配布</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeGroupWb(document.getElementById('group-zoom-gid').dataset.gid)">📋 WB回収</button>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="sendGroupImg(document.getElementById('group-zoom-gid').dataset.gid)">🖼 画像配布</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectGroupImg(document.getElementById('group-zoom-gid').dataset.gid)">🖼 画像回収</button>
+      <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;" onclick="sendGroupMsg(document.getElementById('group-zoom-gid').dataset.gid)">💬 メッセージ</button>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -1496,150 +1521,281 @@ window.clearGroups = async function() {
   toast('班を解散しました');
 };
 
+// ===== 班別モニタリングUI =====
+let _groupCols = 2; // デフォルト2列
+
+window.setGroupCols = function(n) {
+  _groupCols = n;
+  const grid = document.getElementById('group-monitor-grid');
+  if (grid) grid.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`;
+  // ボタン状態更新
+  [2,3,4].forEach(i => {
+    const btn = document.getElementById('gcol-' + i);
+    if (!btn) return;
+    if (i === n) {
+      btn.style.background = 'var(--accent)'; btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--accent)';
+    } else {
+      btn.style.background = 'var(--surface)'; btn.style.color = 'var(--text)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  });
+};
+
 // 班コンテンツエリアを描画
 function renderGroupContentArea() {
-  const list = document.getElementById('group-list');
-  list.innerHTML = '';
+  const grid = document.getElementById('group-monitor-grid');
   const bulkPanel = document.getElementById('group-bulk-panel');
   if (!groupDefs || Object.keys(groupDefs).length === 0) {
-    list.innerHTML = '<p style="color:var(--muted);font-size:13px;">班が設定されていません</p>';
+    if (grid) grid.innerHTML = '<p style="color:var(--muted);font-size:13px;">班が設定されていません</p>';
     if (bulkPanel) bulkPanel.style.display = 'none';
     return;
   }
   if (bulkPanel) bulkPanel.style.display = 'block';
-
-  // ④ 班モニタリンググリッド（俯瞰）
-  renderGroupMonitorGrid();
-
-  Object.entries(groupDefs).forEach(([gid, g]) => {
-    const memberNames = Object.keys(g.members || {})
-      .map(uid => students[uid]?.name || uid).join('、');
-    const card = document.createElement('div');
-    card.style.cssText = 'background:var(--surface2);border-radius:12px;padding:14px;border:1px solid var(--border);';
-    card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div>
-          <span style="font-weight:600;font-size:14px;">${g.name}</span>
-          <span style="font-size:12px;color:var(--muted);margin-left:8px;">${memberNames || '未割り当て'}</span>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="openGroupWb('${gid}')">📋 ホワイトボード配布</button>
-          <button class="btn" style="padding:5px 12px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeGroupWb('${gid}')">📋 ホワイトボード回収</button>
-          <button class="btn btn-primary" style="padding:5px 12px;font-size:12px;" onclick="sendGroupImg('${gid}')">🖼 画像配布</button>
-          <button class="btn" style="padding:5px 12px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectGroupImg('${gid}')">🖼 画像回収</button>
-          <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;background:#7c3aed;color:#fff;" onclick="sendGroupMsg('${gid}')">💬 メッセージ</button>
-        </div>
-      </div>
-      <div id="group-wb-prev-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
-    `;
-    list.appendChild(card);
-    listenGroupWbSnapshots(gid);
-  });
-}
-
-// ④ 班モニタリンググリッド描画
-function renderGroupMonitorGrid() {
-  const grid = document.getElementById('group-monitor-grid');
-  if (!grid) return;
+  grid.style.gridTemplateColumns = `repeat(${_groupCols},minmax(0,1fr))`;
   grid.innerHTML = '';
+
   Object.entries(groupDefs).forEach(([gid, g]) => {
     const members = Object.keys(g.members || {});
     const card = document.createElement('div');
-    card.id = 'gmon-card-' + gid;
-    card.style.cssText = 'background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:10px;cursor:pointer;transition:.15s;';
-    card.onmouseenter = () => card.style.borderColor = 'var(--accent)';
-    card.onmouseleave = () => card.style.borderColor = 'var(--border)';
-    card.onclick = () => openGroupZoom(gid);
-    const title = document.createElement('div');
-    title.style.cssText = 'font-weight:700;font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;';
-    title.innerHTML = `<span>${g.name}</span><span style="font-size:11px;color:var(--muted);">${members.length}人</span>`;
-    card.appendChild(title);
-    // メンバーの映像サムネイルグリッド
-    const thumbGrid = document.createElement('div');
-    thumbGrid.id = 'gmon-thumbs-' + gid;
-    thumbGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:4px;';
+    card.id = 'gcard-' + gid;
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;';
+
+    // --- ヘッダー（班名 + メンバー） ---
+    const header = document.createElement('div');
+    header.style.cssText = 'background:var(--surface2);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;';
+    const titleWrap = document.createElement('div');
+    titleWrap.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    const gname = document.createElement('span');
+    gname.style.cssText = 'font-weight:700;font-size:14px;color:var(--text);';
+    gname.textContent = g.name;
+    titleWrap.appendChild(gname);
     members.forEach(uid => {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'text-align:center;';
-      const existingVideo = document.getElementById('v-' + uid);
-      if (existingVideo && existingVideo.srcObject) {
-        const v = document.createElement('video');
-        v.srcObject = existingVideo.srcObject;
-        v.autoplay = true; v.muted = true; v.playsInline = true;
-        v.style.cssText = 'width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;background:#000;';
-        wrap.appendChild(v);
-      } else {
-        const ph = document.createElement('div');
-        ph.style.cssText = 'width:100%;aspect-ratio:16/9;border-radius:4px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:14px;';
-        ph.textContent = '⏳';
-        wrap.appendChild(ph);
-      }
-      const name = document.createElement('div');
-      name.style.cssText = 'font-size:10px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      name.textContent = students[uid]?.name || uid.slice(0,6);
-      wrap.appendChild(name);
-      thumbGrid.appendChild(wrap);
+      const chip = document.createElement('span');
+      chip.style.cssText = 'font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:1px 8px;';
+      chip.textContent = students[uid]?.name || uid.slice(0,6);
+      titleWrap.appendChild(chip);
     });
-    card.appendChild(thumbGrid);
+    header.appendChild(titleWrap);
+    // WB/画像ステータスバッジ
+    const statusBadge = document.createElement('span');
+    statusBadge.id = 'gstatus-' + gid;
+    statusBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:99px;background:var(--surface);border:1px solid var(--border);color:var(--muted);';
+    statusBadge.textContent = '未配布';
+    header.appendChild(statusBadge);
+    card.appendChild(header);
+
+    // --- プレビューエリア（WB/画像ミニチュア） ---
+    const preview = document.createElement('div');
+    preview.id = 'gprev-' + gid;
+    preview.style.cssText = 'flex:1;min-height:120px;background:#fff;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;border-bottom:1px solid var(--border);overflow:hidden;';
+    // 未配布プレースホルダー
+    preview.innerHTML = `<div id="gprev-placeholder-${gid}" style="display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0.35;">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/></svg>
+      <span style="font-size:11px;color:var(--muted);">未配布</span>
+    </div>
+    <canvas id="gprev-canvas-${gid}" style="display:none;width:100%;height:100%;object-fit:contain;"></canvas>
+    <img id="gprev-img-${gid}" style="display:none;width:100%;height:100%;object-fit:contain;" />`;
+    preview.onclick = () => openGroupZoom(gid);
+    card.appendChild(preview);
+
+    // --- 操作ボタン ---
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-top:1px solid var(--border);';
+    const btns = [
+      { label:'WB配布', icon:'<path d="M3 3h18v18H3z" stroke-linejoin="round"/><path d="M8 12h8M12 8v8"/>', color:'#2563eb', action:`openGroupWb('${gid}')`, id:`gbtn-wb-open-${gid}` },
+      { label:'WB回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`closeGroupWb('${gid}')`, id:`gbtn-wb-close-${gid}` },
+      { label:'画像配布', icon:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-4 4-2-2-4 4"/>', color:'#2563eb', action:`sendGroupImg('${gid}')`, id:`gbtn-img-open-${gid}` },
+      { label:'画像回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`collectGroupImg('${gid}')`, id:`gbtn-img-close-${gid}` },
+      { label:'メッセージ', icon:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>', color:'#7c3aed', action:`sendGroupMsg('${gid}')`, id:'' },
+    ];
+    btns.forEach((b, i) => {
+      const btn = document.createElement('button');
+      if (b.id) btn.id = b.id;
+      btn.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 2px;font-size:10px;background:var(--surface);border:none;border-right:${i<4?'1px solid var(--border)':'none'};cursor:pointer;color:var(--muted);transition:.1s;`;
+      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${b.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${b.icon}</svg>${b.label}`;
+      btn.onmouseenter = () => btn.style.background = 'var(--surface2)';
+      btn.onmouseleave = () => btn.style.background = 'var(--surface)';
+      btn.onclick = () => eval(b.action);
+      actions.appendChild(btn);
+    });
+    card.appendChild(actions);
     grid.appendChild(card);
+
+    // WBとdistImgを監視してプレビューを更新
+    listenGroupPreview(gid);
   });
 }
 
-// ④ 班クリックで拡大表示
+// 班のWB/distImg をリアルタイム監視してプレビューを更新
+function listenGroupPreview(gid) {
+  if (groupListeners[gid + '_prev']) return;
+  const { ref, onValue } = window.FB;
+
+  // WBストロークをcanvasに描画
+  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), snap => {
+    const badge = document.getElementById('gstatus-' + gid);
+    const placeholder = document.getElementById('gprev-placeholder-' + gid);
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    const img = document.getElementById('gprev-img-' + gid);
+    if (!canvas) return;
+
+    if (!snap.exists() || !snap.val()?.active) {
+      // 画像も確認
+      return;
+    }
+    const wb = snap.val();
+    if (!wb.active) return;
+
+    // WB配布中
+    if (badge) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
+    if (placeholder) placeholder.style.display = 'none';
+    if (img) img.style.display = 'none';
+    canvas.style.display = 'block';
+
+    // ストロークを描画
+    drawGroupWbPreview(gid, wb, canvas);
+  });
+
+  // distImg を監視
+  const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
+    const badge = document.getElementById('gstatus-' + gid);
+    const placeholder = document.getElementById('gprev-placeholder-' + gid);
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    const img = document.getElementById('gprev-img-' + gid);
+    if (!img) return;
+
+    if (!snap.exists() || !snap.val()?.active) {
+      // WBが配布中でなければ未配布に戻す
+      const wbActive = canvas && canvas.style.display === 'block';
+      if (!wbActive) {
+        if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+        if (placeholder) placeholder.style.display = 'flex';
+        if (img) img.style.display = 'none';
+      }
+      return;
+    }
+    const distImg = snap.val();
+    if (!distImg.active) return;
+
+    if (badge) { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
+    if (placeholder) placeholder.style.display = 'none';
+    if (canvas) canvas.style.display = 'none';
+    img.style.display = 'block';
+    img.src = distImg.dataUrl || '';
+  });
+
+  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
+}
+
+// WBのストロークをcanvasにリアルタイム描画
+function drawGroupWbPreview(gid, wb, canvas) {
+  const strokes = wb.strokes ? Object.values(wb.strokes) : [];
+  const rect = canvas.parentElement?.getBoundingClientRect();
+  const W = rect?.width || 280;
+  const H = rect?.height || 160;
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+
+  // ストロークを描画（座標は0-1正規化済みと仮定）
+  strokes.forEach(stroke => {
+    if (!stroke.points || stroke.points.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = stroke.color || '#000';
+    ctx.lineWidth = Math.max(1, (stroke.size || 3) * 0.5);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (stroke.tool === 'eraser') { ctx.strokeStyle = '#fff'; ctx.lineWidth = (stroke.size || 20) * 0.5; }
+    const pts = stroke.points;
+    ctx.moveTo(pts[0].x * W, pts[0].y * H);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x * W, pts[i].y * H);
+    }
+    ctx.stroke();
+  });
+}
+
+// 班カードクリックで拡大モーダルを表示
 window.openGroupZoom = function(gid) {
   const g = groupDefs[gid];
   if (!g) return;
   const members = Object.keys(g.members || {});
-  document.getElementById('group-zoom-title').textContent = `${g.name}（${members.length}人）`;
-  const screens = document.getElementById('group-zoom-screens');
-  const wbArea = document.getElementById('group-zoom-wb');
-  screens.innerHTML = ''; wbArea.innerHTML = '';
 
-  // 映像
+  // gid を hidden div に保存（ボタンから参照）
+  const gidEl = document.getElementById('group-zoom-gid');
+  gidEl.dataset.gid = gid;
+
+  // タイトル
+  document.getElementById('group-zoom-title').textContent = `${g.name}（${members.length}名）`;
+
+  // メンバーチップ
+  const membersEl = document.getElementById('group-zoom-members');
+  membersEl.innerHTML = '';
   members.forEach(uid => {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'text-align:center;';
-    const existingVideo = document.getElementById('v-' + uid);
-    if (existingVideo && existingVideo.srcObject) {
-      const v = document.createElement('video');
-      v.srcObject = existingVideo.srcObject;
-      v.autoplay = true; v.muted = true; v.playsInline = true;
-      v.style.cssText = 'width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#000;';
-      wrap.appendChild(v);
-    } else {
-      const ph = document.createElement('div');
-      ph.style.cssText = 'width:100%;aspect-ratio:16/9;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:24px;';
-      ph.textContent = '⏳';
-      wrap.appendChild(ph);
-    }
-    const name = document.createElement('div');
-    name.style.cssText = 'font-size:12px;margin-top:4px;font-weight:600;';
-    name.textContent = students[uid]?.name || uid.slice(0,6);
-    wrap.appendChild(name);
-    screens.appendChild(wrap);
+    const chip = document.createElement('span');
+    chip.style.cssText = 'font-size:13px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:3px 12px;';
+    chip.textContent = students[uid]?.name || uid.slice(0,6);
+    membersEl.appendChild(chip);
   });
 
-  // WBスナップショット
+  // プレビュー（WB / distImg を現在の状態で取得して描画）
   const { ref, get } = window.FB;
-  get(ref(db, `sessions/${sessionId}/groups/${gid}/wb/snapshots`)).then(snap => {
-    if (!snap.exists()) return;
-    Object.entries(snap.val()).forEach(([uid, imgData]) => {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'text-align:center;';
-      wrap.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">${students[uid]?.name||uid}</div>
-        <img src="${imgData}" style="width:100%;border-radius:6px;border:1px solid var(--border);">`;
-      wbArea.appendChild(wrap);
-    });
-    if (wbArea.children.length > 0) {
-      const label = document.createElement('div');
-      label.style.cssText = 'width:100%;font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;';
-      label.textContent = '📋 WBスナップショット';
-      wbArea.insertBefore(label, wbArea.firstChild);
+  const canvas = document.getElementById('group-zoom-canvas');
+  const img = document.getElementById('group-zoom-img');
+  const nopreview = document.getElementById('group-zoom-nopreview');
+  canvas.style.display = 'none';
+  img.style.display = 'none';
+  nopreview.style.display = 'block';
+
+  // WB確認
+  get(ref(db, `sessions/${sessionId}/groups/${gid}/wb`)).then(wbSnap => {
+    if (wbSnap.exists() && wbSnap.val()?.active) {
+      const wb = wbSnap.val();
+      nopreview.style.display = 'none';
+      canvas.style.display = 'block';
+      // canvas サイズ設定
+      requestAnimationFrame(() => {
+        const container = document.getElementById('group-zoom-preview');
+        const W = container.offsetWidth || 800;
+        const H = container.offsetHeight || 450;
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, W, H);
+        const strokes = wb.strokes ? Object.values(wb.strokes) : [];
+        strokes.forEach(stroke => {
+          if (!stroke.points || stroke.points.length < 2) return;
+          ctx.beginPath();
+          ctx.strokeStyle = stroke.tool === 'eraser' ? '#fff' : (stroke.color || '#000');
+          ctx.lineWidth = stroke.tool === 'eraser' ? (stroke.size||20) : (stroke.size||3);
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          const pts = stroke.points;
+          ctx.moveTo(pts[0].x * W, pts[0].y * H);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * W, pts[i].y * H);
+          ctx.stroke();
+        });
+      });
+      return;
     }
-  });
+    // distImg確認
+    return get(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`));
+  }).then(imgSnap => {
+    if (!imgSnap || !imgSnap.exists || !imgSnap.exists()) return;
+    const di = imgSnap.val();
+    if (!di?.active || !di?.dataUrl) return;
+    nopreview.style.display = 'none';
+    img.style.display = 'block';
+    img.src = di.dataUrl;
+  }).catch(() => {});
 
   document.getElementById('group-zoom-modal').style.display = 'flex';
 };
+
 window.closeGroupZoom = function() {
   document.getElementById('group-zoom-modal').style.display = 'none';
 };
@@ -1809,28 +1965,7 @@ window.sendGroupImg = async function(gid) {
   input.click();
 };
 
-// 班のWBスナップショットをリアルタイム監視
-function listenGroupWbSnapshots(gid) {
-  if (groupListeners[gid]) return;
-  const { ref, onValue } = window.FB;
-  const unsub = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/snapshots`), snap => {
-    const prev = document.getElementById(`group-wb-prev-${gid}`);
-    if (!prev) return;
-    prev.innerHTML = '';
-    if (!snap.exists()) return;
-    Object.entries(snap.val()).forEach(([uid, imgData]) => {
-      const s = students[uid];
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'text-align:center;';
-      wrap.innerHTML = `
-        <div style="font-size:10px;color:var(--muted);margin-bottom:2px;">${s?.name||uid}</div>
-        <img src="${imgData}" style="width:120px;height:80px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#fff;">
-      `;
-      prev.appendChild(wrap);
-    });
-  });
-  groupListeners[gid] = unsub;
-}
+// listenGroupWbSnapshots → listenGroupPreview に統合
 
 // セッション開始時にグループデータをFirebaseから読み込む
 function listenGroups() {

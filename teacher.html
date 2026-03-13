@@ -1649,74 +1649,67 @@ function listenGroupPreview(gid) {
     delete groupListeners[gid + '_prev'];
   }
   const { ref, onValue } = window.FB;
-  let imgActive = false;
+  if (!window._groupDistImgCache) window._groupDistImgCache = {};
 
-  // wb ノード全体を1つの onValue で監視
-  // active と strokes が同じコールバック内で参照できるためタイミングずれがない
-  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), snap => {
+  // wb と distImg の最新状態をローカルに保持して、どちらが更新されても正しく再描画する
+  let wbSnapshot  = null;  // 最新の wb データ
+  let distImgData = null;  // 最新の distImg データ（active=trueの場合のみ）
+
+  function redraw() {
     const badge       = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
     const canvas      = document.getElementById('gprev-canvas-' + gid);
-    const img         = document.getElementById('gprev-img-' + gid);
+    const imgEl       = document.getElementById('gprev-img-' + gid);
     if (!canvas) return;
 
-    const wbData   = snap.exists() ? snap.val() : null;
-    const wbActive = wbData?.active === true;
+    const wbActive  = wbSnapshot?.active === true;
+    const hasImg    = distImgData !== null;
 
-    if (wbActive) {
-      if (badge) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
+    if (wbActive || hasImg) {
+      // canvas モードで描画（img タグは常に非表示）
+      if (imgEl) imgEl.style.display = 'none';
       if (placeholder) placeholder.style.display = 'none';
-      if (img && !imgActive) img.style.display = 'none';
       canvas.style.display = 'block';
-      // display:block 反映後にサイズ確定してから描画
+
+      // バッジ
+      if (badge) {
+        if (wbActive && hasImg) {
+          badge.textContent = 'WB+画像配布中'; badge.style.background='#ede9fe'; badge.style.color='#6d28d9'; badge.style.borderColor='#c4b5fd';
+        } else if (wbActive) {
+          badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd';
+        } else {
+          badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac';
+        }
+      }
+
       requestAnimationFrame(() => {
         ensurePreviewCanvasSize(canvas);
-        // distImg背景があれば replayWithBg、なければ replayStrokesOnCanvas
-        const bgUrl = _groupDistImgCache?.[gid] || null;
-        if (bgUrl) {
-          replayWithBg(canvas, wbData.strokes || null, bgUrl, wbData.texts || null);
-        } else {
-          replayStrokesOnCanvas(canvas, wbData.strokes || null);
-          const ctx = canvas.getContext('2d');
-          drawTextsOnCanvas(ctx, canvas, wbData.texts || null);
-        }
+        const bgUrl = hasImg ? distImgData.dataUrl : null;
+        replayWithBg(canvas, wbSnapshot?.strokes || null, bgUrl, wbSnapshot?.texts || null);
       });
     } else {
+      // 未配布
       canvas.style.display = 'none';
-      if (!imgActive) {
-        if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
-        if (placeholder) placeholder.style.display = 'flex';
-      }
+      if (imgEl) imgEl.style.display = 'none';
+      if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+      if (placeholder) placeholder.style.display = 'flex';
     }
+  }
+
+  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), snap => {
+    wbSnapshot = snap.exists() ? snap.val() : null;
+    redraw();
   });
 
-  // distImg を監視（URLをキャッシュして wb 再描画時にも背景として使う）
-  if (!window._groupDistImgCache) window._groupDistImgCache = {};
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
-    const badge       = document.getElementById('gstatus-' + gid);
-    const placeholder = document.getElementById('gprev-placeholder-' + gid);
-    const img         = document.getElementById('gprev-img-' + gid);
-    const canvas      = document.getElementById('gprev-canvas-' + gid);
-    if (!img) return;
-
     if (!snap.exists() || snap.val()?.active !== true) {
-      imgActive = false;
+      distImgData = null;
       window._groupDistImgCache[gid] = null;
-      img.style.display = 'none';
-      return;
-    }
-    imgActive = true;
-    const distImg = snap.val();
-    window._groupDistImgCache[gid] = distImg.dataUrl || null;
-    if (badge) { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
-    if (placeholder) placeholder.style.display = 'none';
-    // WBも配布中なら canvas に背景+ストロークを描画、そうでなければ img タグで表示
-    if (canvas && canvas.style.display === 'block') {
-      // wb onValue が再発火するので何もしない（次の onValue で背景込み描画される）
     } else {
-      img.style.display = 'block';
-      img.src = distImg.dataUrl || '';
+      distImgData = snap.val();
+      window._groupDistImgCache[gid] = distImgData.dataUrl || null;
     }
+    redraw();
   });
 
   groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
@@ -1836,40 +1829,45 @@ window.openGroupZoom = function(gid) {
   window._zoomUnsubs = [];
   const { ref: fbRef, onValue: fbOnValue } = window.FB;
 
-  // wb ノード全体を onValue でリアルタイム監視（全ストローク毎回再描画）
-  const unsubZoomWb = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`), wbSnap => {
-    if (!wbSnap.exists() || !wbSnap.val()?.active) {
+  // wb と distImg を両方監視し、どちらが更新されても正しく canvas に描画
+  let _zoomWbSnap  = null;
+  let _zoomImgData = null;
+
+  function zoomRedraw() {
+    const wbActive = _zoomWbSnap?.active === true;
+    const hasImg   = _zoomImgData !== null;
+    if (!wbActive && !hasImg) {
       canvas.style.display = 'none';
+      img.style.display = 'none';
+      nopreview.style.display = 'block';
       return;
     }
-    const wb = wbSnap.val();
     nopreview.style.display = 'none';
+    img.style.display = 'none';
     canvas.style.display = 'block';
     requestAnimationFrame(() => {
       const container = document.getElementById('group-zoom-preview');
       const W = container.offsetWidth || 820;
       const H = Math.round(W * 9/16);
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-      const bgUrl = window._groupDistImgCache?.[gid] || null;
-      if (bgUrl) {
-        replayWithBg(canvas, wb.strokes || null, bgUrl, wb.texts || null);
-      } else {
-        replayStrokesOnCanvas(canvas, wb.strokes || null);
-        const ctx = canvas.getContext('2d');
-        drawTextsOnCanvas(ctx, canvas, wb.texts || null);
-      }
+      const bgUrl = hasImg ? _zoomImgData.dataUrl : null;
+      replayWithBg(canvas, _zoomWbSnap?.strokes || null, bgUrl, _zoomWbSnap?.texts || null);
     });
+  }
+
+  const unsubZoomWb = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`), wbSnap => {
+    _zoomWbSnap = wbSnap.exists() ? wbSnap.val() : null;
+    zoomRedraw();
   });
   window._zoomUnsubs.push(unsubZoomWb);
 
-  // distImg をリアルタイム監視
   const unsubZoomImg = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg`), imgSnap => {
-    if (!imgSnap.exists()) return;
-    const di = imgSnap.val();
-    if (!di?.active || !di?.dataUrl) { img.style.display = 'none'; return; }
-    nopreview.style.display = 'none';
-    img.style.display = 'block';
-    img.src = di.dataUrl;
+    if (!imgSnap.exists() || imgSnap.val()?.active !== true) {
+      _zoomImgData = null;
+    } else {
+      _zoomImgData = imgSnap.val();
+    }
+    zoomRedraw();
   });
   window._zoomUnsubs.push(unsubZoomImg);
 

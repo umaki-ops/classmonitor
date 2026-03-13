@@ -1745,7 +1745,17 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
     if (!td.text) return;
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
-    const fs = td.fontSize || 16;
+    // fontSizePct（生徒canvasH基準の%）があればcanvasHに対して再計算、なければ旧形式をcanvasH比でスケール
+    let fs;
+    if (td.fontSizePct) {
+      fs = td.fontSizePct / 100 * pH;
+    } else if (td.canvasH) {
+      fs = (td.fontSize || 16) / td.canvasH * pH;
+    } else {
+      // 旧形式: 生徒canvasH≈500を仮定してスケール
+      fs = (td.fontSize || 16) / 500 * pH;
+    }
+    fs = Math.max(8, Math.round(fs));
     const lineH = Math.round(fs * 1.25);
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
@@ -1847,13 +1857,14 @@ function drawStrokeOnCanvas(canvas, stroke) {
   const pts = stroke.points;
   if (stroke.normalized) {
     // パーセント正規化座標（0〜100）→ canvasピクセルに変換
-    // canvasW/Hが記録されていればそれを元にlineWidthをスケール、なければ幅基準で近似
+    // 線幅は生徒canvas基準のpx値を、表示canvasサイズに合わせてスケール
+    // 幾何平均スケール（√(scaleX*scaleY)）が視覚的に最も自然
     const srcW = stroke.canvasW || 800;
     const srcH = stroke.canvasH || 500;
     const scaleX = W / srcW;
     const scaleY = H / srcH;
-    const sizeScale = Math.min(scaleX, scaleY);
-    ctx.lineWidth = Math.max(1, (stroke.size || 3) * sizeScale);
+    const sizeScale = Math.sqrt(scaleX * scaleY);
+    ctx.lineWidth = Math.max(0.5, (stroke.size || 3) * sizeScale);
     ctx.moveTo(pts[0][0] / 100 * W, pts[0][1] / 100 * H);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] / 100 * W, pts[i][1] / 100 * H);
   } else {

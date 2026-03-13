@@ -1708,7 +1708,10 @@
           const xPct = (e.clientX - r2.left) / r2.width * 100;
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
-          const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor, fontSize: gWbFontSize, ts: Date.now() };
+          const _canvas2 = document.getElementById('group-wb-canvas');
+          const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor,
+            fontSize: gWbFontSize, fontSizePct: gWbFontSize / (_canvas2?.height || 500) * 100,
+            canvasW: _canvas2?.width || 800, canvasH: _canvas2?.height || 500, ts: Date.now() };
           if (gWbGroupId) {
             if (gWbFromImg) {
               set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${textKey}`), textData);
@@ -1780,15 +1783,21 @@
         Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
           const pts = stroke.points;
           if (!pts || pts.length < 2) return;
+          // 線幅を送信元canvasサイズ→自分のcanvasサイズにスケール
+          let scaledSize = stroke.size;
+          if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
+            const scaleX = canvas.width  / stroke.canvasW;
+            const scaleY = canvas.height / stroke.canvasH;
+            scaledSize = Math.max(0.5, stroke.size * Math.sqrt(scaleX * scaleY));
+          }
           for (let i = 1; i < pts.length; i++) {
             let x1 = pts[i-1][0], y1 = pts[i-1][1];
             let x2 = pts[i][0],   y2 = pts[i][1];
-            // normalized=true の場合はパーセント→ピクセルに変換
             if (stroke.normalized) {
               x1 = x1 / 100 * canvas.width;  y1 = y1 / 100 * canvas.height;
               x2 = x2 / 100 * canvas.width;  y2 = y2 / 100 * canvas.height;
             }
-            gWbDrawSegment(x1, y1, x2, y2, stroke.tool, stroke.color, stroke.size);
+            gWbDrawSegment(x1, y1, x2, y2, stroke.tool, stroke.color, scaledSize);
           }
         });
       };
@@ -1916,16 +1925,30 @@
       div.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;pointer-events:none;z-index:19;`;
       const span = document.createElement('span');
       span.className = 'gwb-peer-text';
-      span.style.cssText = `display:block;font:bold ${td.fontSize||16}px 'Noto Sans JP',sans-serif;color:${td.color||'#1e293b'};white-space:pre-wrap;word-break:break-all;background:transparent;padding:4px 6px;`;
+      const _peerCvs = document.getElementById('group-wb-canvas');
+      const _peerCH = _peerCvs?.height || 500;
+      let _peerFs;
+      if (td.fontSizePct) {
+        _peerFs = Math.max(8, Math.round(td.fontSizePct / 100 * _peerCH));
+      } else if (td.canvasH) {
+        _peerFs = Math.max(8, Math.round((td.fontSize || 16) / td.canvasH * _peerCH));
+      } else {
+        _peerFs = td.fontSize || 16;
+      }
+      span.style.cssText = `display:block;font:bold ${_peerFs}px 'Noto Sans JP',sans-serif;color:${td.color||'#1e293b'};white-space:pre-wrap;word-break:break-all;background:transparent;padding:4px 6px;`;
       span.textContent = td.text || '';
       div.appendChild(span); container.appendChild(div);
     }
 
     function _saveTextToFb(key, wrap, ta) {
       if (!gWbGroupId) return;
+      const _cvs = document.getElementById('group-wb-canvas');
+      const _fs = parseInt(ta.style.fontSize) || gWbFontSize;
+      const _cH = _cvs?.height || 500;
       const textData = { uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
         w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor,
-        fontSize: parseInt(ta.style.fontSize) || gWbFontSize, ts: Date.now() };
+        fontSize: _fs, fontSizePct: _fs / _cH * 100,
+        canvasW: _cvs?.width || 800, canvasH: _cH, ts: Date.now() };
       if (gWbFromImg) {
         set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${key}`), textData);
       } else {

@@ -413,6 +413,12 @@
       <button class="wbt active" id="gwb-pen-btn" onclick="gWbSetTool('pen')" title="ペン">✏️</button>
       <button class="wbt" id="gwb-eraser-btn" onclick="gWbSetTool('eraser')" title="消しゴム">🩹</button>
       <button class="wbt" id="gwb-text-btn" onclick="gWbSetTool('text')" title="テキスト">T</button>
+      <select id="gwb-font-size" onchange="gWbSetFontSize(this.value)" style="display:none;background:#334155;color:#fff;border:1px solid #475569;border-radius:6px;padding:2px 4px;font-size:12px;cursor:pointer;height:28px;" title="文字サイズ">
+        <option value="12">小</option>
+        <option value="16" selected>中</option>
+        <option value="22">大</option>
+        <option value="30">特大</option>
+      </select>
       <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
       <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="gWbSetColor(this)"></div>
       <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="gWbSetColor(this)"></div>
@@ -1652,7 +1658,7 @@
 
     // ===== 班別WBエンジン =====
     let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
-    let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3;
+    let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3, gWbFontSize = 16;
     let gWbGroupId = null, gWbResetTs = 0;
     let gWbFromImg = false; // distImg経由でWBを開いた場合true
     let gWbStrokeListenerUnsub = null;
@@ -1675,7 +1681,7 @@
           const xPct = (e.clientX - r2.left) / r2.width * 100;
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
-          const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor, ts: Date.now() };
+          const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor, fontSize: gWbFontSize, ts: Date.now() };
           if (gWbGroupId) {
             if (gWbFromImg) {
               set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${textKey}`), textData);
@@ -1814,7 +1820,9 @@
       wrap.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;`;
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input'; ta.placeholder = 'テキスト入力';
-      ta.style.color = td.color || gWbColor; ta.value = td.text || ''; ta.rows = 2;
+      ta.style.color = td.color || gWbColor;
+      ta.style.fontSize = (td.fontSize || 16) + 'px';
+      ta.value = td.text || ''; ta.rows = 2;
       const delBtn = document.createElement('button'); delBtn.className = 'txt-del-btn'; delBtn.innerHTML = '✕';
       const resizeHandle = document.createElement('div'); resizeHandle.className = 'txt-resize-handle'; resizeHandle.innerHTML = '⤡';
       const doneBtn = document.createElement('button'); doneBtn.className = 'txt-done-btn'; doneBtn.innerHTML = '✓ 完了';
@@ -1870,7 +1878,7 @@
       div.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;pointer-events:none;z-index:19;`;
       const span = document.createElement('span');
       span.className = 'gwb-peer-text';
-      span.style.cssText = `display:block;font:bold 16px 'Noto Sans JP',sans-serif;color:${td.color||'#1e293b'};white-space:pre-wrap;word-break:break-all;background:transparent;padding:4px 6px;`;
+      span.style.cssText = `display:block;font:bold ${td.fontSize||16}px 'Noto Sans JP',sans-serif;color:${td.color||'#1e293b'};white-space:pre-wrap;word-break:break-all;background:transparent;padding:4px 6px;`;
       span.textContent = td.text || '';
       div.appendChild(span); container.appendChild(div);
     }
@@ -1878,7 +1886,8 @@
     function _saveTextToFb(key, wrap, ta) {
       if (!gWbGroupId) return;
       const textData = { uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
-        w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor, ts: Date.now() };
+        w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor,
+        fontSize: parseInt(ta.style.fontSize) || gWbFontSize, ts: Date.now() };
       if (gWbFromImg) {
         set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${key}`), textData);
       } else {
@@ -1957,19 +1966,17 @@
           gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
         }
       }
-      // 既に開いている場合は gWbInit・gWbListenStrokes を再実行しない
-      if (!alreadyOpen) {
-        setTimeout(() => {
-          gWbInit();
-          if (gWbFromImg) {
-            gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
-            gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
-          } else {
-            gWbListenStrokes(groupId);
-            gWbListenTexts(groupId);
-          }
-        }, 100);
-      }
+      // alreadyOpen でもリスナーを再設定（gWbFromImg が変わった場合に対応）
+      setTimeout(() => {
+        if (!alreadyOpen) gWbInit();
+        if (gWbFromImg) {
+          gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
+        } else {
+          gWbListenStrokes(groupId);
+          gWbListenTexts(groupId);
+        }
+      }, 100);
     }
 
     function gWbClose() {
@@ -1981,17 +1988,22 @@
       gWbGroupId = null;
     }
 
+    window.gWbSetFontSize = function(v) { gWbFontSize = parseInt(v); };
     window.gWbSetTool = function(tool) {
       if (tool === 'text') {
         _gWbTextMode = !_gWbTextMode;
         document.getElementById('gwb-pen-btn').classList.toggle('active', !_gWbTextMode);
         document.getElementById('gwb-text-btn').classList.toggle('active', _gWbTextMode);
         document.getElementById('gwb-eraser-btn').classList.remove('active');
+        const fsEl = document.getElementById('gwb-font-size');
+        if (fsEl) fsEl.style.display = _gWbTextMode ? '' : 'none';
         if (!_gWbTextMode) gWbTool = 'pen';
         else gWbTool = 'text';
         return;
       }
       _gWbTextMode = false;
+      const fsEl = document.getElementById('gwb-font-size');
+      if (fsEl) fsEl.style.display = 'none';
       gWbTool = tool;
       document.getElementById('gwb-pen-btn').classList.toggle('active', tool === 'pen');
       document.getElementById('gwb-eraser-btn').classList.toggle('active', tool === 'eraser');

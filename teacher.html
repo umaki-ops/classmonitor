@@ -1627,97 +1627,103 @@ function renderGroupContentArea() {
   });
 }
 
-// 班のWB/distImg をリアルタイム監視してプレビューを更新
+// ===== 班プレビューのリアルタイム監視 =====
+// ストロークの座標は生徒canvasのピクセル値 → srcW/srcH でスケール変換
+const STUDENT_WB_W = 1200; // 生徒canvas幅の代表値（実測に近い値）
+const STUDENT_WB_H = 700;  // 生徒canvas高の代表値
+
 function listenGroupPreview(gid) {
   if (groupListeners[gid + '_prev']) return;
-  const { ref, onValue } = window.FB;
+  const { ref, onValue, onChildAdded } = window.FB;
+  let wbActive = false;
+  let imgActive = false;
 
-  // WBストロークをcanvasに描画
-  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), snap => {
-    const badge = document.getElementById('gstatus-' + gid);
+  // ① wb/active を監視（WBの開閉）
+  const unsubWbActive = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), snap => {
+    wbActive = snap.val() === true;
+    const badge   = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
-    const canvas = document.getElementById('gprev-canvas-' + gid);
-    const img = document.getElementById('gprev-img-' + gid);
+    const canvas  = document.getElementById('gprev-canvas-' + gid);
+    const img     = document.getElementById('gprev-img-' + gid);
     if (!canvas) return;
 
-    if (!snap.exists() || !snap.val()?.active) {
-      // 画像も確認
-      return;
+    if (wbActive) {
+      if (badge) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
+      if (placeholder) placeholder.style.display = 'none';
+      if (img) img.style.display = 'none';
+      canvas.style.display = 'block';
+      // canvas サイズを確定
+      initPreviewCanvas(canvas);
+    } else {
+      canvas.style.display = 'none';
+      if (!imgActive) {
+        if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+        if (placeholder) { placeholder.style.display = 'flex'; }
+      }
     }
-    const wb = snap.val();
-    if (!wb.active) return;
-
-    // WB配布中
-    if (badge) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
-    if (placeholder) placeholder.style.display = 'none';
-    if (img) img.style.display = 'none';
-    canvas.style.display = 'block';
-
-    // ストロークを描画
-    drawGroupWbPreview(gid, wb, canvas);
   });
 
-  // distImg を監視
+  // ② wb/strokes を onChildAdded で差分描画
+  const unsubStrokes = onChildAdded(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
+    if (!wbActive) return;
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    if (!canvas || canvas.style.display === 'none') return;
+    const stroke = snap.val();
+    drawStrokeOnPreview(canvas, stroke);
+  });
+
+  // ③ wb/resetTs を監視（WBリセット＝全消し）
+  const unsubReset = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/resetTs`), snap => {
+    if (!snap.exists()) return;
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    if (!canvas) return;
+    initPreviewCanvas(canvas); // 白紙に戻す
+  });
+
+  // ④ distImg を監視
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
     const badge = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
     const canvas = document.getElementById('gprev-canvas-' + gid);
-    const img = document.getElementById('gprev-img-' + gid);
+    const img    = document.getElementById('gprev-img-' + gid);
     if (!img) return;
 
-    if (!snap.exists() || !snap.val()?.active) {
-      // WBが配布中でなければ未配布に戻す
-      const wbActive = canvas && canvas.style.display === 'block';
+    if (!snap.exists() || snap.val()?.active !== true) {
+      imgActive = false;
       if (!wbActive) {
         if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
         if (placeholder) placeholder.style.display = 'flex';
-        if (img) img.style.display = 'none';
+        img.style.display = 'none';
       }
       return;
     }
+    imgActive = true;
     const distImg = snap.val();
-    if (!distImg.active) return;
-
     if (badge) { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
     if (placeholder) placeholder.style.display = 'none';
-    if (canvas) canvas.style.display = 'none';
     img.style.display = 'block';
     img.src = distImg.dataUrl || '';
   });
 
-  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
+  groupListeners[gid + '_prev'] = () => { unsubWbActive(); unsubStrokes(); unsubReset(); unsubImg(); };
 }
 
-// WBのストロークをcanvasにリアルタイム描画
-function drawGroupWbPreview(gid, wb, canvas) {
-  const strokes = wb.strokes ? Object.values(wb.strokes) : [];
+// canvas を白紙で初期化
+function initPreviewCanvas(canvas) {
   const rect = canvas.parentElement?.getBoundingClientRect();
-  const W = rect?.width || 280;
-  const H = rect?.height || 160;
-  canvas.width = W;
-  canvas.height = H;
+  const W = Math.round(rect?.width || 280);
+  const H = Math.round(rect?.height || 158);
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
+  }
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
-
-  // ストロークを描画（座標は0-1正規化済みと仮定）
-  strokes.forEach(stroke => {
-    if (!stroke.points || stroke.points.length < 2) return;
-    ctx.beginPath();
-    ctx.strokeStyle = stroke.color || '#000';
-    ctx.lineWidth = Math.max(1, (stroke.size || 3) * 0.5);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    if (stroke.tool === 'eraser') { ctx.strokeStyle = '#fff'; ctx.lineWidth = (stroke.size || 20) * 0.5; }
-    const pts = stroke.points;
-    ctx.moveTo(pts[0].x * W, pts[0].y * H);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x * W, pts[i].y * H);
-    }
-    ctx.stroke();
-  });
 }
+
+// drawStrokeOnPreview → drawStrokeOnCanvas に統一（後方互換ラッパー）
+function drawStrokeOnPreview(canvas, stroke) { drawStrokeOnCanvas(canvas, stroke); }
 
 // 班カードクリックで拡大モーダルを表示
 window.openGroupZoom = function(gid) {
@@ -1751,41 +1757,43 @@ window.openGroupZoom = function(gid) {
   img.style.display = 'none';
   nopreview.style.display = 'block';
 
-  // WB確認
-  get(ref(db, `sessions/${sessionId}/groups/${gid}/wb`)).then(wbSnap => {
-    if (wbSnap.exists() && wbSnap.val()?.active) {
-      const wb = wbSnap.val();
-      nopreview.style.display = 'none';
-      canvas.style.display = 'block';
-      // canvas サイズ設定
-      requestAnimationFrame(() => {
-        const container = document.getElementById('group-zoom-preview');
-        const W = container.offsetWidth || 800;
-        const H = container.offsetHeight || 450;
-        canvas.width = W;
-        canvas.height = H;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, W, H);
-        const strokes = wb.strokes ? Object.values(wb.strokes) : [];
-        strokes.forEach(stroke => {
-          if (!stroke.points || stroke.points.length < 2) return;
-          ctx.beginPath();
-          ctx.strokeStyle = stroke.tool === 'eraser' ? '#fff' : (stroke.color || '#000');
-          ctx.lineWidth = stroke.tool === 'eraser' ? (stroke.size||20) : (stroke.size||3);
-          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-          const pts = stroke.points;
-          ctx.moveTo(pts[0].x * W, pts[0].y * H);
-          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * W, pts[i].y * H);
-          ctx.stroke();
-        });
-      });
-      return;
+  // モーダル用リスナーをクリーンアップして再設定
+  if (window._zoomUnsubs) window._zoomUnsubs.forEach(f => f());
+  window._zoomUnsubs = [];
+  const fbRef = window.FB.ref; const fbGet = window.FB.get; const fbOnChildAdded = window.FB.onChildAdded;
+
+  // WBを取得して描画（既存ストロークを全描画 + 以降の差分をonChildAddedで追跡）
+  fbGet(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`)).then(wbSnap => {
+    if (!wbSnap.exists() || !wbSnap.val()?.active) {
+      // distImg確認
+      return fbGet(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg`));
     }
-    // distImg確認
-    return get(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`));
+    const wb = wbSnap.val();
+    nopreview.style.display = 'none';
+    canvas.style.display = 'block';
+
+    requestAnimationFrame(() => {
+      const container = document.getElementById('group-zoom-preview');
+      const W = container.offsetWidth || 820;
+      const H = Math.round(W * 9/16);
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      // 既存ストロークを全て描画
+      const strokes = wb.strokes ? Object.values(wb.strokes).sort((a,b) => a.ts-b.ts) : [];
+      strokes.forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
+      // 以降の追加ストロークを差分で描画
+      const knownKeys = new Set(wb.strokes ? Object.keys(wb.strokes) : []);
+      const unsub = fbOnChildAdded(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
+        if (knownKeys.has(snap.key)) return; // 既描画スキップ
+        knownKeys.add(snap.key);
+        drawStrokeOnCanvas(canvas, snap.val());
+      });
+      window._zoomUnsubs.push(unsub);
+    });
+    return null;
   }).then(imgSnap => {
-    if (!imgSnap || !imgSnap.exists || !imgSnap.exists()) return;
+    if (!imgSnap?.exists?.()) return;
     const di = imgSnap.val();
     if (!di?.active || !di?.dataUrl) return;
     nopreview.style.display = 'none';
@@ -1798,7 +1806,25 @@ window.openGroupZoom = function(gid) {
 
 window.closeGroupZoom = function() {
   document.getElementById('group-zoom-modal').style.display = 'none';
+  if (window._zoomUnsubs) { window._zoomUnsubs.forEach(f => f()); window._zoomUnsubs = []; }
 };
+
+// canvas に1ストロークを描画（スケール変換付き）
+function drawStrokeOnCanvas(canvas, stroke) {
+  if (!stroke?.points || stroke.points.length < 2) return;
+  const W = canvas.width; const H = canvas.height;
+  const scaleX = W / STUDENT_WB_W;
+  const scaleY = H / STUDENT_WB_H;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.strokeStyle = stroke.tool === 'eraser' ? '#fff' : (stroke.color || '#222');
+  ctx.lineWidth = Math.max(1, (stroke.size || 3) * scaleX * (stroke.tool === 'eraser' ? 5 : 1));
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const pts = stroke.points;
+  ctx.moveTo(pts[0][0] * scaleX, pts[0][1] * scaleY);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * scaleX, pts[i][1] * scaleY);
+  ctx.stroke();
+}
 
 // 班のWBを開く
 window.openGroupWb = async function(gid) {

@@ -471,7 +471,7 @@ let currentView='monitor';
 let wbActive=false;
 let wbSubmissions={}, wbLbKeys=[], wbLbIdx=0;
 const LABELS=['A','B','C','D'];
-const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'},{urls:'stun:stun3.l.google.com:19302'}],iceCandidatePoolSize:10,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
+const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'},{urls:'stun:stun3.l.google.com:19302'}],iceCandidatePoolSize:20,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
 
 function gid(){
   // crypto.getRandomValues で安全なランダムID（16文字）
@@ -978,8 +978,9 @@ async function startTS(){
       video:{
         width:{ideal:3840,max:3840},
         height:{ideal:2160,max:2160},
-        frameRate:{ideal:30,max:60},
-        displaySurface:'monitor'
+        frameRate:{ideal:60,max:60},
+        displaySurface:'monitor',
+        latencyHint:0
       },
       audio:false
     });
@@ -1016,8 +1017,12 @@ async function setHighBitrate(pc, kbps=8000){
       const params = sender.getParameters();
       if(!params.encodings || params.encodings.length === 0) params.encodings = [{}];
       params.encodings[0].maxBitrate = kbps * 1000;
-      params.encodings[0].maxFramerate = 30;
+      params.encodings[0].maxFramerate = 60;
+      params.encodings[0].priority = 'high';
+      params.encodings[0].networkPriority = 'high';
       await sender.setParameters(params);
+      // contentHint でスクリーン共有に最適化
+      if (sender.track) sender.track.contentHint = 'detail';
       console.log('[bitrate] set to', kbps, 'kbps');
     } catch(e){ console.warn('[setParameters]', e); }
   }

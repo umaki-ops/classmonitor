@@ -613,7 +613,7 @@
         {urls:'stun:stun2.l.google.com:19302'},
         {urls:'stun:stun3.l.google.com:19302'},
       ],
-      iceCandidatePoolSize: 10,
+      iceCandidatePoolSize: 20,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     };
@@ -820,10 +820,26 @@
       if (localStream) {
         const senders = pc.getSenders();
         localStream.getTracks().forEach(track => {
+          track.contentHint = 'detail'; // スクリーン共有: 動きより鮮明さ優先
           if (!senders.find(s => s.track === track)) {
             pc.addTrack(track, localStream);
           }
         });
+        // 送信ビットレート・優先度を設定
+        setTimeout(async () => {
+          for (const sender of pc.getSenders()) {
+            if (!sender.track || sender.track.kind !== 'video') continue;
+            try {
+              const p = sender.getParameters();
+              if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+              p.encodings[0].maxBitrate = 6000000;
+              p.encodings[0].maxFramerate = 60;
+              p.encodings[0].priority = 'high';
+              p.encodings[0].networkPriority = 'high';
+              await sender.setParameters(p);
+            } catch(e) {}
+          }
+        }, 1000);
       }
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
       const answer = await pc.createAnswer();
@@ -933,7 +949,8 @@
             displaySurface: 'monitor',
             width:  { ideal: 2560, max: 3840 },
             height: { ideal: 1440, max: 2160 },
-            frameRate: { ideal: 30, max: 60 }
+            frameRate: { ideal: 60, max: 60 },
+            latencyHint: 0
           },
           audio: false,
           selfBrowserSurface: 'exclude',

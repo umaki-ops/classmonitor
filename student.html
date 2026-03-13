@@ -1728,7 +1728,8 @@
           color: gWbTool === 'eraser' ? null : gWbColor,
           size: gWbTool === 'eraser' ? gWbSize * 5 : gWbSize,
           points: [[gWbLX, gWbLY]], ts: Date.now(),
-          normalized: true  // パーセント座標フラグ
+          normalized: true,  // パーセント座標フラグ
+          canvasW: canvas.width, canvasH: canvas.height  // 元キャンバスサイズ（教員側でlineWidthスケール用）
         };
       });
       canvas.addEventListener('pointermove', e => {

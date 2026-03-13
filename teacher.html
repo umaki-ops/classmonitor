@@ -1847,7 +1847,13 @@ function drawStrokeOnCanvas(canvas, stroke) {
   const pts = stroke.points;
   if (stroke.normalized) {
     // パーセント正規化座標（0〜100）→ canvasピクセルに変換
-    ctx.lineWidth = Math.max(1, (stroke.size || 3) * Math.min(W, H) / 100 * 0.8);
+    // canvasW/Hが記録されていればそれを元にlineWidthをスケール、なければ幅基準で近似
+    const srcW = stroke.canvasW || 800;
+    const srcH = stroke.canvasH || 500;
+    const scaleX = W / srcW;
+    const scaleY = H / srcH;
+    const sizeScale = Math.min(scaleX, scaleY);
+    ctx.lineWidth = Math.max(1, (stroke.size || 3) * sizeScale);
     ctx.moveTo(pts[0][0] / 100 * W, pts[0][1] / 100 * H);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] / 100 * W, pts[i][1] / 100 * H);
   } else {

@@ -153,7 +153,6 @@
   #wb-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   #group-wb-labels { position:absolute; inset:0; pointer-events:none; z-index:20; }
   #group-wb-labels .txt-box-wrap { pointer-events:auto; }
-  .gwb-peer-text { position:absolute; pointer-events:none; }
   #wb-labels .txt-box-wrap { pointer-events:auto; }
   #wb-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px;
     border-top:1px solid var(--border); background:#f8fafc; flex-wrap:wrap; }
@@ -1655,6 +1654,7 @@
     let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
     let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3;
     let gWbGroupId = null, gWbResetTs = 0;
+    let gWbLabels = [];
     let gWbFromImg = false; // distImg経由でWBを開いた場合true
     let gWbStrokeListenerUnsub = null;
     let gWbCurrentStroke = null;
@@ -1672,18 +1672,12 @@
       canvas.addEventListener('pointerdown', e => {
         if (_selectedTxt) { deselectTxt(); return; }
         if (_gWbTextMode) {
-          // テキストボックスをFirebaseに保存してから描画
           const r2 = canvas.getBoundingClientRect();
           const xPct = (e.clientX - r2.left) / r2.width * 100;
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor, ts: Date.now() };
-          if (gWbGroupId) {
-            set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${textKey}`), textData)
-              .then(() => {
-                // onValueで返ってきたときに_createOwnTextBoxが呼ばれる
-              });
-          }
+          if (gWbGroupId) set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${textKey}`), textData);
           return;
         }
         gWbDrawing = true;
@@ -1744,17 +1738,12 @@
           }
         });
       };
-      // 白紙クリア
       gWbCtx.fillStyle = 'white';
       gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
       if (gWbBgImage) {
-        // 背景画像 → onload完了後にストロークを重ねる（非同期だが正しい順序を保証）
         const img = new Image();
-        img.onload = () => {
-          gWbCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          drawStrokes();
-        };
-        img.onerror = () => drawStrokes(); // 画像失敗時もストロークは描く
+        img.onload = () => { gWbCtx.drawImage(img, 0, 0, canvas.width, canvas.height); drawStrokes(); };
+        img.onerror = () => drawStrokes();
         img.src = gWbBgImage;
       } else {
         drawStrokes();
@@ -1767,8 +1756,6 @@
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
       gWbStrokeListenerUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/strokes`), snap => {
         if (!gWbCtx) return;
-        // strokes がない場合も gWbReplayStrokes(null) を呼ぶことで
-        // 背景画像だけを正しく描画する（白紙 or 背景のみ）
         gWbReplayStrokes(snap.exists() ? snap.val() : null);
       });
     }
@@ -1779,48 +1766,25 @@
         renderGWbTexts(snap.exists() ? snap.val() : {});
       });
     }
-
-    // テキストデータからDOMを同期する
-    // 自分のテキスト: 編集可能なtxt-box-wrap
-    // 他人のテキスト: 読み取り専用のオーバーレイdiv
     function renderGWbTexts(textsObj) {
       const container = document.getElementById('group-wb-labels');
       if (!container) return;
-
-      const existingKeys = new Set();
-      container.querySelectorAll('[data-text-key]').forEach(el => {
-        existingKeys.add(el.dataset.textKey);
-      });
-
       const incomingKeys = new Set(Object.keys(textsObj));
-
-      // 削除されたテキストをDOMから消す
-      existingKeys.forEach(key => {
-        if (!incomingKeys.has(key)) {
-          container.querySelector(`[data-text-key="${key}"]`)?.remove();
-        }
+      container.querySelectorAll('[data-text-key]').forEach(el => {
+        if (!incomingKeys.has(el.dataset.textKey)) el.remove();
       });
-
-      // 追加・更新
       Object.entries(textsObj).forEach(([key, td]) => {
         const isMine = td.uid === studentId;
         const existing = container.querySelector(`[data-text-key="${key}"]`);
-
         if (isMine) {
-          // 自分のは既に編集用DOMがある場合は位置・内容だけ更新しない（編集中に上書きしない）
-          if (!existing) {
-            // 新規作成（初回受信時 = 自分が作ったものが返ってきた）
-            _createOwnTextBox(container, key, td);
-          }
+          if (!existing) _createOwnTextBox(container, key, td);
         } else {
-          // 他人のテキストは読み取り専用divで表示
           if (existing) {
-            // 更新: 内容・位置を反映
             existing.style.left = td.x + '%';
             existing.style.top  = td.y + '%';
             existing.style.width = (td.w || 200) + 'px';
-            existing.querySelector('.gwb-peer-text').textContent = td.text || '';
-            existing.querySelector('.gwb-peer-text').style.color = td.color || '#1e293b';
+            const span = existing.querySelector('.gwb-peer-text');
+            if (span) { span.textContent = td.text || ''; span.style.color = td.color || '#1e293b'; }
           } else {
             _createPeerTextBox(container, key, td);
           }
@@ -1828,144 +1792,84 @@
       });
     }
 
-    // 自分のテキストボックスをDOMに作成（Firebaseキーを紐付け）
     function _createOwnTextBox(container, key, td) {
       const wrap = document.createElement('div');
       wrap.className = 'txt-box-wrap selected';
       wrap.dataset.textKey = key;
-      wrap.style.cssText = `left:${td.x}%;top:${td.y}%;width:${td.w||200}px;`;
-
+      wrap.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;`;
       const ta = document.createElement('textarea');
-      ta.className = 'txt-box-input';
-      ta.placeholder = 'テキスト入力';
-      ta.style.color = td.color || gWbColor;
-      ta.value = td.text || '';
-      ta.rows = 2;
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'txt-del-btn';
-      delBtn.innerHTML = '✕';
-
-      const resizeHandle = document.createElement('div');
-      resizeHandle.className = 'txt-resize-handle';
-      resizeHandle.innerHTML = '⤡';
-
-      const doneBtn = document.createElement('button');
-      doneBtn.className = 'txt-done-btn';
-      doneBtn.innerHTML = '✓ 完了';
-
-      wrap.appendChild(ta); wrap.appendChild(delBtn);
-      wrap.appendChild(resizeHandle); wrap.appendChild(doneBtn);
+      ta.className = 'txt-box-input'; ta.placeholder = 'テキスト入力';
+      ta.style.color = td.color || gWbColor; ta.value = td.text || ''; ta.rows = 2;
+      const delBtn = document.createElement('button'); delBtn.className = 'txt-del-btn'; delBtn.innerHTML = '✕';
+      const resizeHandle = document.createElement('div'); resizeHandle.className = 'txt-resize-handle'; resizeHandle.innerHTML = '⤡';
+      const doneBtn = document.createElement('button'); doneBtn.className = 'txt-done-btn'; doneBtn.innerHTML = '✓ 完了';
+      wrap.appendChild(ta); wrap.appendChild(delBtn); wrap.appendChild(resizeHandle); wrap.appendChild(doneBtn);
       container.appendChild(wrap);
 
-      // 編集モード管理
-      let tapTimer = null, tapCount = 0;
       function enterMoveMode() { selectTxt(wrap); wrap.classList.add('selected'); wrap.classList.remove('edit-mode'); }
       function enterEditMode() { selectTxt(wrap); wrap.classList.add('selected','edit-mode'); ta.focus(); const l=ta.value.length; ta.setSelectionRange(l,l); }
+      let tapTimer=null, tapCount=0;
       wrap.addEventListener('pointerdown', e => {
         if (e.target===delBtn||e.target===resizeHandle||e.target===doneBtn) return;
         if (wrap.classList.contains('edit-mode') && e.target===ta) return;
-        e.preventDefault();
-        tapCount++;
+        e.preventDefault(); tapCount++;
         if (tapCount===1) { tapTimer=setTimeout(()=>{ tapCount=0; enterMoveMode(); },250); }
         else if (tapCount>=2) { clearTimeout(tapTimer); tapCount=0; enterEditMode(); }
       });
-
-      // 移動
-      let moveDrag=false,moveSX,moveSY,moveOX,moveOY,moveStarted=false;
+      let moveDrag=false,moveSX,moveSY,moveOX,moveOY;
       wrap.addEventListener('pointerdown', e => {
         if (e.target===delBtn||e.target===resizeHandle||e.target===doneBtn) return;
         if (wrap.classList.contains('edit-mode')) return;
-        moveDrag=true; moveStarted=false; wrap.setPointerCapture(e.pointerId);
+        moveDrag=true; wrap.setPointerCapture(e.pointerId);
         moveSX=e.clientX; moveSY=e.clientY;
         moveOX=parseFloat(wrap.style.left)||0; moveOY=parseFloat(wrap.style.top)||0;
       });
       wrap.addEventListener('pointermove', e => {
         if (!moveDrag) return;
-        const dx=e.clientX-moveSX, dy=e.clientY-moveSY;
-        if (!moveStarted && Math.hypot(dx,dy)<5) return;
-        moveStarted=true;
-        const parent=wrap.parentElement;
-        const pW=parent?.offsetWidth||300, pH=parent?.offsetHeight||200;
-        const wW=wrap.offsetWidth, wH=wrap.offsetHeight;
-        const newXpx=Math.max(0,Math.min(pW-wW, moveOX/100*pW+dx));
-        const newYpx=Math.max(0,Math.min(pH-wH, moveOY/100*pH+dy));
-        wrap.style.left=(newXpx/pW*100)+'%';
-        wrap.style.top =(newYpx/pH*100)+'%';
+        const pW=wrap.parentElement?.offsetWidth||300, pH=wrap.parentElement?.offsetHeight||200;
+        const newX=Math.max(0,Math.min(100-wrap.offsetWidth/pW*100, moveOX+(e.clientX-moveSX)/pW*100));
+        const newY=Math.max(0,Math.min(100-wrap.offsetHeight/pH*100, moveOY+(e.clientY-moveSY)/pH*100));
+        wrap.style.left=newX+'%'; wrap.style.top=newY+'%';
       });
-      wrap.addEventListener('pointerup', () => { if (moveDrag) { moveDrag=false; _saveTextToFb(key, wrap, ta); } });
+      wrap.addEventListener('pointerup', () => { if(moveDrag){moveDrag=false; _saveTextToFb(key,wrap,ta);} });
       wrap.addEventListener('pointercancel', () => { moveDrag=false; });
-
-      // リサイズ
       let resDrag=false,resSX,resSY,resOW,resOH;
-      resizeHandle.addEventListener('pointerdown', e => {
-        e.preventDefault(); e.stopPropagation();
-        resDrag=true; resizeHandle.setPointerCapture(e.pointerId);
-        resSX=e.clientX; resSY=e.clientY; resOW=wrap.offsetWidth; resOH=ta.offsetHeight;
-      });
-      resizeHandle.addEventListener('pointermove', e => {
-        if (!resDrag) return;
-        wrap.style.width=Math.max(80,resOW+e.clientX-resSX)+'px';
-        ta.style.height=Math.max(40,resOH+e.clientY-resSY)+'px';
-      });
-      resizeHandle.addEventListener('pointerup', () => { if (resDrag) { resDrag=false; _saveTextToFb(key, wrap, ta); } });
+      resizeHandle.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); resDrag=true; resizeHandle.setPointerCapture(e.pointerId); resSX=e.clientX; resSY=e.clientY; resOW=wrap.offsetWidth; resOH=ta.offsetHeight; });
+      resizeHandle.addEventListener('pointermove', e => { if(!resDrag)return; wrap.style.width=Math.max(80,resOW+e.clientX-resSX)+'px'; ta.style.height=Math.max(40,resOH+e.clientY-resSY)+'px'; });
+      resizeHandle.addEventListener('pointerup', () => { if(resDrag){resDrag=false; _saveTextToFb(key,wrap,ta);} });
       resizeHandle.addEventListener('pointercancel', () => { resDrag=false; });
-
-      // 削除
       delBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); });
-      delBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        wrap.remove();
-        if (gWbGroupId) set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`), null);
-      });
-
-      // 完了ボタン
+      delBtn.addEventListener('click', e => { e.stopPropagation(); wrap.remove(); if(gWbGroupId) set(ref(db,`sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`),null); });
       doneBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); });
-      doneBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        wrap.classList.remove('edit-mode'); wrap.classList.add('selected'); ta.blur();
-      });
-
-      // 入力 → Firebaseに保存
-      let inputTimer = null;
-      ta.addEventListener('input', () => {
-        clearTimeout(inputTimer);
-        inputTimer = setTimeout(() => _saveTextToFb(key, wrap, ta), 400);
-      });
-
-      // 初期選択
-      selectTxt(wrap);
-      setTimeout(() => ta.focus(), 50);
+      doneBtn.addEventListener('click', e => { e.stopPropagation(); wrap.classList.remove('edit-mode'); wrap.classList.add('selected'); ta.blur(); });
+      let inputTimer=null;
+      ta.addEventListener('input', () => { clearTimeout(inputTimer); inputTimer=setTimeout(()=>_saveTextToFb(key,wrap,ta),400); });
+      selectTxt(wrap); setTimeout(()=>ta.focus(),50);
     }
 
-    // 他人のテキストボックス（読み取り専用）
     function _createPeerTextBox(container, key, td) {
       const div = document.createElement('div');
       div.dataset.textKey = key;
       div.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;pointer-events:none;z-index:19;`;
       const span = document.createElement('span');
       span.className = 'gwb-peer-text';
-      span.style.cssText = `display:block;font:bold 16px 'Noto Sans JP',sans-serif;color:${td.color||'#1e293b'};white-space:pre-wrap;word-break:break-all;background:rgba(255,255,255,.6);border-radius:4px;padding:4px 6px;`;
+      span.style.cssText = `display:block;font:bold 16px 'Noto Sans JP',sans-serif;color:${td.color||'#1e293b'};white-space:pre-wrap;word-break:break-all;background:transparent;padding:4px 6px;`;
       span.textContent = td.text || '';
-      div.appendChild(span);
-      container.appendChild(div);
+      div.appendChild(span); container.appendChild(div);
     }
 
-    // Firebase にテキストデータを保存
     function _saveTextToFb(key, wrap, ta) {
       if (!gWbGroupId) return;
       const parent = wrap.parentElement;
-      const pW = parent?.offsetWidth || 300;
-      const pH = parent?.offsetHeight || 200;
       const x = parseFloat(wrap.style.left) || 0;
       const y = parseFloat(wrap.style.top)  || 0;
-      const w = wrap.offsetWidth;
       set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${key}`), {
-        uid: studentId, x, y, w, text: ta.value,
+        uid: studentId, x, y, w: wrap.offsetWidth, text: ta.value,
         color: ta.style.color || gWbColor, ts: Date.now()
       });
       gWbScheduleSnapshot();
     }
+
 
     let gWbSnapTimer = null;
     function gWbScheduleSnapshot() {
@@ -1973,39 +1877,32 @@
       gWbSnapTimer = setTimeout(async () => {
         const canvas = document.getElementById('group-wb-canvas');
         if (!canvas || !gWbGroupId) return;
-        // テキストボックスを焼き込んだ一時canvasを作成
         const merged = document.createElement('canvas');
         merged.width = canvas.width; merged.height = canvas.height;
         const ctx = merged.getContext('2d');
         ctx.drawImage(canvas, 0, 0);
-        // テキストボックスをすべて焼き込む（自分のtxt-box-wrap + 他人のgwb-peer-text）
         const labels = document.getElementById('group-wb-labels');
         if (labels) {
-          const pW = canvas.offsetWidth  || canvas.width;
+          const pW = canvas.offsetWidth || canvas.width;
           const pH = canvas.offsetHeight || canvas.height;
-          const scaleX = canvas.width  / pW;
-          const scaleY = canvas.height / pH;
+          const scaleX = canvas.width / pW, scaleY = canvas.height / pH;
           ctx.font = `bold 16px 'Noto Sans JP', sans-serif`;
-          // 自分のテキストボックス
           labels.querySelectorAll('.txt-box-wrap').forEach(wrap => {
             const ta = wrap.querySelector('.txt-box-input');
             if (!ta || !ta.value) return;
-            const x = (parseFloat(wrap.style.left)||0) / 100 * pW * scaleX;
-            const y = (parseFloat(wrap.style.top) ||0) / 100 * pH * scaleY;
-            ctx.save();
-            ctx.fillStyle = ta.style.color || '#1e293b';
-            ta.value.split('\n').forEach((line, i) => { ctx.fillText(line, x+8*scaleX, y+22*scaleY+i*20*scaleY); });
+            const x = parseFloat(wrap.style.left)/100 * pW * scaleX;
+            const y = parseFloat(wrap.style.top) /100 * pH * scaleY;
+            ctx.save(); ctx.fillStyle = ta.style.color || '#1e293b';
+            ta.value.split('\n').forEach((line,i) => ctx.fillText(line, x+8*scaleX, y+18*scaleY+i*20*scaleY));
             ctx.restore();
           });
-          // 他人のテキストボックス
           labels.querySelectorAll('[data-text-key]:not(.txt-box-wrap)').forEach(div => {
             const span = div.querySelector('.gwb-peer-text');
             if (!span || !span.textContent) return;
-            const x = (parseFloat(div.style.left)||0) / 100 * pW * scaleX;
-            const y = (parseFloat(div.style.top) ||0) / 100 * pH * scaleY;
-            ctx.save();
-            ctx.fillStyle = span.style.color || '#1e293b';
-            span.textContent.split('\n').forEach((line, i) => { ctx.fillText(line, x+8*scaleX, y+22*scaleY+i*20*scaleY); });
+            const x = parseFloat(div.style.left)/100 * pW * scaleX;
+            const y = parseFloat(div.style.top) /100 * pH * scaleY;
+            ctx.save(); ctx.fillStyle = span.style.color || '#1e293b';
+            span.textContent.split('\n').forEach((line,i) => ctx.fillText(line, x+8*scaleX, y+18*scaleY+i*20*scaleY));
             ctx.restore();
           });
         }
@@ -2018,8 +1915,6 @@
     function gWbSetBgImage(dataUrl) {
       gWbBgImage = dataUrl;
       if (!gWbGroupId) return;
-      // 背景を変数に記録した後、DBから最新ストロークを取得して
-      // gWbReplayStrokes で背景+ストロークを正しい順序で描く
       get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`)).then(snap => {
         gWbReplayStrokes(snap.exists() ? snap.val() : null);
       });
@@ -2085,9 +1980,7 @@
       await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts`),   null);
       await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/resetTs`), Date.now());
       // 背景は維持してキャンバスをクリア
-      if (gWbCtx) {
-        gWbReplayStrokes(null); // ストロークなし・背景だけ再描画
-      }
+      if (gWbCtx) { gWbReplayStrokes(null); }
     };
     window.gWbSubmit = async function() {
       const canvas = document.getElementById('group-wb-canvas');
@@ -2142,7 +2035,6 @@
           // 画像配布の監視（班のWB背景として表示）
           _imgUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/distImg`), imgSnap => {
             if (!imgSnap.exists()) {
-              // distImg ノードが丸ごと削除された場合も背景をクリア
               gWbBgImage = null;
               if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
               return;
@@ -2157,7 +2049,6 @@
               // 背景画像を設定（既に開いていても背景を更新）
               setTimeout(() => gWbSetBgImage(imgData.dataUrl), 150);
             } else if (!imgData.active) {
-              // 画像回収時は必ず背景をクリア（gWbFromImg の状態に関わらず）
               gWbBgImage = null;
               if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
               else gWbSetBgImage(null);

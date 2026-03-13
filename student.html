@@ -482,6 +482,12 @@
     <button class="wbt active" id="wbt-pen" onclick="wbSetTool('pen')" title="ペン">✏️</button>
     <button class="wbt" id="wbt-eraser" onclick="wbSetTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="wbt-text" onclick="wbSetTool('text')" title="テキスト">T</button>
+    <select id="wb-font-size" onchange="wbSetFontSize(this.value)" style="display:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 6px;font-size:13px;font-family:inherit;cursor:pointer;" title="文字サイズ">
+      <option value="12">小</option>
+      <option value="16" selected>中</option>
+      <option value="22">大</option>
+      <option value="30">特大</option>
+    </select>
     <div class="wb-sep"></div>
     <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="wbSetColor(this)"></div>
     <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="wbSetColor(this)"></div>
@@ -513,6 +519,12 @@
     <button class="wbt active" id="imgt-pen" onclick="setImgTool('pen')" title="ペン">✏️</button>
     <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="imgt-text" onclick="setImgTool('text')" title="テキスト">T</button>
+    <select id="img-font-size" onchange="imgSetFontSize(this.value)" style="display:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 6px;font-size:13px;font-family:inherit;cursor:pointer;" title="文字サイズ">
+      <option value="12">小</option>
+      <option value="16" selected>中</option>
+      <option value="22">大</option>
+      <option value="30">特大</option>
+    </select>
     <div class="wb-sep"></div>
     <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="imgSetColor(this)"></div>
     <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="imgSetColor(this)"></div>
@@ -1030,7 +1042,7 @@
 
     // ===== 配布画像 =====
     let imgCanvas = null, imgBgCanvas = null, imgCtx = null, imgBgCtx = null;
-    let imgTool = 'pen', imgColor = '#1e293b', imgSize = 8;
+    let imgTool = 'pen', imgColor = '#1e293b', imgSize = 8, imgFontSize = 16;
     let imgDrawing = false, imgLX = 0, imgLY = 0;
     let imgLabels = [];
 
@@ -1056,7 +1068,7 @@
       window.addEventListener('resize', imgResize);
       imgCanvas.addEventListener('pointerdown', e => {
         if (_selectedTxt) { deselectTxt(); return; }
-        if (_imgTextMode) { makeTxtBox('img-labels', imgLabels, imgColor); return; }
+        if (_imgTextMode) { makeTxtBox('img-labels', imgLabels, imgColor, imgFontSize); return; }
         imgDrawing = true;
         const r = imgCanvas.getBoundingClientRect();
         imgLX = (e.clientX-r.left)*imgCanvas.width/r.width;
@@ -1110,27 +1122,33 @@
       if (t === 'text') {
         _imgTextMode = !_imgTextMode;
         document.querySelectorAll('#img-toolbar .wbt').forEach(b => b.classList.remove('active'));
+        const fsEl = document.getElementById('img-font-size');
         if (_imgTextMode) {
           imgTool = 'text';
           const btn = document.getElementById('imgt-text');
           if (btn) btn.classList.add('active');
+          if (fsEl) fsEl.style.display = '';
         } else {
           imgTool = 'pen';
           const penBtn = document.getElementById('imgt-pen');
           if (penBtn) penBtn.classList.add('active');
+          if (fsEl) fsEl.style.display = 'none';
         }
         return;
       }
       _imgTextMode = false;
+      const fsEl = document.getElementById('img-font-size');
+      if (fsEl) fsEl.style.display = 'none';
       imgTool = t;
       document.querySelectorAll('#img-toolbar .wbt').forEach(b => b.classList.remove('active'));
       const btn = document.getElementById('imgt-' + t);
       if (btn) btn.classList.add('active');
     };
+    window.imgSetFontSize = function(v) { imgFontSize = parseInt(v); };
     window.distImgSubmit = window.imgSubmit;
     window.imgSetColor = el => { imgColor = el.dataset.color; document.querySelectorAll('#img-toolbar .wbc').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
     window.imgSetSize = v => { imgSize = parseInt(v); };
-    window.imgAddLabel = () => { makeTxtBox('img-labels', imgLabels, imgColor); };
+    window.imgAddLabel = () => { makeTxtBox('img-labels', imgLabels, imgColor, imgFontSize); };
     function imgRenderLabels() { /* テキストボックスはmakeTxtBoxで管理 */ }
     function imgExportWithLabels() {
       const merged = document.createElement('canvas');
@@ -1177,7 +1195,7 @@
     let _imgTextMode = false;  // 画像テキストモード中
     let _gWbTextMode = false;  // 班別WBテキストモード中
 
-    function makeTxtBox(containerId, labelsArr, color) {
+    function makeTxtBox(containerId, labelsArr, color, fontSize) {
       const container = document.getElementById(containerId);
       if (!container) return;
 
@@ -1190,6 +1208,7 @@
       ta.className = 'txt-box-input';
       ta.placeholder = 'テキスト入力';
       ta.style.color = color || '#1e293b';
+      ta.style.fontSize = (fontSize || 20) + 'px';
       ta.rows = 2;
 
       // 削除ボタン（右上）
@@ -1223,7 +1242,8 @@
           top:  parseInt(wrap.style.top)  || 0,
           width: wrap.offsetWidth,
           height: wrap.offsetHeight,
-          color: ta.style.color, text: ta.value
+          color: ta.style.color, text: ta.value,
+          fontSize: parseInt(ta.style.fontSize) || 20
         })
       };
       labelsArr.push(lblObj);
@@ -1365,15 +1385,16 @@
         const st = lb.getStyle();
         const scaleX = canvasEl.width / canvasEl.offsetWidth;
         const scaleY = canvasEl.height / canvasEl.offsetHeight;
+        const fontSize = st.fontSize || 18;
         ctx.save();
-        ctx.font = `bold 18px 'Noto Sans JP', sans-serif`;
+        ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
         const x = (st.left + 8) * scaleX;
-        let y = (st.top + 22) * scaleY;
+        let y = (st.top + fontSize) * scaleY;
         const lines = (st.text || '').split('\n');
         lines.forEach(line => {
           ctx.fillText(line, x, y);
-          y += 22 * scaleY;
+          y += (fontSize + 4) * scaleY;
         });
         ctx.restore();
       });
@@ -1381,7 +1402,7 @@
 
     // ===== ホワイトボード =====
     let wbCanvas = null, wbCtx = null;
-    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 8;
+    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 8, wbFontSize = 16;
     let wbDrawing = false, wbLX = 0, wbLY = 0;
     let wbLabels = [];
 
@@ -1393,7 +1414,7 @@
       window.addEventListener('resize', wbResize);
       wbCanvas.addEventListener('pointerdown', e => {
         if (_selectedTxt) { deselectTxt(); return; }
-        if (_wbTextMode) { makeTxtBox('wb-labels', wbLabels, wbColor); return; }
+        if (_wbTextMode) { makeTxtBox('wb-labels', wbLabels, wbColor, wbFontSize); return; }
         wbDrawing = true;
         const r = wbCanvas.getBoundingClientRect();
         wbLX = (e.clientX-r.left)*wbCanvas.width/r.width;
@@ -1453,26 +1474,32 @@
       if (t === 'text') {
         _wbTextMode = !_wbTextMode;
         document.querySelectorAll('#wb-toolbar .wbt').forEach(b => b.classList.remove('active'));
+        const fsEl = document.getElementById('wb-font-size');
         if (_wbTextMode) {
           wbTool = 'text';
           const btn = document.getElementById('wbt-text');
           if (btn) btn.classList.add('active');
+          if (fsEl) fsEl.style.display = '';
         } else {
           wbTool = 'pen';
           const penBtn = document.getElementById('wbt-pen');
           if (penBtn) penBtn.classList.add('active');
+          if (fsEl) fsEl.style.display = 'none';
         }
         return;
       }
       _wbTextMode = false;
+      const fsEl = document.getElementById('wb-font-size');
+      if (fsEl) fsEl.style.display = 'none';
       wbTool = t;
       document.querySelectorAll('#wb-toolbar .wbt').forEach(b => b.classList.remove('active'));
       const btn = document.getElementById('wbt-' + t);
       if (btn) btn.classList.add('active');
     };
+    window.wbSetFontSize = function(v) { wbFontSize = parseInt(v); };
     window.wbSetColor = el => { wbColor = el.dataset.color; document.querySelectorAll('#wb-toolbar .wbc').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
     window.wbSetSize = v => { wbSize = parseInt(v); };
-    window.wbAddLabel = () => { makeTxtBox('wb-labels', wbLabels, wbColor); };
+    window.wbAddLabel = () => { makeTxtBox('wb-labels', wbLabels, wbColor, wbFontSize); };
     function wbRenderLabels() { /* テキストボックスはmakeTxtBoxで管理 */ }
     function wbExportWithLabels() {
       const merged = document.createElement('canvas');

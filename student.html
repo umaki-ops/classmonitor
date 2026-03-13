@@ -1719,44 +1719,37 @@
     function gWbReplayStrokes(strokes) {
       if (!gWbCtx) return;
       const canvas = document.getElementById('group-wb-canvas');
+      const drawStrokes = () => {
+        if (!strokes) return;
+        Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
+          const pts = stroke.points;
+          if (!pts || pts.length < 2) return;
+          for (let i = 1; i < pts.length; i++) {
+            gWbDrawSegment(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1], stroke.tool, stroke.color, stroke.size);
+          }
+        });
+      };
       gWbCtx.fillStyle = 'white';
       gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
-      // 背景画像があれば先に描画
       if (gWbBgImage) {
         const img = new Image();
         img.onload = () => {
           gWbCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          if (strokes) Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => gWbDrawSegment(stroke));
+          drawStrokes();
         };
         img.src = gWbBgImage;
-        return;
+      } else {
+        drawStrokes();
       }
-      if (!strokes) return;
-      Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
-        const pts = stroke.points;
-        if (!pts || pts.length < 2) return;
-        for (let i = 1; i < pts.length; i++) {
-          gWbDrawSegment(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1], stroke.tool, stroke.color, stroke.size);
-        }
-      });
     }
 
     function gWbListenStrokes(groupId) {
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
+      // strokes だけでなく wb ノード全体を監視する
+      // → resetTs 変化時も確実にキャンバスをクリアできる
       gWbStrokeListenerUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/strokes`), snap => {
         if (!gWbCtx) return;
-        if (!snap.exists()) {
-          // strokes がない＝まっさら。背景画像があればそれだけ表示
-          const canvas = document.getElementById('group-wb-canvas');
-          gWbCtx.fillStyle = 'white';
-          gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
-          if (gWbBgImage) gWbSetBgImage(gWbBgImage);
-          else {
-            // 背景画像なしで白クリアのみ（書き込みが消えたように見えないよう何もしない）
-          }
-          return;
-        }
-        gWbReplayStrokes(snap.val());
+        gWbReplayStrokes(snap.exists() ? snap.val() : null);
       });
     }
 
@@ -1800,19 +1793,13 @@
     let gWbBgImage = null;
     function gWbSetBgImage(dataUrl) {
       gWbBgImage = dataUrl;
-      const canvas = document.getElementById('group-wb-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (dataUrl) {
-        const img = new Image();
-        img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
-        img.src = dataUrl;
-      }
-      // 既存ストロークを再描画
-      gWbReplayStrokes();
+      // 背景を設定したら現在の最新ストロークを取得して上に重ねて描画
+      // （引数なしで gWbReplayStrokes を呼ぶと strokes が undefined になるため
+      //   DBから直接取得する）
+      if (!gWbGroupId) return;
+      get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`)).then(snap => {
+        gWbReplayStrokes(snap.exists() ? snap.val() : null);
+      });
     }
 
     function gWbOpen(groupId, data) {

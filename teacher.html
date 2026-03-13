@@ -1406,8 +1406,8 @@ function renderGroupPanel() {
 // 班を作成（列UIを表示）
 window.initGroups = function() {
   const raw = document.getElementById('group-count').value.trim();
-  const n = parseInt(raw);
-  if (!raw || isNaN(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10で入力してください'); return; }
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10の整数で入力してください'); return; }
   groupDefs = {};
   for (let i = 1; i <= n; i++) {
     const gid = 'g' + i;
@@ -1421,8 +1421,8 @@ window.initGroups = function() {
 // 自動振り分け
 window.autoAssignGroups = function() {
   const raw = document.getElementById('group-count').value.trim();
-  const n = parseInt(raw);
-  if (!raw || isNaN(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10で入力してください'); return; }
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10の整数で入力してください'); return; }
   groupDefs = {};
   for (let i = 1; i <= n; i++) groupDefs['g'+i] = { name:`班${i}`, members:{} };
   const uids = Object.keys(students);

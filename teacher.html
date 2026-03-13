@@ -1647,36 +1647,31 @@ function listenGroupPreview(gid) {
     delete groupListeners[gid + '_prev'];
   }
   const { ref, onValue } = window.FB;
-  let wbActive = false;
   let imgActive = false;
 
-  // wb/strokes 全体を onValue で監視 → 変化があるたびに全ストロークを再描画
-  // これにより「拡大しなくてもリアルタイム」かつ「初回表示時も既存ストロークを描画」を実現
-  const unsubStrokes = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
-    if (!wbActive) return;
-    const canvas = document.getElementById('gprev-canvas-' + gid);
-    if (!canvas) return;
-    // canvas サイズを確認・確定してから描画
-    ensurePreviewCanvasSize(canvas);
-    replayStrokesOnCanvas(canvas, snap.exists() ? snap.val() : null);
-  });
-
-  // ① wb/active を監視（WBの開閉）
-  const unsubWbActive = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), snap => {
-    wbActive = snap.val() === true;
+  // wb ノード全体を onValue で監視
+  // → active / strokes どちらが変わっても発火するため、
+  //   「WB配布直後」「書き込み中」「回収」すべてをカバーできる
+  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), snap => {
     const badge       = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
     const canvas      = document.getElementById('gprev-canvas-' + gid);
     const img         = document.getElementById('gprev-img-' + gid);
     if (!canvas) return;
 
+    const wbData   = snap.exists() ? snap.val() : null;
+    const wbActive = wbData?.active === true;
+
     if (wbActive) {
       if (badge) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
       if (placeholder) placeholder.style.display = 'none';
-      if (img) img.style.display = 'none';
+      if (img && !imgActive) img.style.display = 'none';
       canvas.style.display = 'block';
-      // DOM反映後にサイズ確定（display:none→block直後はoffsetWidthが0になるため）
-      requestAnimationFrame(() => ensurePreviewCanvasSize(canvas));
+      // display:block が反映されてから描画（offsetWidth が 0 になるのを防ぐ）
+      requestAnimationFrame(() => {
+        ensurePreviewCanvasSize(canvas);
+        replayStrokesOnCanvas(canvas, wbData.strokes || null);
+      });
     } else {
       canvas.style.display = 'none';
       if (!imgActive) {
@@ -1686,30 +1681,17 @@ function listenGroupPreview(gid) {
     }
   });
 
-  // ③ wb/resetTs を監視（WBリセット＝全消し）
-  const unsubReset = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/resetTs`), snap => {
-    if (!snap.exists()) return;
-    const canvas = document.getElementById('gprev-canvas-' + gid);
-    if (!canvas) return;
-    ensurePreviewCanvasSize(canvas);
-    replayStrokesOnCanvas(canvas, null); // 白紙に戻す
-  });
-
-  // ④ distImg を監視
+  // distImg を監視
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
     const badge       = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
-    const canvas      = document.getElementById('gprev-canvas-' + gid);
     const img         = document.getElementById('gprev-img-' + gid);
     if (!img) return;
 
     if (!snap.exists() || snap.val()?.active !== true) {
       imgActive = false;
-      if (!wbActive) {
-        if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
-        if (placeholder) placeholder.style.display = 'flex';
-        img.style.display = 'none';
-      }
+      // wbActive かどうかは wb リスナー側が管理しているので、ここでは img/placeholder だけ制御
+      img.style.display = 'none';
       return;
     }
     imgActive = true;
@@ -1720,25 +1702,23 @@ function listenGroupPreview(gid) {
     img.src = distImg.dataUrl || '';
   });
 
-  groupListeners[gid + '_prev'] = () => { unsubWbActive(); unsubStrokes(); unsubReset(); unsubImg(); };
+  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
 }
 
-// canvas の表示サイズに合わせて解像度を設定（まだサイズが0なら親要素から推測）
+// canvas の表示サイズに合わせて解像度を設定
 function ensurePreviewCanvasSize(canvas) {
   const parent = canvas.parentElement;
-  const W = Math.round(parent?.offsetWidth  || parent?.getBoundingClientRect().width  || 280);
-  const H = Math.round(parent?.offsetHeight || parent?.getBoundingClientRect().height || 158);
-  const targetW = W  || 280;
-  const targetH = H  || 158;
+  const W = Math.round(parent?.offsetWidth  || 280);
+  const H = Math.round(parent?.offsetHeight || 158);
+  const targetW = W || 280;
+  const targetH = H || 158;
+  // サイズが変わった場合のみ再設定（変えるとcanvasがクリアされるため）
   if (canvas.width !== targetW || canvas.height !== targetH) {
     canvas.width  = targetW;
     canvas.height = targetH;
-  }
-  // 白紙で塗りつぶす（サイズ変更時のみ）
-  if (canvas.width !== targetW || canvas.height !== targetH) {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, targetW, targetH);
   }
 }
 

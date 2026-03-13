@@ -1746,10 +1746,14 @@
       gWbStrokeListenerUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/strokes`), snap => {
         if (!gWbCtx) return;
         if (!snap.exists()) {
+          // strokes がない＝まっさら。背景画像があればそれだけ表示
           const canvas = document.getElementById('group-wb-canvas');
           gWbCtx.fillStyle = 'white';
           gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
           if (gWbBgImage) gWbSetBgImage(gWbBgImage);
+          else {
+            // 背景画像なしで白クリアのみ（書き込みが消えたように見えないよう何もしない）
+          }
           return;
         }
         gWbReplayStrokes(snap.val());
@@ -1812,12 +1816,14 @@
     }
 
     function gWbOpen(groupId, data) {
+      const alreadyOpen = gWbGroupId === groupId;
       gWbGroupId = groupId;
       const overlay = document.getElementById('group-wb-overlay');
       overlay.style.display = 'flex';
       document.getElementById('group-wb-title').textContent = '📋 班のホワイトボード';
       document.getElementById('group-wb-instruction').textContent = data.instruction || '';
-      if (data.resetTs && data.resetTs !== gWbResetTs) {
+      // _skipReset フラグがある場合 or 既に同じ班で開いている場合はキャンバスをリセットしない
+      if (!data._skipReset && !alreadyOpen && data.resetTs && data.resetTs !== gWbResetTs) {
         gWbResetTs = data.resetTs;
         if (gWbCtx) {
           const canvas = document.getElementById('group-wb-canvas');
@@ -1825,7 +1831,10 @@
           gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
         }
       }
-      setTimeout(() => { gWbInit(); gWbListenStrokes(groupId); }, 100);
+      // 既に開いている場合は gWbInit・gWbListenStrokes を再実行しない
+      if (!alreadyOpen) {
+        setTimeout(() => { gWbInit(); gWbListenStrokes(groupId); }, 100);
+      }
     }
 
     function gWbClose() {
@@ -1924,15 +1933,14 @@
             if (!imgSnap.exists()) return;
             const imgData = imgSnap.val();
             if (imgData.active && imgData.dataUrl) {
-              // 班WBが開いていなければ開く（distImg経由フラグをセット）
-              if (!gWbGroupId) {
+              // WBがまだ開いていない場合のみ開く（開いていれば背景だけ更新）
+              if (!gWbGroupId || gWbGroupId !== _myGroupId) {
                 gWbFromImg = true;
-                gWbOpen(_myGroupId, {instruction: '画像に書き込みましょう'});
+                gWbOpen(_myGroupId, { instruction: '画像に書き込みましょう', _skipReset: true });
               }
-              // 背景画像を設定
-              gWbSetBgImage(imgData.dataUrl);
+              // 背景画像を設定（既に開いていても背景を更新）
+              setTimeout(() => gWbSetBgImage(imgData.dataUrl), 150);
             } else if (!imgData.active) {
-              // 画像回収時: distImg経由で開いていたなら閉じる
               if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
               else gWbSetBgImage(null);
             }

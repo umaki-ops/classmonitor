@@ -361,8 +361,9 @@
     <h3 style="margin:0 0 12px;font-size:15px;">👥 班の設定</h3>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
       <label style="font-size:13px;">班の数：</label>
-      <input type="number" id="group-count" min="2" max="10" value="4"
-        style="width:60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;">
+      <input type="text" id="group-count" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="4"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'')"
+        style="width:60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;text-align:center;">
       <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="initGroups()">班を作成</button>
       <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;" onclick="autoAssignGroups()">🔀 自動振り分け</button>
       <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;" onclick="clearGroups()">班を解散</button>
@@ -377,8 +378,13 @@
     </div>
   </div>
   <div id="group-content-area" style="display:none;">
+    <!-- 班モニタリング俯瞰エリア -->
+    <div id="group-monitor-area" style="margin-bottom:16px;">
+      <h3 style="font-size:14px;margin:0 0 10px;color:var(--accent);">📺 班別モニタリング（クリックで拡大）</h3>
+      <div id="group-monitor-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;"></div>
+    </div>
     <h3 style="font-size:15px;margin-bottom:12px;">📤 班へのコンテンツ配布</h3>
-    <!-- ⑨ 一括操作ボタン -->
+    <!-- 一括操作ボタン -->
   <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">
     <h3 style="margin:0 0 10px;font-size:14px;">📡 全班への一括操作</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -443,13 +449,43 @@
     <div class="mactions"><button class="btn btn-outline" onclick="closeMsgModal()">キャンセル</button><button class="btn btn-primary" onclick="sendMessage()">📨 送信</button></div>
   </div>
 </div>
+<!-- 班別メッセージモーダル -->
+<div id="group-msg-modal" style="display:none;position:fixed;inset:0;z-index:6000;background:rgba(15,23,42,.6);align-items:center;justify-content:center;padding:16px;">
+  <div class="modal-box">
+    <div class="modal-title">💬 メッセージを送る</div>
+    <div class="modal-sub" id="gmtarget">送信先: 班の全員</div>
+    <div class="qmsgs">
+      <button class="qmb" onclick="setGQM('よくできました！')">👍 よくできました！</button>
+      <button class="qmb" onclick="setGQM('集中しましょう')">👀 集中</button>
+      <button class="qmb" onclick="setGQM('正解です！')">⭐ 正解！</button>
+      <button class="qmb" onclick="setGQM('質問は手を挙げてください')">✋ 手を挙げて</button>
+    </div>
+    <textarea class="modal-ta" id="gminput" placeholder="メッセージを入力..."></textarea>
+    <div class="mactions">
+      <button class="btn btn-outline" onclick="closeGroupMsgModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="sendGroupMessage()">📨 送信</button>
+    </div>
+  </div>
+</div>
+
+<!-- 班モニタリング拡大モーダル -->
+<div id="group-zoom-modal" style="display:none;position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.85);align-items:center;justify-content:center;" onclick="closeGroupZoom()">
+  <div style="background:var(--surface);border-radius:16px;padding:20px;max-width:700px;width:95%;max-height:90vh;overflow-y:auto;" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span id="group-zoom-title" style="font-weight:700;font-size:16px;"></span>
+      <button onclick="closeGroupZoom()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text);">✕</button>
+    </div>
+    <div id="group-zoom-screens" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;"></div>
+    <div id="group-zoom-wb" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import{getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
@@ -878,7 +914,7 @@ function listenStudents(){
       setupPC(sid);
     }
     // 班別表示も更新
-    if(currentView==='group') updateGroupScreens();
+    if(currentView==='group') renderGroupMonitorGrid();
   });
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{
@@ -1326,7 +1362,7 @@ window.openFullscreen=function(sid){
 window.closeFullscreen=function(){document.getElementById('fs-overlay').classList.remove('show');document.getElementById('fs-video').srcObject=null;window.currentFsId=null;};
 window.copyUrl=function(){navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(()=>{const b=document.getElementById('copy-btn');b.textContent='✓ コピー済';b.classList.add('copied');setTimeout(()=>{b.textContent='コピー';b.classList.remove('copied');},2000);});};
 window.updateGridSize=function(){document.getElementById('grid').style.gridTemplateColumns=`repeat(${document.getElementById('grid-size').value},1fr)`;};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeWbFullscreen();closeMsgModal();closeSurvey();closeResults();}if(e.key==='ArrowLeft')wbLbNav(-1);if(e.key==='ArrowRight')wbLbNav(1);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeWbFullscreen();closeMsgModal();closeSurvey();closeResults();if(window.closeGroupMsgModal)window.closeGroupMsgModal();if(window.closeGroupZoom)window.closeGroupZoom();}if(e.key==='ArrowLeft')wbLbNav(-1);if(e.key==='ArrowRight')wbLbNav(1);});
 
 
 // ===== 班別学習 =====
@@ -1471,6 +1507,10 @@ function renderGroupContentArea() {
     return;
   }
   if (bulkPanel) bulkPanel.style.display = 'block';
+
+  // ④ 班モニタリンググリッド（俯瞰）
+  renderGroupMonitorGrid();
+
   Object.entries(groupDefs).forEach(([gid, g]) => {
     const memberNames = Object.keys(g.members || {})
       .map(uid => students[uid]?.name || uid).join('、');
@@ -1491,29 +1531,126 @@ function renderGroupContentArea() {
         </div>
       </div>
       <div id="group-wb-prev-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
-      <div id="group-screens-${gid}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;"></div>
     `;
     list.appendChild(card);
     listenGroupWbSnapshots(gid);
   });
 }
 
+// ④ 班モニタリンググリッド描画
+function renderGroupMonitorGrid() {
+  const grid = document.getElementById('group-monitor-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  Object.entries(groupDefs).forEach(([gid, g]) => {
+    const members = Object.keys(g.members || {});
+    const card = document.createElement('div');
+    card.id = 'gmon-card-' + gid;
+    card.style.cssText = 'background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:10px;cursor:pointer;transition:.15s;';
+    card.onmouseenter = () => card.style.borderColor = 'var(--accent)';
+    card.onmouseleave = () => card.style.borderColor = 'var(--border)';
+    card.onclick = () => openGroupZoom(gid);
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:700;font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;';
+    title.innerHTML = `<span>${g.name}</span><span style="font-size:11px;color:var(--muted);">${members.length}人</span>`;
+    card.appendChild(title);
+    // メンバーの映像サムネイルグリッド
+    const thumbGrid = document.createElement('div');
+    thumbGrid.id = 'gmon-thumbs-' + gid;
+    thumbGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:4px;';
+    members.forEach(uid => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'text-align:center;';
+      const existingVideo = document.getElementById('v-' + uid);
+      if (existingVideo && existingVideo.srcObject) {
+        const v = document.createElement('video');
+        v.srcObject = existingVideo.srcObject;
+        v.autoplay = true; v.muted = true; v.playsInline = true;
+        v.style.cssText = 'width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;background:#000;';
+        wrap.appendChild(v);
+      } else {
+        const ph = document.createElement('div');
+        ph.style.cssText = 'width:100%;aspect-ratio:16/9;border-radius:4px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:14px;';
+        ph.textContent = '⏳';
+        wrap.appendChild(ph);
+      }
+      const name = document.createElement('div');
+      name.style.cssText = 'font-size:10px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      name.textContent = students[uid]?.name || uid.slice(0,6);
+      wrap.appendChild(name);
+      thumbGrid.appendChild(wrap);
+    });
+    card.appendChild(thumbGrid);
+    grid.appendChild(card);
+  });
+}
+
+// ④ 班クリックで拡大表示
+window.openGroupZoom = function(gid) {
+  const g = groupDefs[gid];
+  if (!g) return;
+  const members = Object.keys(g.members || {});
+  document.getElementById('group-zoom-title').textContent = `${g.name}（${members.length}人）`;
+  const screens = document.getElementById('group-zoom-screens');
+  const wbArea = document.getElementById('group-zoom-wb');
+  screens.innerHTML = ''; wbArea.innerHTML = '';
+
+  // 映像
+  members.forEach(uid => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'text-align:center;';
+    const existingVideo = document.getElementById('v-' + uid);
+    if (existingVideo && existingVideo.srcObject) {
+      const v = document.createElement('video');
+      v.srcObject = existingVideo.srcObject;
+      v.autoplay = true; v.muted = true; v.playsInline = true;
+      v.style.cssText = 'width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#000;';
+      wrap.appendChild(v);
+    } else {
+      const ph = document.createElement('div');
+      ph.style.cssText = 'width:100%;aspect-ratio:16/9;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:24px;';
+      ph.textContent = '⏳';
+      wrap.appendChild(ph);
+    }
+    const name = document.createElement('div');
+    name.style.cssText = 'font-size:12px;margin-top:4px;font-weight:600;';
+    name.textContent = students[uid]?.name || uid.slice(0,6);
+    wrap.appendChild(name);
+    screens.appendChild(wrap);
+  });
+
+  // WBスナップショット
+  const { ref, get } = window.FB;
+  get(ref(db, `sessions/${sessionId}/groups/${gid}/wb/snapshots`)).then(snap => {
+    if (!snap.exists()) return;
+    Object.entries(snap.val()).forEach(([uid, imgData]) => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'text-align:center;';
+      wrap.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">${students[uid]?.name||uid}</div>
+        <img src="${imgData}" style="width:100%;border-radius:6px;border:1px solid var(--border);">`;
+      wbArea.appendChild(wrap);
+    });
+    if (wbArea.children.length > 0) {
+      const label = document.createElement('div');
+      label.style.cssText = 'width:100%;font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;';
+      label.textContent = '📋 WBスナップショット';
+      wbArea.insertBefore(label, wbArea.firstChild);
+    }
+  });
+
+  document.getElementById('group-zoom-modal').style.display = 'flex';
+};
+window.closeGroupZoom = function() {
+  document.getElementById('group-zoom-modal').style.display = 'none';
+};
+
 // 班のWBを開く
 window.openGroupWb = async function(gid) {
   const { ref, set } = window.FB;
-  const wbInst = document.createElement('input');
-  wbInst.type = 'text';
-  wbInst.placeholder = '指示を入力（任意）';
-  wbInst.style.cssText = 'width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-top:8px;';
-  // シンプルにpromptで指示取得
-  const inst = prompt(`${groupDefs[gid]?.name} へのホワイトボード指示（空白でもOK）：`, '');
-  if (inst === null) return;
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), {
-    active: true,
-    instruction: inst,
-    resetTs: Date.now()
+    active: true, instruction: '', resetTs: Date.now()
   });
-  toast(`✅ ${groupDefs[gid]?.name} のWBを開きました`);
+  toast(`✅ ${groupDefs[gid]?.name || gid} のWBを開きました`);
 };
 
 // 班のWBを閉じる
@@ -1531,9 +1668,22 @@ window.collectGroupImg = async function(gid) {
 
 // ⑨ 全班一括操作
 window.openAllGroupWb = async function() {
-  if (!groupDefs) return;
-  for (const gid of Object.keys(groupDefs)) await window.openGroupWb(gid);
-  toast('全班にホワイトボードを配布しました');
+  if (!groupDefs || Object.keys(groupDefs).length === 0) return;
+  // 全班に配布（promptなし）
+  const { ref, set } = window.FB;
+  for (const gid of Object.keys(groupDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), {
+      active: true, instruction: '', resetTs: Date.now()
+    });
+  }
+  toast('📋 全班にホワイトボードを配布しました');
+  // 1回だけメッセージを送れるモーダルを表示
+  _groupMsgGid = 'all';
+  document.getElementById('gmtarget').textContent = '送信先: 全班';
+  document.getElementById('gminput').value = '';
+  const modal = document.getElementById('group-msg-modal');
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('gminput').focus(), 100);
 };
 window.closeAllGroupWb = async function() {
   if (!groupDefs) return;
@@ -1602,15 +1752,38 @@ function updateGroupScreens() {
   });
 }
 
+let _groupMsgGid = null;
 window.sendGroupMsg = function(gid) {
+  _groupMsgGid = gid;
   const name = groupDefs[gid]?.name || gid;
-  const msg = prompt(`${name} へのメッセージを入力:`);
-  if (!msg) return;
+  document.getElementById('gmtarget').textContent = `送信先: ${name} の全員`;
+  document.getElementById('gminput').value = '';
+  const modal = document.getElementById('group-msg-modal');
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('gminput').focus(), 100);
+};
+window.closeGroupMsgModal = function() {
+  document.getElementById('group-msg-modal').style.display = 'none';
+};
+window.setGQM = function(text) {
+  document.getElementById('gminput').value = text;
+  document.getElementById('gminput').focus();
+};
+window.sendGroupMessage = function() {
+  const text = document.getElementById('gminput').value.trim();
+  if (!text) { toast('⚠️ メッセージを入力してください'); return; }
   const { ref, set } = window.FB;
-  set(ref(db, `sessions/${sessionId}/groups/${gid}/message`), {
-    text: msg, ts: Date.now()
-  });
-  toast(`${name} にメッセージを送りました`);
+  if (_groupMsgGid === 'all') {
+    // 全班に送信
+    for (const gid of Object.keys(groupDefs)) {
+      set(ref(db, `sessions/${sessionId}/groups/${gid}/message`), { text, ts: Date.now() });
+    }
+    toast('💬 全班にメッセージを送りました');
+  } else {
+    set(ref(db, `sessions/${sessionId}/groups/${_groupMsgGid}/message`), { text, ts: Date.now() });
+    toast(`💬 ${groupDefs[_groupMsgGid]?.name || _groupMsgGid} にメッセージを送りました`);
+  }
+  window.closeGroupMsgModal();
 };
 
 // 班への画像配布

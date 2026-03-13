@@ -2141,7 +2141,12 @@
 
           // 画像配布の監視（班のWB背景として表示）
           _imgUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/distImg`), imgSnap => {
-            if (!imgSnap.exists()) return;
+            if (!imgSnap.exists()) {
+              // distImg ノードが丸ごと削除された場合も背景をクリア
+              gWbBgImage = null;
+              if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
+              return;
+            }
             const imgData = imgSnap.val();
             if (imgData.active && imgData.dataUrl) {
               // WBがまだ開いていない場合のみ開く（開いていれば背景だけ更新）
@@ -2152,6 +2157,8 @@
               // 背景画像を設定（既に開いていても背景を更新）
               setTimeout(() => gWbSetBgImage(imgData.dataUrl), 150);
             } else if (!imgData.active) {
+              // 画像回収時は必ず背景をクリア（gWbFromImg の状態に関わらず）
+              gWbBgImage = null;
               if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
               else gWbSetBgImage(null);
             }

@@ -1720,21 +1720,24 @@
         }
         gWbDrawing = true;
         const r = canvas.getBoundingClientRect();
-        gWbLX = (e.clientX - r.left) * canvas.width / r.width;
-        gWbLY = (e.clientY - r.top) * canvas.height / r.height;
+        // 座標をパーセント正規化して保存（異なる画面サイズの生徒間で正確に共有するため）
+        gWbLX = (e.clientX - r.left) / r.width * 100;
+        gWbLY = (e.clientY - r.top) / r.height * 100;
         gWbCurrentStroke = {
           uid: studentId, tool: gWbTool,
           color: gWbTool === 'eraser' ? null : gWbColor,
           size: gWbTool === 'eraser' ? gWbSize * 5 : gWbSize,
-          points: [[gWbLX, gWbLY]], ts: Date.now()
+          points: [[gWbLX, gWbLY]], ts: Date.now(),
+          normalized: true  // パーセント座標フラグ
         };
       });
       canvas.addEventListener('pointermove', e => {
         if (!gWbDrawing) return;
         const r = canvas.getBoundingClientRect();
-        const x = (e.clientX - r.left) * canvas.width / r.width;
-        const y = (e.clientY - r.top) * canvas.height / r.height;
-        gWbDrawSegment(gWbLX, gWbLY, x, y, gWbTool, gWbColor, gWbSize);
+        const x = (e.clientX - r.left) / r.width * 100;
+        const y = (e.clientY - r.top) / r.height * 100;
+        // 描画はキャンバスのピクセル座標に変換して実行
+        gWbDrawSegment(gWbLX / 100 * canvas.width, gWbLY / 100 * canvas.height, x / 100 * canvas.width, y / 100 * canvas.height, gWbTool, gWbColor, gWbSize);
         gWbLX = x; gWbLY = y;
         if (gWbCurrentStroke) gWbCurrentStroke.points.push([x, y]);
       });
@@ -1777,7 +1780,14 @@
           const pts = stroke.points;
           if (!pts || pts.length < 2) return;
           for (let i = 1; i < pts.length; i++) {
-            gWbDrawSegment(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1], stroke.tool, stroke.color, stroke.size);
+            let x1 = pts[i-1][0], y1 = pts[i-1][1];
+            let x2 = pts[i][0],   y2 = pts[i][1];
+            // normalized=true の場合はパーセント→ピクセルに変換
+            if (stroke.normalized) {
+              x1 = x1 / 100 * canvas.width;  y1 = y1 / 100 * canvas.height;
+              x2 = x2 / 100 * canvas.width;  y2 = y2 / 100 * canvas.height;
+            }
+            gWbDrawSegment(x1, y1, x2, y2, stroke.tool, stroke.color, stroke.size);
           }
         });
       };
@@ -1968,8 +1978,10 @@
       gWbBgImage = dataUrl;
       if (!gWbGroupId) return;
       if (gWbFromImg) {
-        // 画像配布モード: WBのストロークは描画しない（混入防止）
-        gWbReplayStrokes(null);
+        // 画像配布モード: distImg/strokes を取得して背景＋ストロークを再描画
+        get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes`)).then(snap => {
+          gWbReplayStrokes(snap.exists() ? snap.val() : null);
+        });
       } else {
         get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`)).then(snap => {
           gWbReplayStrokes(snap.exists() ? snap.val() : null);
@@ -2118,10 +2130,13 @@
               // WBがまだ開いていない場合のみ開く（開いていれば背景だけ更新）
               if (!gWbGroupId || gWbGroupId !== _myGroupId) {
                 gWbFromImg = true;
+                // 背景画像を先にセットしてからWBを開く（リスナー初回発火時に背景が確実にある）
+                gWbBgImage = imgData.dataUrl;
                 gWbOpen(_myGroupId, { instruction: '画像に書き込みましょう', _skipReset: true });
+              } else {
+                // 既に開いている場合は背景更新＋ストローク再描画
+                gWbSetBgImage(imgData.dataUrl);
               }
-              // 背景画像を設定（既に開いていても背景を更新）
-              setTimeout(() => gWbSetBgImage(imgData.dataUrl), 150);
             } else if (!imgData.active) {
               gWbBgImage = null;
               if (gWbFromImg) { gWbClose(); gWbFromImg = false; }

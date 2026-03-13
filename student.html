@@ -1734,26 +1734,31 @@
     function gWbReplayStrokes(strokes) {
       if (!gWbCtx) return;
       const canvas = document.getElementById('group-wb-canvas');
+      const drawStrokes = () => {
+        if (!strokes) return;
+        Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
+          const pts = stroke.points;
+          if (!pts || pts.length < 2) return;
+          for (let i = 1; i < pts.length; i++) {
+            gWbDrawSegment(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1], stroke.tool, stroke.color, stroke.size);
+          }
+        });
+      };
+      // 白紙クリア
       gWbCtx.fillStyle = 'white';
       gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
-      // 背景画像があれば先に描画
       if (gWbBgImage) {
+        // 背景画像 → onload完了後にストロークを重ねる（非同期だが正しい順序を保証）
         const img = new Image();
         img.onload = () => {
           gWbCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          if (strokes) Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => gWbDrawSegment(stroke));
+          drawStrokes();
         };
+        img.onerror = () => drawStrokes(); // 画像失敗時もストロークは描く
         img.src = gWbBgImage;
-        return;
+      } else {
+        drawStrokes();
       }
-      if (!strokes) return;
-      Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
-        const pts = stroke.points;
-        if (!pts || pts.length < 2) return;
-        for (let i = 1; i < pts.length; i++) {
-          gWbDrawSegment(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1], stroke.tool, stroke.color, stroke.size);
-        }
-      });
     }
 
     let gWbTextListenerUnsub = null;
@@ -1762,14 +1767,9 @@
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
       gWbStrokeListenerUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${groupId}/wb/strokes`), snap => {
         if (!gWbCtx) return;
-        if (!snap.exists()) {
-          const canvas = document.getElementById('group-wb-canvas');
-          gWbCtx.fillStyle = 'white';
-          gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
-          if (gWbBgImage) gWbSetBgImage(gWbBgImage);
-          return;
-        }
-        gWbReplayStrokes(snap.val());
+        // strokes がない場合も gWbReplayStrokes(null) を呼ぶことで
+        // 背景画像だけを正しく描画する（白紙 or 背景のみ）
+        gWbReplayStrokes(snap.exists() ? snap.val() : null);
       });
     }
 
@@ -2017,19 +2017,12 @@
     let gWbBgImage = null;
     function gWbSetBgImage(dataUrl) {
       gWbBgImage = dataUrl;
-      const canvas = document.getElementById('group-wb-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (dataUrl) {
-        const img = new Image();
-        img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
-        img.src = dataUrl;
-      }
-      // 既存ストロークを再描画
-      gWbReplayStrokes();
+      if (!gWbGroupId) return;
+      // 背景を変数に記録した後、DBから最新ストロークを取得して
+      // gWbReplayStrokes で背景+ストロークを正しい順序で描く
+      get(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`)).then(snap => {
+        gWbReplayStrokes(snap.exists() ? snap.val() : null);
+      });
     }
 
     function gWbOpen(groupId, data) {
@@ -2093,10 +2086,7 @@
       await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/resetTs`), Date.now());
       // 背景は維持してキャンバスをクリア
       if (gWbCtx) {
-        const canvas = document.getElementById('group-wb-canvas');
-        gWbCtx.fillStyle = 'white';
-        gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
-        if (gWbBgImage) gWbSetBgImage(gWbBgImage);
+        gWbReplayStrokes(null); // ストロークなし・背景だけ再描画
       }
     };
     window.gWbSubmit = async function() {

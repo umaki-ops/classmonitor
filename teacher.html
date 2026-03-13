@@ -1671,7 +1671,15 @@ function listenGroupPreview(gid) {
       // display:block 反映後にサイズ確定してから描画
       requestAnimationFrame(() => {
         ensurePreviewCanvasSize(canvas);
-        replayStrokesOnCanvas(canvas, wbData.strokes || null);
+        // distImg背景があれば replayWithBg、なければ replayStrokesOnCanvas
+        const bgUrl = _groupDistImgCache?.[gid] || null;
+        if (bgUrl) {
+          replayWithBg(canvas, wbData.strokes || null, bgUrl, wbData.texts || null);
+        } else {
+          replayStrokesOnCanvas(canvas, wbData.strokes || null);
+          const ctx = canvas.getContext('2d');
+          drawTextsOnCanvas(ctx, canvas, wbData.texts || null);
+        }
       });
     } else {
       canvas.style.display = 'none';
@@ -1682,24 +1690,33 @@ function listenGroupPreview(gid) {
     }
   });
 
-  // distImg を監視
+  // distImg を監視（URLをキャッシュして wb 再描画時にも背景として使う）
+  if (!window._groupDistImgCache) window._groupDistImgCache = {};
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
     const badge       = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
     const img         = document.getElementById('gprev-img-' + gid);
+    const canvas      = document.getElementById('gprev-canvas-' + gid);
     if (!img) return;
 
     if (!snap.exists() || snap.val()?.active !== true) {
       imgActive = false;
+      window._groupDistImgCache[gid] = null;
       img.style.display = 'none';
       return;
     }
     imgActive = true;
     const distImg = snap.val();
+    window._groupDistImgCache[gid] = distImg.dataUrl || null;
     if (badge) { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
     if (placeholder) placeholder.style.display = 'none';
-    img.style.display = 'block';
-    img.src = distImg.dataUrl || '';
+    // WBも配布中なら canvas に背景+ストロークを描画、そうでなければ img タグで表示
+    if (canvas && canvas.style.display === 'block') {
+      // wb onValue が再発火するので何もしない（次の onValue で背景込み描画される）
+    } else {
+      img.style.display = 'block';
+      img.src = distImg.dataUrl || '';
+    }
   });
 
   groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
@@ -1730,6 +1747,52 @@ function replayStrokesOnCanvas(canvas, strokesObj) {
   Object.values(strokesObj)
     .sort((a, b) => a.ts - b.ts)
     .forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
+}
+
+// 背景画像付きで再描画（distImg配布時）
+function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const drawRest = () => {
+    if (strokesObj) {
+      Object.values(strokesObj).sort((a,b) => a.ts-b.ts)
+        .forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
+    }
+    if (textsObj) drawTextsOnCanvas(ctx, canvas, textsObj);
+  };
+  if (bgDataUrl) {
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); drawRest(); };
+    img.onerror = () => drawRest();
+    img.src = bgDataUrl;
+  } else {
+    drawRest();
+  }
+}
+
+// テキストデータをcanvasに描画
+function drawTextsOnCanvas(ctx, canvas, textsObj) {
+  if (!textsObj) return;
+  const pW = canvas.width;
+  const pH = canvas.height;
+  ctx.font = `bold 16px 'Noto Sans JP', sans-serif`;
+  Object.values(textsObj).forEach(td => {
+    if (!td.text) return;
+    const x = (td.x / 100) * pW;
+    const y = (td.y / 100) * pH;
+    ctx.save();
+    ctx.fillStyle = td.color || '#1e293b';
+    // 半透明背景
+    const lines = td.text.split('\n');
+    const lineH = 20;
+    const maxW = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(x+2, y+2, maxW+12, lines.length*lineH+8);
+    ctx.fillStyle = td.color || '#1e293b';
+    lines.forEach((line, i) => ctx.fillText(line, x+8, y+18+i*lineH));
+    ctx.restore();
+  });
 }
 
 // 後方互換ラッパー
@@ -1787,7 +1850,14 @@ window.openGroupZoom = function(gid) {
       const W = container.offsetWidth || 820;
       const H = Math.round(W * 9/16);
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-      replayStrokesOnCanvas(canvas, wb.strokes || null);
+      const bgUrl = window._groupDistImgCache?.[gid] || null;
+      if (bgUrl) {
+        replayWithBg(canvas, wb.strokes || null, bgUrl, wb.texts || null);
+      } else {
+        replayStrokesOnCanvas(canvas, wb.strokes || null);
+        const ctx = canvas.getContext('2d');
+        drawTextsOnCanvas(ctx, canvas, wb.texts || null);
+      }
     });
   });
   window._zoomUnsubs.push(unsubZoomWb);

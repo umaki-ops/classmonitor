@@ -1646,17 +1646,28 @@ function listenGroupPreview(gid) {
     groupListeners[gid + '_prev']();
     delete groupListeners[gid + '_prev'];
   }
-  const { ref, onValue, onChildAdded } = window.FB;
+  const { ref, onValue } = window.FB;
   let wbActive = false;
   let imgActive = false;
+
+  // wb/strokes 全体を onValue で監視 → 変化があるたびに全ストロークを再描画
+  // これにより「拡大しなくてもリアルタイム」かつ「初回表示時も既存ストロークを描画」を実現
+  const unsubStrokes = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
+    if (!wbActive) return;
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    if (!canvas) return;
+    // canvas サイズを確認・確定してから描画
+    ensurePreviewCanvasSize(canvas);
+    replayStrokesOnCanvas(canvas, snap.exists() ? snap.val() : null);
+  });
 
   // ① wb/active を監視（WBの開閉）
   const unsubWbActive = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), snap => {
     wbActive = snap.val() === true;
-    const badge   = document.getElementById('gstatus-' + gid);
+    const badge       = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
-    const canvas  = document.getElementById('gprev-canvas-' + gid);
-    const img     = document.getElementById('gprev-img-' + gid);
+    const canvas      = document.getElementById('gprev-canvas-' + gid);
+    const img         = document.getElementById('gprev-img-' + gid);
     if (!canvas) return;
 
     if (wbActive) {
@@ -1664,24 +1675,15 @@ function listenGroupPreview(gid) {
       if (placeholder) placeholder.style.display = 'none';
       if (img) img.style.display = 'none';
       canvas.style.display = 'block';
-      // canvas サイズを確定
-      initPreviewCanvas(canvas);
+      // DOM反映後にサイズ確定（display:none→block直後はoffsetWidthが0になるため）
+      requestAnimationFrame(() => ensurePreviewCanvasSize(canvas));
     } else {
       canvas.style.display = 'none';
       if (!imgActive) {
         if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
-        if (placeholder) { placeholder.style.display = 'flex'; }
+        if (placeholder) placeholder.style.display = 'flex';
       }
     }
-  });
-
-  // ② wb/strokes を onChildAdded で差分描画
-  const unsubStrokes = onChildAdded(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
-    if (!wbActive) return;
-    const canvas = document.getElementById('gprev-canvas-' + gid);
-    if (!canvas || canvas.style.display === 'none') return;
-    const stroke = snap.val();
-    drawStrokeOnPreview(canvas, stroke);
   });
 
   // ③ wb/resetTs を監視（WBリセット＝全消し）
@@ -1689,15 +1691,16 @@ function listenGroupPreview(gid) {
     if (!snap.exists()) return;
     const canvas = document.getElementById('gprev-canvas-' + gid);
     if (!canvas) return;
-    initPreviewCanvas(canvas); // 白紙に戻す
+    ensurePreviewCanvasSize(canvas);
+    replayStrokesOnCanvas(canvas, null); // 白紙に戻す
   });
 
   // ④ distImg を監視
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
-    const badge = document.getElementById('gstatus-' + gid);
+    const badge       = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
-    const canvas = document.getElementById('gprev-canvas-' + gid);
-    const img    = document.getElementById('gprev-img-' + gid);
+    const canvas      = document.getElementById('gprev-canvas-' + gid);
+    const img         = document.getElementById('gprev-img-' + gid);
     if (!img) return;
 
     if (!snap.exists() || snap.val()?.active !== true) {
@@ -1720,22 +1723,40 @@ function listenGroupPreview(gid) {
   groupListeners[gid + '_prev'] = () => { unsubWbActive(); unsubStrokes(); unsubReset(); unsubImg(); };
 }
 
-// canvas を白紙で初期化
-function initPreviewCanvas(canvas) {
-  const rect = canvas.parentElement?.getBoundingClientRect();
-  const W = Math.round(rect?.width || 280);
-  const H = Math.round(rect?.height || 158);
-  if (canvas.width !== W || canvas.height !== H) {
-    canvas.width = W;
-    canvas.height = H;
+// canvas の表示サイズに合わせて解像度を設定（まだサイズが0なら親要素から推測）
+function ensurePreviewCanvasSize(canvas) {
+  const parent = canvas.parentElement;
+  const W = Math.round(parent?.offsetWidth  || parent?.getBoundingClientRect().width  || 280);
+  const H = Math.round(parent?.offsetHeight || parent?.getBoundingClientRect().height || 158);
+  const targetW = W  || 280;
+  const targetH = H  || 158;
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width  = targetW;
+    canvas.height = targetH;
   }
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, W, H);
+  // 白紙で塗りつぶす（サイズ変更時のみ）
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
-// drawStrokeOnPreview → drawStrokeOnCanvas に統一（後方互換ラッパー）
+// 全ストロークを白紙から再描画
+function replayStrokesOnCanvas(canvas, strokesObj) {
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!strokesObj) return;
+  Object.values(strokesObj)
+    .sort((a, b) => a.ts - b.ts)
+    .forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
+}
+
+// drawStrokeOnPreview 後方互換ラッパー
 function drawStrokeOnPreview(canvas, stroke) { drawStrokeOnCanvas(canvas, stroke); }
+// initPreviewCanvas 後方互換ラッパー（旧呼び出し箇所用）
+function initPreviewCanvas(canvas) { ensurePreviewCanvasSize(canvas); replayStrokesOnCanvas(canvas, null); }
 
 // 班カードクリックで拡大モーダルを表示
 window.openGroupZoom = function(gid) {
@@ -1772,13 +1793,13 @@ window.openGroupZoom = function(gid) {
   // モーダル用リスナーをクリーンアップして再設定
   if (window._zoomUnsubs) window._zoomUnsubs.forEach(f => f());
   window._zoomUnsubs = [];
-  const fbRef = window.FB.ref; const fbGet = window.FB.get; const fbOnChildAdded = window.FB.onChildAdded;
+  const { ref: fbRef, onValue: fbOnValue } = window.FB;
 
-  // WBを取得して描画（既存ストロークを全描画 + 以降の差分をonChildAddedで追跡）
-  fbGet(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`)).then(wbSnap => {
+  // WB strokes を onValue でリアルタイム監視（全ストローク毎回再描画）
+  const unsubZoomStrokes = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`), wbSnap => {
     if (!wbSnap.exists() || !wbSnap.val()?.active) {
-      // distImg確認
-      return fbGet(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg`));
+      canvas.style.display = 'none';
+      return;
     }
     const wb = wbSnap.val();
     nopreview.style.display = 'none';
@@ -1788,30 +1809,24 @@ window.openGroupZoom = function(gid) {
       const container = document.getElementById('group-zoom-preview');
       const W = container.offsetWidth || 820;
       const H = Math.round(W * 9/16);
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-      // 既存ストロークを全て描画
-      const strokes = wb.strokes ? Object.values(wb.strokes).sort((a,b) => a.ts-b.ts) : [];
-      strokes.forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
-      // 以降の追加ストロークを差分で描画
-      const knownKeys = new Set(wb.strokes ? Object.keys(wb.strokes) : []);
-      const unsub = fbOnChildAdded(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
-        if (knownKeys.has(snap.key)) return; // 既描画スキップ
-        knownKeys.add(snap.key);
-        drawStrokeOnCanvas(canvas, snap.val());
-      });
-      window._zoomUnsubs.push(unsub);
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width = W; canvas.height = H;
+      }
+      replayStrokesOnCanvas(canvas, wb.strokes || null);
     });
-    return null;
-  }).then(imgSnap => {
-    if (!imgSnap?.exists?.()) return;
+  });
+  window._zoomUnsubs.push(unsubZoomStrokes);
+
+  // distImg をリアルタイム監視
+  const unsubZoomImg = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg`), imgSnap => {
+    if (!imgSnap.exists()) return;
     const di = imgSnap.val();
-    if (!di?.active || !di?.dataUrl) return;
+    if (!di?.active || !di?.dataUrl) { img.style.display = 'none'; return; }
     nopreview.style.display = 'none';
     img.style.display = 'block';
     img.src = di.dataUrl;
-  }).catch(() => {});
+  });
+  window._zoomUnsubs.push(unsubZoomImg);
 
   document.getElementById('group-zoom-modal').style.display = 'flex';
 };

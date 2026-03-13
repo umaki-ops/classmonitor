@@ -361,7 +361,7 @@
     <h3 style="margin:0 0 12px;font-size:15px;">👥 班の設定</h3>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
       <label style="font-size:13px;">班の数：</label>
-      <input type="text" id="group-count" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="例: 4"
+      <input type="text" id="group-count" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="4"
         oninput="this.value=this.value.replace(/[^0-9]/g,'')"
         style="width:60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;text-align:center;">
       <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="initGroups()">班を作成</button>
@@ -641,7 +641,7 @@ window.switchView=function(v){
   document.getElementById('img-controls').style.display=v==='img'?'block':'none';
   document.getElementById('group-panel').style.display=v==='group'?'block':'none';
   document.getElementById('grid').style.display=(v==='img'||v==='group')?'none':'';
-  if(v!=='group') Object.keys(students).forEach(sid=>updateCardContent(sid));
+  Object.keys(students).forEach(sid=>updateCardContent(sid));
   if(v==='wb') listenWbData();
   if(v==='img'){ distImgRefreshUI(); listenDistImgData(); renderDistImgGrid(); }
   if(v==='group') renderGroupPanel();
@@ -1207,6 +1207,7 @@ window.startSurvey=async function(){
   document.getElementById('rq').textContent=q;
   document.getElementById('name-toggle-area').style.display='';
   document.getElementById('ntbtn').textContent='👤 名前を表示';
+  startListenAnswers(); // 回答の監視を開始
   renderResultsUI();
   toast('📤 アンケートを送信しました');
 };
@@ -1227,10 +1228,9 @@ let _surveyAnswersUnsub = null;
 
 function startListenAnswers() {
   if (_surveyAnswersUnsub) { _surveyAnswersUnsub(); _surveyAnswersUnsub = null; }
-  const {ref, onChildAdded} = window.FB;
-  _surveyAnswersUnsub = onChildAdded(ref(db, `sessions/${sessionId}/surveyAnswers`), snap => {
-    if (!snap.exists()) return;
-    _surveyAnswers[snap.key] = snap.val();
+  const {ref, onValue} = window.FB;
+  _surveyAnswersUnsub = onValue(ref(db, `sessions/${sessionId}/surveyAnswers`), snap => {
+    _surveyAnswers = snap.exists() ? snap.val() : {};
     if (surveyActive) renderResultsUI();
   });
 }
@@ -1309,22 +1309,13 @@ function addCard(sid,data){
       <span class="jtime">${now}</span>
       <div class="card-actions" id="actions-${sid}"></div>
     </div>`;
-  const grid = document.getElementById('grid');
-  const existingCards = [...grid.querySelectorAll('.student-card')];
-  const insertBefore = existingCards.find(c => {
-    const sid2 = c.id.replace('card-', '');
-    const name2 = students[sid2]?.name || '';
-    return name.localeCompare(name2) < 0;
-  });
-  if (insertBefore) grid.insertBefore(card, insertBefore);
-  else grid.appendChild(card);
+  document.getElementById('grid').appendChild(card);
   updateCardContent(sid);
   if(teacherSharing)setupTWPc(sid);
   updateStats();
 }
 
 function updateCardContent(sid){
-  if(currentView==='group') return;
   const contentEl=document.getElementById('content-'+sid);
   const actionsEl=document.getElementById('actions-'+sid);
   if(!contentEl)return;
@@ -1413,9 +1404,8 @@ function renderGroupPanel() {
 
 // 班を作成（列UIを表示）
 window.initGroups = function() {
-  const raw = document.getElementById('group-count').value.trim();
-  const n = Number(raw);
-  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10の整数で入力してください'); return; }
+  const n = parseInt(document.getElementById('group-count').value) || 4;
+  if (n < 2 || n > 10) { toast('⚠️ 班の数は2〜10で指定してください'); return; }
   groupDefs = {};
   for (let i = 1; i <= n; i++) {
     const gid = 'g' + i;
@@ -1428,9 +1418,8 @@ window.initGroups = function() {
 
 // 自動振り分け
 window.autoAssignGroups = function() {
-  const raw = document.getElementById('group-count').value.trim();
-  const n = Number(raw);
-  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10の整数で入力してください'); return; }
+  const n = parseInt(document.getElementById('group-count').value) || 4;
+  if (n < 2 || n > 10) { toast('⚠️ 班の数は2〜10で指定してください'); return; }
   groupDefs = {};
   for (let i = 1; i <= n; i++) groupDefs['g'+i] = { name:`班${i}`, members:{} };
   const uids = Object.keys(students);
@@ -1652,134 +1641,101 @@ const STUDENT_WB_W = 1200; // 生徒canvas幅の代表値（実測に近い値�
 const STUDENT_WB_H = 700;  // 生徒canvas高の代表値
 
 function listenGroupPreview(gid) {
+  // 既存リスナーがあれば先に解除
   if (groupListeners[gid + '_prev']) {
     groupListeners[gid + '_prev']();
     delete groupListeners[gid + '_prev'];
   }
-  const { ref, onValue } = window.FB;
-  if (!window._groupDistImgCache) window._groupDistImgCache = {};
+  const { ref, onValue, onChildAdded } = window.FB;
+  let wbActive = false;
+  let imgActive = false;
 
-  let wbSnapshot  = null;
-  let distImgData = null;
-
-  function redraw() {
-    const badge       = document.getElementById('gstatus-' + gid);
+  // ① wb/active を監視（WBの開閉）
+  const unsubWbActive = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), snap => {
+    wbActive = snap.val() === true;
+    const badge   = document.getElementById('gstatus-' + gid);
     const placeholder = document.getElementById('gprev-placeholder-' + gid);
-    const canvas      = document.getElementById('gprev-canvas-' + gid);
-    const imgEl       = document.getElementById('gprev-img-' + gid);
+    const canvas  = document.getElementById('gprev-canvas-' + gid);
+    const img     = document.getElementById('gprev-img-' + gid);
     if (!canvas) return;
 
-    const wbActive = wbSnapshot?.active === true;
-    const hasImg   = distImgData !== null;
-
-    if (wbActive || hasImg) {
-      if (imgEl) imgEl.style.display = 'none';
+    if (wbActive) {
+      if (badge) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
       if (placeholder) placeholder.style.display = 'none';
+      if (img) img.style.display = 'none';
       canvas.style.display = 'block';
-      if (badge) {
-        if (wbActive && hasImg) {
-          badge.textContent = 'WB+画像配布中'; badge.style.background='#ede9fe'; badge.style.color='#6d28d9'; badge.style.borderColor='#c4b5fd';
-        } else if (wbActive) {
-          badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd';
-        } else {
-          badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac';
-        }
-      }
-      requestAnimationFrame(() => {
-        ensurePreviewCanvasSize(canvas);
-        const bgUrl = hasImg ? distImgData.dataUrl : null;
-        replayWithBg(canvas, wbSnapshot?.strokes || null, bgUrl, wbSnapshot?.texts || null);
-      });
+      // canvas サイズを確定
+      initPreviewCanvas(canvas);
     } else {
       canvas.style.display = 'none';
-      if (imgEl) imgEl.style.display = 'none';
-      if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
-      if (placeholder) placeholder.style.display = 'flex';
+      if (!imgActive) {
+        if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+        if (placeholder) { placeholder.style.display = 'flex'; }
+      }
     }
-  }
-
-  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), snap => {
-    wbSnapshot = snap.exists() ? snap.val() : null;
-    redraw();
   });
 
+  // ② wb/strokes を onChildAdded で差分描画
+  const unsubStrokes = onChildAdded(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
+    if (!wbActive) return;
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    if (!canvas || canvas.style.display === 'none') return;
+    const stroke = snap.val();
+    drawStrokeOnPreview(canvas, stroke);
+  });
+
+  // ③ wb/resetTs を監視（WBリセット＝全消し）
+  const unsubReset = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/resetTs`), snap => {
+    if (!snap.exists()) return;
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    if (!canvas) return;
+    initPreviewCanvas(canvas); // 白紙に戻す
+  });
+
+  // ④ distImg を監視
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
+    const badge = document.getElementById('gstatus-' + gid);
+    const placeholder = document.getElementById('gprev-placeholder-' + gid);
+    const canvas = document.getElementById('gprev-canvas-' + gid);
+    const img    = document.getElementById('gprev-img-' + gid);
+    if (!img) return;
+
     if (!snap.exists() || snap.val()?.active !== true) {
-      distImgData = null;
-      window._groupDistImgCache[gid] = null;
-    } else {
-      distImgData = snap.val();
-      window._groupDistImgCache[gid] = distImgData.dataUrl || null;
+      imgActive = false;
+      if (!wbActive) {
+        if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+        if (placeholder) placeholder.style.display = 'flex';
+        img.style.display = 'none';
+      }
+      return;
     }
-    redraw();
+    imgActive = true;
+    const distImg = snap.val();
+    if (badge) { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
+    if (placeholder) placeholder.style.display = 'none';
+    img.style.display = 'block';
+    img.src = distImg.dataUrl || '';
   });
 
-  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
+  groupListeners[gid + '_prev'] = () => { unsubWbActive(); unsubStrokes(); unsubReset(); unsubImg(); };
 }
 
-// canvas の表示サイズに合わせて解像度を設定
-function ensurePreviewCanvasSize(canvas) {
-  const parent = canvas.parentElement;
-  const W = Math.round(parent?.offsetWidth  || 280);
-  const H = Math.round(parent?.offsetHeight || 158);
-  const targetW = W || 280;
-  const targetH = H || 158;
-  if (canvas.width !== targetW || canvas.height !== targetH) {
-    canvas.width  = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, targetW, targetH);
+// canvas を白紙で初期化
+function initPreviewCanvas(canvas) {
+  const rect = canvas.parentElement?.getBoundingClientRect();
+  const W = Math.round(rect?.width || 280);
+  const H = Math.round(rect?.height || 158);
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
   }
-}
-
-// 全ストロークを白紙から再描画（背景・テキスト対応）
-function replayStrokesOnCanvas(canvas, strokesObj) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (!strokesObj) return;
-  Object.values(strokesObj).sort((a,b) => a.ts-b.ts).forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
+  ctx.fillRect(0, 0, W, H);
 }
 
-// 背景画像付きで再描画
-function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const drawRest = () => {
-    if (strokesObj) Object.values(strokesObj).sort((a,b) => a.ts-b.ts).forEach(s => drawStrokeOnCanvas(canvas, s));
-    if (textsObj) drawTextsOnCanvas(ctx, canvas, textsObj);
-  };
-  if (bgDataUrl) {
-    const img = new Image();
-    img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); drawRest(); };
-    img.onerror = () => drawRest();
-    img.src = bgDataUrl;
-  } else {
-    drawRest();
-  }
-}
-
-// テキストデータをcanvasに描画（透明背景）
-function drawTextsOnCanvas(ctx, canvas, textsObj) {
-  if (!textsObj) return;
-  const pW = canvas.width, pH = canvas.height;
-  ctx.font = `bold 16px 'Noto Sans JP', sans-serif`;
-  Object.values(textsObj).forEach(td => {
-    if (!td.text) return;
-    const x = (td.x / 100) * pW;
-    const y = (td.y / 100) * pH;
-    ctx.save();
-    ctx.fillStyle = td.color || '#1e293b';
-    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+18+i*20));
-    ctx.restore();
-  });
-}
-
-// 後方互換ラッパー
+// drawStrokeOnPreview → drawStrokeOnCanvas に統一（後方互換ラッパー）
 function drawStrokeOnPreview(canvas, stroke) { drawStrokeOnCanvas(canvas, stroke); }
-function initPreviewCanvas(canvas) { ensurePreviewCanvasSize(canvas); replayStrokesOnCanvas(canvas, null); }
 
 // 班カードクリックで拡大モーダルを表示
 window.openGroupZoom = function(gid) {
@@ -1787,11 +1743,14 @@ window.openGroupZoom = function(gid) {
   if (!g) return;
   const members = Object.keys(g.members || {});
 
+  // gid を hidden div に保存（ボタンから参照）
   const gidEl = document.getElementById('group-zoom-gid');
   gidEl.dataset.gid = gid;
 
+  // タイトル
   document.getElementById('group-zoom-title').textContent = `${g.name}（${members.length}名）`;
 
+  // メンバーチップ
   const membersEl = document.getElementById('group-zoom-members');
   membersEl.innerHTML = '';
   members.forEach(uid => {
@@ -1801,53 +1760,58 @@ window.openGroupZoom = function(gid) {
     membersEl.appendChild(chip);
   });
 
+  // プレビュー（WB / distImg を現在の状態で取得して描画）
+  const { ref, get } = window.FB;
   const canvas = document.getElementById('group-zoom-canvas');
-  const img    = document.getElementById('group-zoom-img');
+  const img = document.getElementById('group-zoom-img');
   const nopreview = document.getElementById('group-zoom-nopreview');
   canvas.style.display = 'none';
-  img.style.display    = 'none';
+  img.style.display = 'none';
   nopreview.style.display = 'block';
 
+  // モーダル用リスナーをクリーンアップして再設定
   if (window._zoomUnsubs) window._zoomUnsubs.forEach(f => f());
   window._zoomUnsubs = [];
-  const { ref: fbRef, onValue: fbOnValue } = window.FB;
+  const fbRef = window.FB.ref; const fbGet = window.FB.get; const fbOnChildAdded = window.FB.onChildAdded;
 
-  let _zoomWbSnap  = null;
-  let _zoomImgData = null;
-
-  function zoomRedraw() {
-    const wbActive = _zoomWbSnap?.active === true;
-    const hasImg   = _zoomImgData !== null;
-    if (!wbActive && !hasImg) {
-      canvas.style.display = 'none';
-      img.style.display    = 'none';
-      nopreview.style.display = 'block';
-      return;
+  // WBを取得して描画（既存ストロークを全描画 + 以降の差分をonChildAddedで追跡）
+  fbGet(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`)).then(wbSnap => {
+    if (!wbSnap.exists() || !wbSnap.val()?.active) {
+      // distImg確認
+      return fbGet(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg`));
     }
+    const wb = wbSnap.val();
     nopreview.style.display = 'none';
-    img.style.display       = 'none';
-    canvas.style.display    = 'block';
+    canvas.style.display = 'block';
+
     requestAnimationFrame(() => {
       const container = document.getElementById('group-zoom-preview');
       const W = container.offsetWidth || 820;
       const H = Math.round(W * 9/16);
-      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-      const bgUrl = hasImg ? _zoomImgData.dataUrl : null;
-      replayWithBg(canvas, _zoomWbSnap?.strokes || null, bgUrl, _zoomWbSnap?.texts || null);
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      // 既存ストロークを全て描画
+      const strokes = wb.strokes ? Object.values(wb.strokes).sort((a,b) => a.ts-b.ts) : [];
+      strokes.forEach(stroke => drawStrokeOnCanvas(canvas, stroke));
+      // 以降の追加ストロークを差分で描画
+      const knownKeys = new Set(wb.strokes ? Object.keys(wb.strokes) : []);
+      const unsub = fbOnChildAdded(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), snap => {
+        if (knownKeys.has(snap.key)) return; // 既描画スキップ
+        knownKeys.add(snap.key);
+        drawStrokeOnCanvas(canvas, snap.val());
+      });
+      window._zoomUnsubs.push(unsub);
     });
-  }
-
-  const unsubZoomWb = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb`), wbSnap => {
-    _zoomWbSnap = wbSnap.exists() ? wbSnap.val() : null;
-    zoomRedraw();
-  });
-  window._zoomUnsubs.push(unsubZoomWb);
-
-  const unsubZoomImg = fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg`), imgSnap => {
-    _zoomImgData = (imgSnap.exists() && imgSnap.val()?.active === true) ? imgSnap.val() : null;
-    zoomRedraw();
-  });
-  window._zoomUnsubs.push(unsubZoomImg);
+    return null;
+  }).then(imgSnap => {
+    if (!imgSnap?.exists?.()) return;
+    const di = imgSnap.val();
+    if (!di?.active || !di?.dataUrl) return;
+    nopreview.style.display = 'none';
+    img.style.display = 'block';
+    img.src = di.dataUrl;
+  }).catch(() => {});
 
   document.getElementById('group-zoom-modal').style.display = 'flex';
 };
@@ -1877,7 +1841,6 @@ function drawStrokeOnCanvas(canvas, stroke) {
 // 班のWBを開く
 window.openGroupWb = async function(gid) {
   const { ref, set } = window.FB;
-  // 新規配布時は strokes/texts/snapshots をクリアしてから active=true
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb`), {
     active: true, instruction: '', resetTs: Date.now()
   });
@@ -1888,7 +1851,6 @@ window.openGroupWb = async function(gid) {
 window.closeGroupWb = async function(gid) {
   const { ref, set } = window.FB;
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), false);
-  await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`), null);
   toast(`${groupDefs[gid]?.name} のWBを回収しました`);
 };
 
@@ -2054,9 +2016,6 @@ window.sendGroupImg = async function(gid) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const { ref, set } = window.FB;
-      // 画像配布前にWBのストローク・テキストをクリア（前のWB内容が混入しないよう）
-      await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), null);
-      await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`),   null);
       await set(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), {
         dataUrl: e.target.result,
         active: true,

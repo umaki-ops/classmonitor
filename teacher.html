@@ -832,14 +832,17 @@ window.sendWbCommand=async function(cmd){
   }
   else if(cmd==='collect'){
     await set(ref(db,`sessions/${sessionId}/wb/active`),false);
+    await window.FB.remove(ref(db,`sessions/${sessionId}/wb/snapshots`));
     wbActive=false;
+    resetAllWbPreviews();
     toast('📥 ホワイトボードを回収しました');
   }
   else if(cmd==='clear'){
     if(!confirm('全員のホワイトボードを消去しますか？'))return;
     await set(ref(db,`sessions/${sessionId}/wb/resetTs`),Date.now());
     await window.FB.remove(ref(db,`sessions/${sessionId}/wb/submissions`));
-    wbSubmissions={};updateWbStats();toast('🗑️ 全員のホワイトボードを消去しました');
+    await window.FB.remove(ref(db,`sessions/${sessionId}/wb/snapshots`));
+    wbSubmissions={};updateWbStats();resetAllWbPreviews();toast('🗑️ 全員のホワイトボードを消去しました');
   }
 };
 
@@ -877,6 +880,19 @@ function updateCardWbPreview(sid,imgData){
   const img=document.getElementById('wb-img-'+sid);
   const ph=document.getElementById('wb-ph-'+sid);
   if(img&&imgData){img.src=imgData;img.style.display='block';if(ph)ph.style.display='none';}
+}
+
+function resetAllWbPreviews(){
+  Object.keys(students).forEach(sid=>{
+    const img=document.getElementById("wb-img-"+sid);
+    const ph=document.getElementById("wb-ph-"+sid);
+    if(img){img.src="";img.style.display="none";}
+    if(ph)ph.style.display="";
+    const dot=document.getElementById("wb-dot-"+sid);
+    if(dot)dot.style.display="none";
+    const sub=document.getElementById("wb-sub-"+sid);
+    if(sub)sub.style.display="none";
+  });
 }
 
 function updateWbStats(){

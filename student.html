@@ -819,14 +819,7 @@
         if (!studentId) return;
 
         if (document.hidden) {
-          // ── 別タブへ移動 ──────────────────────────────
-          // Chromeは monitor キャプチャでタブが非表示になると
-          // 黒フレームを自動挿入する。それより先に enabled=false で
-          // トラックを止め、teacher側に意図的な無映像と認識させる。
-          if (localStream) {
-            localStream.getVideoTracks().forEach(t => { t.enabled = false; });
-          }
-
+          // 別タブ or 最小化 → 離脱開始
           if (!_tabIsAway) {
             _tabIsAway = true;
             _tabAwayCount++;
@@ -839,13 +832,7 @@
             });
           }
         } else {
-          // ── このタブに戻ってきた ──────────────────────
-          // トラックを再有効化してフレーム送出を再開する。
-          // enabled を戻すだけで WebRTC は自動的にフレームを再送し始める。
-          if (localStream) {
-            localStream.getVideoTracks().forEach(t => { t.enabled = true; });
-          }
-
+          // このタブに戻ってきた
           if (_tabIsAway) {
             _tabIsAway = false;
             const endTs = Date.now();

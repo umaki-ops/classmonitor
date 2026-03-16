@@ -82,6 +82,10 @@
   /* Screen area */
   .screen-area{position:relative;background:#000;aspect-ratio:16/9;overflow:hidden;cursor:pointer;}
   .screen-area video{width:100%;height:100%;object-fit:contain;display:none;}
+  /* タブ離脱中の最終フレーム保持canvas */
+  .screen-area .frozen-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;opacity:0.55;}
+  .screen-area .away-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);}
+  .screen-area .away-overlay span{color:#ef4444;font-size:11px;font-weight:700;background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:6px;}
   .screen-ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--surface2);}
   .screen-ph-icon{font-size:20px;opacity:0.3;}
   .screen-ph-text{font-size:10px;color:var(--muted);}
@@ -739,22 +743,35 @@ window.endSession = async function() {
         if (count < 1) return; // 離脱なしはスキップ
 
         // tabAwayLog から合計離脱時間・全離脱ログを計算
-        // Object.entries で取り出し、Firebaseの配列変換（数値キー問題）を回避
         const rawLog = d.tabAwayLog || {};
         const logs = Object.entries(rawLog)
-          .filter(([k, v]) => v && v.startTs)   // startTs がある有効なエントリのみ
+          .filter(([k, v]) => v && v.startTs)
           .map(([k, v]) => v)
           .sort((a, b) => a.startTs - b.startTs);
         const now = Date.now();
+        // 現在離脱中かどうか
+        const isCurrentlyAway = tabAway && tabAway.away;
+        // 最後の戻り時刻（away===false のとき tabAway.ts が戻り時刻）
+        const lastReturnTs = (!isCurrentlyAway && tabAway && tabAway.ts) ? tabAway.ts : null;
         let totalMs = 0;
         logs.forEach(log => {
-          // endTs がある（戻ってきた）→ その差分、ない（まだ離脱中）→ now まで
-          const end = (log.endTs && log.endTs > log.startTs) ? log.endTs : now;
+          let end;
+          if (log.endTs && log.endTs > log.startTs) {
+            // 正常に記録された終了時刻
+            end = log.endTs;
+          } else if (isCurrentlyAway) {
+            // まだ離脱中 → セッション終了時刻まで
+            end = now;
+          } else if (lastReturnTs && lastReturnTs > log.startTs) {
+            // endTs未記録だが戻ってきている → tabAway.tsを使用
+            end = lastReturnTs;
+          } else {
+            // それ以外は now で補完
+            end = now;
+          }
           totalMs += Math.max(0, end - log.startTs);
         });
-
-        // フォールバック: logsが空なのに count >= 1 の場合
-        // （Firebaseへの書き込みタイミングで tabAwayLog が欠落した場合）
+        // フォールバック: logsが空なのに count >= 1
         if (logs.length === 0 && tabAway && tabAway.away && tabAway.ts) {
           totalMs = Math.max(0, now - tabAway.ts);
         }
@@ -1206,6 +1223,24 @@ function listenStudents(){
 
 // ===== WebRTC Monitoring =====
 let reconnectTimers={};
+// 各生徒のフレームキャプチャループ管理
+const frozenFrameTimers={};
+
+function startFrozenFrameCapture(sid, videoEl){
+  // 既存ループ停止
+  if(frozenFrameTimers[sid]) clearInterval(frozenFrameTimers[sid]);
+  frozenFrameTimers[sid]=setInterval(()=>{
+    const v=document.getElementById('v-'+sid);
+    const cv=document.getElementById('frozen-'+sid);
+    if(!v||!cv||v.readyState<2||v.videoWidth===0)return;
+    // videoが表示中（mute前）のフレームを常時更新して保持
+    if(v.style.display!=='none'){
+      const ctx=cv.getContext('2d');
+      cv.width=v.videoWidth;cv.height=v.videoHeight;
+      try{ctx.drawImage(v,0,0);}catch(e){}
+    }
+  },500); // 0.5秒ごとに最新フレームを保存
+}
 
 async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
@@ -1221,15 +1256,32 @@ async function setupPC(sid){
       else{const ms=new MediaStream();ms.addTrack(ev.track);v.srcObject=ms;}
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
+      // 定期的に最後フレームをcanvasに焼き付ける（mute時のフリーズフレーム用）
+      startFrozenFrameCapture(sid, v);
     }
-    // トラックが unmute（enabled=true に戻った）タイミングで映像を確実に再生
     ev.track.onunmute=()=>{
+      // 映像復帰 → video表示・canvas/overlay非表示
       const v=document.getElementById('v-'+sid);
-      if(v&&v.srcObject){v.play().catch(()=>{});}
+      const cv=document.getElementById('frozen-'+sid);
+      const ov=document.getElementById('away-ov-'+sid);
+      if(v){v.style.display='block';v.play().catch(()=>{});}
+      if(cv)cv.style.display='none';
+      if(ov)ov.style.display='none';
       setBadge(sid,'live');updateStats();
     };
     ev.track.onmute=()=>{
-      // 生徒が意図的に離脱中（enabled=false）→ 特に何もしない（黒画面は正常）
+      // 映像停止 → 最後フレームを表示してvideo非表示
+      const v=document.getElementById('v-'+sid);
+      const cv=document.getElementById('frozen-'+sid);
+      const ov=document.getElementById('away-ov-'+sid);
+      if(cv&&v){
+        const ctx=cv.getContext('2d');
+        cv.width=v.videoWidth||320;cv.height=v.videoHeight||180;
+        try{ctx.drawImage(v,0,0,cv.width,cv.height);}catch(e){}
+        cv.style.display='block';
+      }
+      if(ov)ov.style.display='flex';
+      if(v)v.style.display='none';
     };
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
@@ -1592,6 +1644,8 @@ function updateCardContent(sid){
     contentEl.innerHTML=`
       <div class="screen-area" onclick="openFullscreen('${sid}')">
         <video id="v-${sid}" autoplay playsinline></video>
+        <canvas id="frozen-${sid}" class="frozen-frame"></canvas>
+        <div class="away-overlay" id="away-ov-${sid}"><span>⚠ 離脱中</span></div>
         <div class="screen-ph" id="ph-${sid}"><div class="screen-ph-icon">⏳</div><div class="screen-ph-text">画面共有を待っています</div></div>
       </div>`;
     actionsEl.innerHTML=`
@@ -1637,6 +1691,7 @@ function updateCardContent(sid){
 function removeCard(sid){
   document.getElementById('card-'+sid)?.remove();
   clearTimeout(reconnectTimers[sid]);delete reconnectTimers[sid];
+  if(frozenFrameTimers[sid]){clearInterval(frozenFrameTimers[sid]);delete frozenFrameTimers[sid];}
   peerConnections[sid]?.close();delete peerConnections[sid];
   twPcs[sid]?.close();delete twPcs[sid];
   studentBcastPcs[sid]?.close();delete studentBcastPcs[sid];
@@ -1646,7 +1701,7 @@ function removeCard(sid){
   if(Object.keys(students).length===0)document.getElementById('empty-state').style.display='';
 }
 
-function updateShareType(sid,t){const el=document.getElementById('st-'+sid);if(!el)return;el.style.display='';const ok=t==='画面全体';el.textContent=t;el.className='share-type '+(ok?'st-ok':'st-warn');}
+function updateShareType(sid,t){/* 画面全体表示は不要のため非表示 */}
 function setBadge(sid,status){const b=document.getElementById('badge-'+sid);if(!b)return;const map={live:['badge-live','LIVE'],waiting:['badge-waiting','待機中'],focused:['badge-focused','🎯 集中中']};b.className='badge '+(map[status]?.[0]||'badge-waiting');b.textContent=map[status]?.[1]||'待機中';}
 function updateStats(){const total=Object.keys(students).length;let s=0,f=0;document.querySelectorAll('.badge-live').forEach(()=>s++);document.querySelectorAll('.badge-focused').forEach(()=>f++);document.getElementById('stat-c').textContent=total;document.getElementById('stat-s').textContent=s;document.getElementById('stat-f').textContent=f;}
 

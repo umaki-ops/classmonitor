@@ -811,6 +811,55 @@
       });
       listenMyGroup();
 
+      // ===== タブ離脱カウント =====
+      let _tabLeaveCount = 0;
+      let _tabHidden = false;
+      let _tabLeaveStartTime = null; // 離脱開始時刻
+      window._tabMonitorReady = false;
+      setTimeout(() => { window._tabMonitorReady = true; }, 2000);
+
+      function onTabLeave() {
+        if (!window._tabMonitorReady || _tabHidden) return;
+        _tabHidden = true;
+        _tabLeaveCount++;
+        _tabLeaveStartTime = Date.now();
+        const logKey = `log_${_tabLeaveCount}`;
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabLeaveCount`), _tabLeaveCount);
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), true);
+        // 離脱ログ：開始時刻を記録
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/leaveLogs/${logKey}`), {
+          leaveAt: _tabLeaveStartTime,
+          returnAt: null,
+          duration: null
+        });
+      }
+
+      function onTabReturn() {
+        if (!window._tabMonitorReady || !_tabHidden) return;
+        _tabHidden = false;
+        const returnAt = Date.now();
+        const duration = _tabLeaveStartTime ? Math.round((returnAt - _tabLeaveStartTime) / 1000) : null;
+        const logKey = `log_${_tabLeaveCount}`;
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), false);
+        // 離脱ログ：復帰時刻と離脱時間を更新
+        if (_tabLeaveStartTime) {
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/leaveLogs/${logKey}`), {
+            leaveAt: _tabLeaveStartTime,
+            returnAt,
+            duration
+          });
+        }
+        _tabLeaveStartTime = null;
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) onTabLeave();
+        else onTabReturn();
+      });
+
+      window.addEventListener('blur', () => { onTabLeave(); });
+      window.addEventListener('focus', () => { onTabReturn(); });
+
       // main()内のローカル関数をHTMLのonclickから呼べるよう window に公開
       window.hideTeacher  = window.hideTeacher || hideTeacher;
       window.showFocus    = () => showFocus();
@@ -961,6 +1010,8 @@
     // ===== 画面共有 =====
     window.startShare = async function() {
       window._shareActive = true;
+      // 画面共有ダイアログ表示中のblurをカウントしないよう一時停止
+      window._tabMonitorReady = false;
       try {
         localStream = await navigator.mediaDevices.getDisplayMedia({
           video: {

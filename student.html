@@ -819,38 +819,42 @@
         if (!studentId) return;
 
         if (document.hidden) {
-          // 別タブ or 最小化 → 離脱開始
+          // ── 別タブへ移動 ──────────────────────────────
+          // Chromeは monitor キャプチャでタブが非表示になると
+          // 黒フレームを自動挿入する。それより先に enabled=false で
+          // トラックを止め、teacher側に意図的な無映像と認識させる。
+          if (localStream) {
+            localStream.getVideoTracks().forEach(t => { t.enabled = false; });
+          }
+
           if (!_tabIsAway) {
             _tabIsAway = true;
             _tabAwayCount++;
             _tabAwayStartTs = Date.now();
-            // 現在状態
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
-              away: true,
-              count: _tabAwayCount,
-              ts: _tabAwayStartTs
+              away: true, count: _tabAwayCount, ts: _tabAwayStartTs
             });
-            // 離脱ログ（1件ずつ蓄積）キーは文字列にしてFirebaseの配列変換を防ぐ
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
               startTs: _tabAwayStartTs
             });
           }
         } else {
-          // このタブに戻ってきた
+          // ── このタブに戻ってきた ──────────────────────
+          // トラックを再有効化してフレーム送出を再開する。
+          // enabled を戻すだけで WebRTC は自動的にフレームを再送し始める。
+          if (localStream) {
+            localStream.getVideoTracks().forEach(t => { t.enabled = true; });
+          }
+
           if (_tabIsAway) {
             _tabIsAway = false;
             const endTs = Date.now();
-            // 現在状態を更新
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
-              away: false,
-              count: _tabAwayCount,
-              ts: endTs
+              away: false, count: _tabAwayCount, ts: endTs
             });
-            // 対応するログに終了時刻を追記
             if (_tabAwayStartTs) {
               set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
-                startTs: _tabAwayStartTs,
-                endTs: endTs
+                startTs: _tabAwayStartTs, endTs: endTs
               });
             }
             _tabAwayStartTs = null;
@@ -1009,36 +1013,29 @@
     window.startShare = async function() {
       window._shareActive = true;
       try {
-        // preferCurrentTab: true でこのタブ自体をキャプチャ。
-        // monitor（画面全体）だと生徒が別タブに移動した瞬間にChromeが
-        // フレーム送出を止めて黒画面になるため、タブキャプチャに変更。
-        // タブキャプチャは別タブに移動しても「このタブのコンテンツ」を
-        // 継続的にキャプチャし続けるので黒画面にならない。
         localStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            displaySurface: 'browser',
-            width:  { ideal: 1920, max: 2560 },
-            height: { ideal: 1080, max: 1440 },
+            displaySurface: 'monitor',
+            width:  { ideal: 1920, max: 3840 },
+            height: { ideal: 1080, max: 2160 },
             frameRate: { ideal: 30, max: 60 },
           },
           audio: false,
-          preferCurrentTab: true,
-          selfBrowserSurface: 'include',
+          preferCurrentTab: false,
+          selfBrowserSurface: 'exclude',
           surfaceSwitching: 'exclude',
           systemAudio: 'exclude',
         });
+        // 画面全体以外は警告（拒否はしない）
+        const track = localStream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        const shareType = settings.displaySurface === 'monitor' ? '画面全体' : (settings.displaySurface || '画面');
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), shareType);
       } catch(e) {
         window._shareActive = false;
         showState('connected');
         return;
       }
-
-      // 共有開始後にShareTypeをFirebaseへ通知
-      const track = localStream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      const shareType = settings.displaySurface === 'browser' ? 'タブ' : settings.displaySurface || '画面';
-      set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), shareType);
-
       const v = document.getElementById('preview-video');
       if (v) v.srcObject = localStream;
       showState('live');

@@ -1222,6 +1222,15 @@ async function setupPC(sid){
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
     }
+    // トラックが unmute（enabled=true に戻った）タイミングで映像を確実に再生
+    ev.track.onunmute=()=>{
+      const v=document.getElementById('v-'+sid);
+      if(v&&v.srcObject){v.play().catch(()=>{});}
+      setBadge(sid,'live');updateStats();
+    };
+    ev.track.onmute=()=>{
+      // 生徒が意図的に離脱中（enabled=false）→ 特に何もしない（黒画面は正常）
+    };
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
 
@@ -1243,21 +1252,22 @@ async function setupPC(sid){
   pc.oniceconnectionstatechange=()=>{
     const iceState=pc.iceConnectionState;
     if(iceState==='connected'||iceState==='completed'){
+      clearTimeout(reconnectTimers[sid]);
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // disconnectedは5秒様子見してからICE再起動
+    // disconnected: tabAway復帰トリガーがあるため長めに待つ（30秒）
+    // 通常の切断（ネットワーク問題等）はここで拾う
     if(iceState==='disconnected'){
       reconnectTimers[sid]=setTimeout(async()=>{
         if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
         if(pc.iceConnectionState!=='disconnected')return;
-        console.log('[ICE] disconnected > 5s, restarting:',sid);
         try{
           const offer=await pc.createOffer({iceRestart:true,offerToReceiveVideo:true,offerToReceiveAudio:false});
           await pc.setLocalDescription(offer);
           sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
         }catch(e){if(students[sid])setupPC(sid);}
-      },5000);
+      },30000);
     } else {
       clearTimeout(reconnectTimers[sid]);
     }

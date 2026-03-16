@@ -1024,13 +1024,18 @@
           preferCurrentTab: false,
           selfBrowserSurface: 'exclude',
           surfaceSwitching: 'exclude',
-          systemAudio: 'exclude',
         });
-        // 画面全体以外は警告（拒否はしない）
+        // 画面全体以外は拒否
         const track = localStream.getVideoTracks()[0];
         const settings = track.getSettings();
-        const shareType = settings.displaySurface === 'monitor' ? '画面全体' : (settings.displaySurface || '画面');
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), shareType);
+        if (settings.displaySurface && settings.displaySurface !== 'monitor') {
+          localStream.getTracks().forEach(t => t.stop());
+          window._shareActive = false;
+          showState('connected');
+          alert('「画面全体」を選択してください。ウィンドウやタブの共有は使用できません。');
+          return;
+        }
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), '画面全体');
       } catch(e) {
         window._shareActive = false;
         showState('connected');

@@ -208,6 +208,36 @@
   .qmb:hover{border-color:var(--accent);color:var(--accent);}
   .toast{position:fixed;bottom:16px;right:16px;z-index:3000;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:9px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,0.4);transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);}
   .toast.show{transform:translateY(0);opacity:1;}
+
+  /* ===== タブ離脱 ===== */
+  @keyframes tab-away-blink {
+    0%,100%{box-shadow:0 0 0 3px #ef4444,0 0 14px 4px rgba(239,68,68,0.6);border-color:#ef4444;}
+    50%{box-shadow:0 0 0 3px rgba(239,68,68,0.2),0 0 4px 1px rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.3);}
+  }
+  .student-card.tab-away {
+    border-color: #ef4444 !important;
+    animation: tab-away-blink 1s ease-in-out infinite;
+  }
+  .badge-tab-away {
+    background: rgba(239,68,68,0.2) !important;
+    color: #ef4444 !important;
+    border: 1px solid rgba(239,68,68,0.5) !important;
+  }
+  @keyframes badge-blink {
+    0%,100%{opacity:1;}50%{opacity:0.35;}
+  }
+  .badge-tab-away { animation: badge-blink 1s ease-in-out infinite; }
+  .tab-away-count {
+    display:inline-flex;align-items:center;
+    font-size:9px;font-weight:700;
+    background:rgba(239,68,68,0.15);
+    color:#ef4444;
+    border:1px solid rgba(239,68,68,0.4);
+    border-radius:10px;
+    padding:1px 6px;
+    flex-shrink:0;
+    margin-left:3px;
+  }
 </style>
 </head>
 <body>
@@ -931,6 +961,8 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
     if(d.shareType)updateShareType(sid,d.shareType);
+    // tabAway の変化を処理
+    if(d.hasOwnProperty('tabAway'))updateTabAway(sid,d.tabAway);
     // status が含まれていない変化（shareType だけ等）は無視
     if(!d.hasOwnProperty('status'))return;
     if(d.status==='waiting'){
@@ -1325,6 +1357,8 @@ function addCard(sid,data){
   updateCardContent(sid);
   if(teacherSharing)setupTWPc(sid);
   updateStats();
+  // 既存のtabAwayデータを即時反映
+  if(data.tabAway)updateTabAway(sid,data.tabAway);
 }
 
 function updateCardContent(sid){
@@ -1393,6 +1427,45 @@ function removeCard(sid){
 function updateShareType(sid,t){const el=document.getElementById('st-'+sid);if(!el)return;el.style.display='';const ok=t==='画面全体';el.textContent=t;el.className='share-type '+(ok?'st-ok':'st-warn');}
 function setBadge(sid,status){const b=document.getElementById('badge-'+sid);if(!b)return;const map={live:['badge-live','LIVE'],waiting:['badge-waiting','待機中'],focused:['badge-focused','🎯 集中中']};b.className='badge '+(map[status]?.[0]||'badge-waiting');b.textContent=map[status]?.[1]||'待機中';}
 function updateStats(){const total=Object.keys(students).length;let s=0,f=0;document.querySelectorAll('.badge-live').forEach(()=>s++);document.querySelectorAll('.badge-focused').forEach(()=>f++);document.getElementById('stat-c').textContent=total;document.getElementById('stat-s').textContent=s;document.getElementById('stat-f').textContent=f;}
+
+function updateTabAway(sid, tabAway) {
+  const card = document.getElementById('card-' + sid);
+  const badge = document.getElementById('badge-' + sid);
+  const countEl = document.getElementById('tab-away-count-' + sid);
+  if (!card) return;
+  if (tabAway && tabAway.away) {
+    // 離脱中
+    card.classList.add('tab-away');
+    if (badge) {
+      badge.classList.add('badge-tab-away');
+      badge.textContent = '⚠ 離脱中';
+    }
+    // カウントバッジを更新（なければ作成）
+    const headerEl = card.querySelector('.card-header');
+    let cntEl = document.getElementById('tab-away-count-' + sid);
+    if (!cntEl && headerEl) {
+      cntEl = document.createElement('span');
+      cntEl.id = 'tab-away-count-' + sid;
+      cntEl.className = 'tab-away-count';
+      headerEl.appendChild(cntEl);
+    }
+    if (cntEl) cntEl.textContent = tabAway.count + '回目';
+  } else {
+    // 戻ってきた
+    card.classList.remove('tab-away');
+    if (badge) badge.classList.remove('badge-tab-away');
+    // カウントは消さずに保持（何回離脱したか残す）
+    const cntEl = document.getElementById('tab-away-count-' + sid);
+    if (cntEl) cntEl.textContent = (tabAway?.count || 0) + '回';
+    // ステータスを元に戻す
+    const stu = students[sid];
+    if (stu) {
+      if (stu.focused) setBadge(sid, 'focused');
+      else if (stu.status === 'sharing') setBadge(sid, 'live');
+      else setBadge(sid, 'waiting');
+    }
+  }
+}
 
 window.openFullscreen=function(sid){
   const v=document.getElementById('v-'+sid);if(!v||!v.srcObject){toast('まだ画面共有されていません');return;}

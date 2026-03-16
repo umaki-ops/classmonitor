@@ -811,6 +811,35 @@
       });
       listenMyGroup();
 
+      // ===== タブ離脱検知 =====
+      let _tabAwayCount = 0;
+      let _tabIsAway = false;
+      document.addEventListener('visibilitychange', () => {
+        if (!studentId) return;
+        if (document.hidden) {
+          // 別タブ or 最小化 → 離脱
+          if (!_tabIsAway) {
+            _tabIsAway = true;
+            _tabAwayCount++;
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+              away: true,
+              count: _tabAwayCount,
+              ts: Date.now()
+            });
+          }
+        } else {
+          // このタブに戻ってきた
+          if (_tabIsAway) {
+            _tabIsAway = false;
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+              away: false,
+              count: _tabAwayCount,
+              ts: Date.now()
+            });
+          }
+        }
+      });
+
       // main()内のローカル関数をHTMLのonclickから呼べるよう window に公開
       window.hideTeacher  = window.hideTeacher || hideTeacher;
       window.showFocus    = () => showFocus();

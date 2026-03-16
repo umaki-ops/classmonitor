@@ -103,55 +103,6 @@
   .icon-btn{height:21px;padding:0 6px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:2px;font-size:10px;font-family:'Noto Sans JP',sans-serif;font-weight:600;transition:all 0.2s;white-space:nowrap;}
   .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
   .icon-btn.af{border-color:var(--purple);color:#a78bfa;background:rgba(124,58,237,0.1);}
-
-  /* タブ離脱中の点滅 */
-  @keyframes cardBlink {
-    0%, 100% { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.4); }
-    50%       { border-color: transparent; box-shadow: none; }
-  }
-  .student-card.tab-away {
-    border-color: #ef4444 !important;
-    animation: cardBlink 1s infinite;
-  }
-  /* タブ離脱カウント */
-  .leave-badge {
-    display:inline-flex; align-items:center; gap:3px;
-    background:rgba(239,68,68,0.15); color:#ef4444;
-    border:1px solid rgba(239,68,68,0.3);
-    border-radius:20px; padding:1px 6px;
-    font-size:9px; font-weight:700;
-    font-family:'JetBrains Mono',monospace;
-  }
-  .leave-badge.zero {
-    background:rgba(16,185,129,0.1); color:#10b981;
-    border-color:rgba(16,185,129,0.2);
-  }
-  .leave-badge.warn {
-    background:rgba(245,158,11,0.15); color:#f59e0b;
-    border-color:rgba(245,158,11,0.3);
-  }
-  .leave-badge.danger {
-    background:rgba(239,68,68,0.2); color:#ef4444;
-    border-color:rgba(239,68,68,0.4);
-  }
-
-  /* セッションレポートモーダル */
-  #report-modal{display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;padding:20px;}
-  #report-modal.show{display:flex;}
-  .report-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto;}
-  .report-box h3{font-size:18px;font-weight:700;margin-bottom:4px;}
-  .report-subtitle{font-size:12px;color:var(--muted);margin-bottom:20px;}
-  .report-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;}
-  .report-table th{padding:8px 10px;background:var(--surface2);color:var(--muted);font-weight:600;text-align:left;border-bottom:1px solid var(--border);}
-  .report-table td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
-  .report-table tr:last-child td{border-bottom:none;}
-  .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:700;flex-shrink:0;}
-  .rank-1{background:rgba(239,68,68,.2);color:#ef4444;}
-  .rank-2{background:rgba(245,158,11,.2);color:#f59e0b;}
-  .rank-3{background:rgba(245,158,11,.15);color:#f59e0b;}
-  .rank-ok{background:rgba(16,185,129,.15);color:#10b981;}
-  .report-actions{display:flex;gap:8px;justify-content:flex-end;}
-
   #empty-state{grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--muted);}
   #empty-state .ei{font-size:34px;margin-bottom:10px;opacity:0.3;}
 
@@ -558,29 +509,6 @@
     </div>
   </div>
 </div>
-<!-- セッションレポートモーダル -->
-<div id="report-modal">
-  <div class="report-box">
-    <h3>📊 セッションレポート</h3>
-    <div class="report-subtitle" id="report-subtitle"></div>
-    <table class="report-table" id="report-table">
-      <thead>
-        <tr>
-          <th>順位</th>
-          <th>氏名</th>
-          <th>離脱回数</th>
-          <th>離脱時刻・時間</th>
-        </tr>
-      </thead>
-      <tbody id="report-tbody"></tbody>
-    </table>
-    <div class="report-actions">
-      <button class="btn btn-outline" onclick="downloadReportCSV()">📥 CSVダウンロード</button>
-      <button class="btn btn-primary" onclick="closeReport()">閉じる</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -702,103 +630,8 @@ window.startSession=async function(){
 window.endSession=async function(){
   if(!confirm('セッションを終了しますか？'))return;
   if(teacherStream)teacherStream.getTracks().forEach(t=>t.stop());
-  // セッション終了前にレポートデータを収集
-  showSessionReport();
-};
-
-let _reportData = [];
-
-async function showSessionReport() {
-  const {ref, get} = window.FB;
-  // 全生徒のleaveLogs取得
-  _reportData = [];
-
-  for (const sid of Object.keys(students)) {
-    const s = students[sid];
-    const logsSnap = await get(ref(db, `sessions/${sessionId}/students/${sid}/leaveLogs`));
-    const logs = logsSnap.exists() ? logsSnap.val() : {};
-    const logList = Object.values(logs).sort((a,b) => a.leaveAt - b.leaveAt);
-    _reportData.push({
-      name: s.name || '不明',
-      email: s.email || '',
-      joinedAt: s.joinedAt || null,
-      leaveCount: s.tabLeaveCount || 0,
-      logs: logList
-    });
-  }
-
-  // 離脱回数の多い順にソート
-  _reportData.sort((a,b) => b.leaveCount - a.leaveCount);
-
-  // テーブル生成
-  const tbody = document.getElementById('report-tbody');
-  tbody.innerHTML = '';
-  const now = new Date();
-  document.getElementById('report-subtitle').textContent =
-    `${now.toLocaleDateString('ja-JP')}  参加人数: ${_reportData.length}名`;
-
-  _reportData.forEach((s, i) => {
-    const rank = i + 1;
-    const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-ok';
-    const logsHtml = s.logs.length > 0
-      ? s.logs.map(l => {
-          const leaveTime = new Date(l.leaveAt).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-          const dur = l.duration != null ? `${l.duration}秒` : '不明';
-          return `<div style="font-size:10px;color:var(--muted);">${leaveTime}（${dur}）</div>`;
-        }).join('')
-      : '<div style="font-size:10px;color:var(--green);">なし</div>';
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><span class="rank-badge ${rankClass}">${rank}</span></td>
-      <td><div style="font-weight:600;">${esc(s.name)}</div><div style="font-size:10px;color:var(--muted);">${esc(s.email)}</div></td>
-      <td style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${s.leaveCount > 0 ? 'var(--red)' : 'var(--green)'};">${s.leaveCount}回</td>
-      <td>${logsHtml}</td>`;
-    tbody.appendChild(tr);
-  });
-
-  document.getElementById('report-modal').classList.add('show');
-}
-
-window.closeReport = async function() {
-  document.getElementById('report-modal').classList.remove('show');
-  await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}`));
+  await window.FB.remove(window.FB.ref(db,`sessions/${sessionId}`));
   location.reload();
-};
-
-window.downloadReportCSV = function() {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('ja-JP').split('/').join('-');
-  let csv = '\uFEFF氏名,離脱回数';
-  // ログの最大数を求めてヘッダー列を作る
-  const maxLogs = Math.max(..._reportData.map(s => s.logs.length), 0);
-  for (let i = 1; i <= maxLogs; i++) {
-    csv += `,離脱${i}回目_時刻,離脱${i}回目_時間(秒)`;
-  }
-  csv += '\n';
-
-  _reportData.forEach(s => {
-    let row = `"${s.name}",${s.leaveCount}`;
-    for (let i = 0; i < maxLogs; i++) {
-      const log = s.logs[i];
-      if (log) {
-        const t = new Date(log.leaveAt).toLocaleTimeString('ja-JP');
-        row += `,"${t}",${log.duration ?? ''}`;
-      } else {
-        row += ',,';
-      }
-    }
-    csv += row + '\n';
-  });
-
-  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `授業レポート_${dateStr}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('📥 CSVをダウンロードしました');
 };
 
 // ===== VIEW SWITCH =====
@@ -1098,10 +931,6 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
     if(d.shareType)updateShareType(sid,d.shareType);
-    // タブ離脱カウントを更新
-    if(d.hasOwnProperty('tabLeaveCount')) updateLeaveCount(sid, d.tabLeaveCount);
-    // タブ離脱中フラグ
-    if(d.hasOwnProperty('tabAway')) updateTabAway(sid, d.tabAway);
     // status が含まれていない変化（shareType だけ等）は無視
     if(!d.hasOwnProperty('status'))return;
     if(d.status==='waiting'){
@@ -1482,7 +1311,6 @@ function addCard(sid,data){
     <div id="content-${sid}"></div>
     <div class="card-footer">
       <span class="jtime">${now}</span>
-      <span class="leave-badge zero" id="leave-${sid}" title="タブ離脱回数">👁 0</span>
       <div class="card-actions" id="actions-${sid}"></div>
     </div>`;
   const grid = document.getElementById('grid');
@@ -1562,26 +1390,6 @@ function removeCard(sid){
   if(Object.keys(students).length===0)document.getElementById('empty-state').style.display='';
 }
 
-function updateTabAway(sid, isAway) {
-  const card = document.getElementById('card-' + sid);
-  if (!card) return;
-  if (isAway) {
-    card.classList.add('tab-away');
-  } else {
-    card.classList.remove('tab-away');
-  }
-}
-function updateLeaveCount(sid, count) {
-  const el = document.getElementById('leave-' + sid);
-  if (!el) return;
-  const c = count || 0;
-  el.textContent = '👁 ' + c;
-  el.className = 'leave-badge';
-  if (c === 0) el.classList.add('zero');
-  else if (c <= 2) el.classList.add('warn');
-  else el.classList.add('danger');
-  el.title = 'タブ離脱回数: ' + c + '回';
-}
 function updateShareType(sid,t){const el=document.getElementById('st-'+sid);if(!el)return;el.style.display='';const ok=t==='画面全体';el.textContent=t;el.className='share-type '+(ok?'st-ok':'st-warn');}
 function setBadge(sid,status){const b=document.getElementById('badge-'+sid);if(!b)return;const map={live:['badge-live','LIVE'],waiting:['badge-waiting','待機中'],focused:['badge-focused','🎯 集中中']};b.className='badge '+(map[status]?.[0]||'badge-waiting');b.textContent=map[status]?.[1]||'待機中';}
 function updateStats(){const total=Object.keys(students).length;let s=0,f=0;document.querySelectorAll('.badge-live').forEach(()=>s++);document.querySelectorAll('.badge-focused').forEach(()=>f++);document.getElementById('stat-c').textContent=total;document.getElementById('stat-s').textContent=s;document.getElementById('stat-f').textContent=f;}

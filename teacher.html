@@ -238,6 +238,54 @@
     flex-shrink:0;
     margin-left:3px;
   }
+
+  /* ===== 離脱レポートモーダル ===== */
+  #tabaway-report-modal {
+    display:none; position:fixed; inset:0; z-index:4000;
+    background:rgba(0,0,0,0.75); align-items:center; justify-content:center; padding:20px;
+  }
+  #tabaway-report-modal.show { display:flex; }
+  .tabaway-report-box {
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    padding:28px 28px 20px; width:100%; max-width:560px; max-height:85vh;
+    overflow-y:auto; position:relative;
+  }
+  .tabaway-report-box h3 {
+    font-size:18px; font-weight:700; margin-bottom:4px;
+    background:linear-gradient(135deg,#ef4444,#f97316);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .tabaway-report-subtitle {
+    font-size:12px; color:var(--muted); margin-bottom:18px;
+  }
+  .tabaway-report-table {
+    width:100%; border-collapse:collapse; font-size:13px; margin-bottom:16px;
+  }
+  .tabaway-report-table th {
+    text-align:left; padding:7px 10px; font-size:10px; font-weight:700;
+    letter-spacing:0.07em; text-transform:uppercase; color:var(--muted);
+    border-bottom:1px solid var(--border);
+  }
+  .tabaway-report-table td {
+    padding:9px 10px; border-bottom:1px solid rgba(30,41,59,0.6);
+    vertical-align:middle;
+  }
+  .tabaway-report-table tr:last-child td { border-bottom:none; }
+  .rank-badge {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border-radius:50%; font-size:11px; font-weight:700;
+    background:var(--surface2); color:var(--muted); flex-shrink:0;
+  }
+  .rank-badge.rank-1 { background:#f59e0b; color:#000; }
+  .rank-badge.rank-2 { background:#94a3b8; color:#000; }
+  .rank-badge.rank-3 { background:#b45309; color:#fff; }
+  .tabaway-count-cell {
+    font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:#ef4444;
+  }
+  .tabaway-no-data {
+    text-align:center; color:var(--muted); padding:28px 0; font-size:13px;
+  }
+  .tabaway-report-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -541,6 +589,19 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<!-- 離脱レポートモーダル -->
+<div id="tabaway-report-modal">
+  <div class="tabaway-report-box">
+    <h3>📊 離脱レポート</h3>
+    <div class="tabaway-report-subtitle" id="tabaway-report-subtitle">セッション終了時の離脱状況</div>
+    <div id="tabaway-report-content"></div>
+    <div class="tabaway-report-actions">
+      <button class="btn btn-outline" id="tabaway-csv-btn" onclick="downloadTabAwayCSV()">⬇ CSVダウンロード</button>
+      <button class="btn btn-primary" onclick="closeTabAwayReport()">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
   import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
@@ -657,11 +718,142 @@ window.startSession=async function(){
   toast('✅ セッション開始！URLを生徒に送ってください');
 };
 
-window.endSession=async function(){
-  if(!confirm('セッションを終了しますか？'))return;
-  if(teacherStream)teacherStream.getTracks().forEach(t=>t.stop());
-  await window.FB.remove(window.FB.ref(db,`sessions/${sessionId}`));
+// ===== 離脱レポート =====
+let _tabAwayReportData = []; // CSVダウンロード用に保持
+
+window.endSession = async function() {
+  if (!confirm('セッションを終了しますか？')) return;
+
+  // セッション終了前にtabAwayデータを収集
+  let reportData = [];
+  try {
+    const { ref, get } = window.FB;
+    const snap = await get(ref(db, `sessions/${sessionId}/students`));
+    if (snap.exists()) {
+      snap.forEach(child => {
+        const sid = child.key;
+        const d = child.val();
+        const name = d.name || '不明';
+        const tabAway = d.tabAway || null;
+        const count = tabAway ? (tabAway.count || 0) : 0;
+        if (count < 1) return; // 離脱なしはスキップ
+
+        // tabAwayLog から合計離脱時間・初回離脱時刻を計算
+        const logs = d.tabAwayLog ? Object.values(d.tabAwayLog) : [];
+        let totalMs = 0;
+        let firstTs = null;
+        logs.forEach(log => {
+          if (log.startTs) {
+            if (firstTs === null || log.startTs < firstTs) firstTs = log.startTs;
+            if (log.endTs) {
+              totalMs += (log.endTs - log.startTs);
+            }
+            // まだ離脱中（endTs=null）の場合は現在時刻まで
+            else {
+              totalMs += (Date.now() - log.startTs);
+            }
+          }
+        });
+        reportData.push({ name, count, firstTs, totalMs, sid });
+      });
+    }
+  } catch (e) {
+    console.warn('tabAway data fetch error', e);
+  }
+
+  // 離脱回数の多い順にソート
+  reportData.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  _tabAwayReportData = reportData;
+
+  // Firebase削除
+  if (teacherStream) teacherStream.getTracks().forEach(t => t.stop());
+  await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}`));
+
+  // レポート表示
+  showTabAwayReport(reportData);
+};
+
+function showTabAwayReport(data) {
+  const content = document.getElementById('tabaway-report-content');
+  const subtitle = document.getElementById('tabaway-report-subtitle');
+  const now = new Date().toLocaleString('ja-JP');
+  subtitle.textContent = `終了: ${now}　／　対象: ${data.length}人（1回以上離脱）`;
+
+  if (data.length === 0) {
+    content.innerHTML = `<div class="tabaway-no-data">✅ 離脱者はいませんでした</div>`;
+    document.getElementById('tabaway-csv-btn').style.display = 'none';
+  } else {
+    document.getElementById('tabaway-csv-btn').style.display = '';
+    let rows = data.map((d, i) => {
+      const rank = i + 1;
+      const rankClass = rank <= 3 ? `rank-${rank}` : '';
+      const totalStr = formatMs(d.totalMs);
+      const firstStr = d.firstTs ? new Date(d.firstTs).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '−';
+      return `<tr>
+        <td><span class="rank-badge ${rankClass}">${rank}</span></td>
+        <td style="font-weight:600;">${esc(d.name)}</td>
+        <td class="tabaway-count-cell">${d.count}回</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">${firstStr}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;">${totalStr}</td>
+      </tr>`;
+    }).join('');
+    content.innerHTML = `
+      <table class="tabaway-report-table">
+        <thead>
+          <tr>
+            <th>順位</th>
+            <th>氏名</th>
+            <th>離脱回数</th>
+            <th>初回離脱</th>
+            <th>合計離脱時間</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  document.getElementById('tabaway-report-modal').classList.add('show');
+}
+
+function formatMs(ms) {
+  if (!ms || ms <= 0) return '0秒';
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}時間${m % 60}分${s % 60}秒`;
+  if (m > 0) return `${m}分${s % 60}秒`;
+  return `${s}秒`;
+}
+
+window.closeTabAwayReport = function() {
+  document.getElementById('tabaway-report-modal').classList.remove('show');
   location.reload();
+};
+
+window.downloadTabAwayCSV = function() {
+  const data = _tabAwayReportData;
+  if (!data || data.length === 0) { toast('データがありません'); return; }
+
+  const BOM = '\uFEFF'; // Excel用BOM
+  const header = ['順位', '氏名', '離脱回数', '初回離脱開始時刻', '合計離脱時間（秒）', '合計離脱時間（表示）'];
+  const rows = data.map((d, i) => {
+    const rank = i + 1;
+    const firstStr = d.firstTs ? new Date(d.firstTs).toLocaleString('ja-JP') : '';
+    const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
+    const totalDisp = formatMs(d.totalMs);
+    return [rank, d.name, d.count, firstStr, totalSec, totalDisp].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+  });
+
+  const csv = BOM + header.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url; a.download = `tabaway_report_${dateStr}.csv`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('✅ CSVをダウンロードしました');
 };
 
 // ===== VIEW SWITCH =====

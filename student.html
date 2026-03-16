@@ -814,28 +814,46 @@
       // ===== タブ離脱検知 =====
       let _tabAwayCount = 0;
       let _tabIsAway = false;
+      let _tabAwayStartTs = null;
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
         if (document.hidden) {
-          // 別タブ or 最小化 → 離脱
+          // 別タブ or 最小化 → 離脱開始
           if (!_tabIsAway) {
             _tabIsAway = true;
             _tabAwayCount++;
+            _tabAwayStartTs = Date.now();
+            // 現在状態
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
               away: true,
               count: _tabAwayCount,
-              ts: Date.now()
+              ts: _tabAwayStartTs
+            });
+            // 離脱ログ（1件ずつ蓄積）
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/${_tabAwayStartTs}`), {
+              startTs: _tabAwayStartTs,
+              endTs: null
             });
           }
         } else {
           // このタブに戻ってきた
           if (_tabIsAway) {
             _tabIsAway = false;
+            const endTs = Date.now();
+            // 現在状態を更新
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
               away: false,
               count: _tabAwayCount,
-              ts: Date.now()
+              ts: endTs
             });
+            // 対応するログに終了時刻を追記
+            if (_tabAwayStartTs) {
+              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/${_tabAwayStartTs}`), {
+                startTs: _tabAwayStartTs,
+                endTs: endTs
+              });
+            }
+            _tabAwayStartTs = null;
           }
         }
       });

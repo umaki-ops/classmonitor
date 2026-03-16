@@ -738,23 +738,19 @@ window.endSession = async function() {
         const count = tabAway ? (tabAway.count || 0) : 0;
         if (count < 1) return; // 離脱なしはスキップ
 
-        // tabAwayLog から合計離脱時間・初回離脱時刻を計算
+        // tabAwayLog から合計離脱時間・全離脱ログを計算
         const logs = d.tabAwayLog ? Object.values(d.tabAwayLog) : [];
+        // startTs でソート
+        logs.sort((a, b) => (a.startTs || 0) - (b.startTs || 0));
         let totalMs = 0;
-        let firstTs = null;
+        const now = Date.now();
         logs.forEach(log => {
           if (log.startTs) {
-            if (firstTs === null || log.startTs < firstTs) firstTs = log.startTs;
-            if (log.endTs) {
-              totalMs += (log.endTs - log.startTs);
-            }
-            // まだ離脱中（endTs=null）の場合は現在時刻まで
-            else {
-              totalMs += (Date.now() - log.startTs);
-            }
+            const end = log.endTs || now;
+            totalMs += (end - log.startTs);
           }
         });
-        reportData.push({ name, count, firstTs, totalMs, sid });
+        reportData.push({ name, count, logs, totalMs, sid });
       });
     }
   } catch (e) {
@@ -784,17 +780,21 @@ function showTabAwayReport(data) {
     document.getElementById('tabaway-csv-btn').style.display = 'none';
   } else {
     document.getElementById('tabaway-csv-btn').style.display = '';
+    const toTime = ts => new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     let rows = data.map((d, i) => {
       const rank = i + 1;
       const rankClass = rank <= 3 ? `rank-${rank}` : '';
-      const totalStr = formatMs(d.totalMs);
-      const firstStr = d.firstTs ? new Date(d.firstTs).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '−';
+      const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
+      const totalStr = `${totalSec}秒`;
+      const timesHtml = d.logs.length > 0
+        ? d.logs.map(log => `<span style="display:inline-block;white-space:nowrap;">${toTime(log.startTs)}</span>`).join('<br>')
+        : '−';
       return `<tr>
         <td><span class="rank-badge ${rankClass}">${rank}</span></td>
         <td style="font-weight:600;">${esc(d.name)}</td>
         <td class="tabaway-count-cell">${d.count}回</td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">${firstStr}</td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;">${totalStr}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8;">${timesHtml}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${totalStr}</td>
       </tr>`;
     }).join('');
     content.innerHTML = `
@@ -804,7 +804,7 @@ function showTabAwayReport(data) {
             <th>順位</th>
             <th>氏名</th>
             <th>離脱回数</th>
-            <th>初回離脱</th>
+            <th>離脱開始時刻（全回）</th>
             <th>合計離脱時間</th>
           </tr>
         </thead>
@@ -835,21 +835,33 @@ window.downloadTabAwayCSV = function() {
   if (!data || data.length === 0) { toast('データがありません'); return; }
 
   const BOM = '\uFEFF'; // Excel用BOM
-  const header = ['順位', '氏名', '離脱回数', '初回離脱開始時刻', '合計離脱時間（秒）', '合計離脱時間（表示）'];
+  const toDateTime = ts => new Date(ts).toLocaleString('ja-JP');
+
+  // ヘッダー行
+  const header = ['順位', '氏名', '離脱回数', '離脱開始時刻（全回）', '合計離脱時間'];
+
+  // データ行：離脱開始時刻は改行区切りで1セルにまとめる
   const rows = data.map((d, i) => {
     const rank = i + 1;
-    const firstStr = d.firstTs ? new Date(d.firstTs).toLocaleString('ja-JP') : '';
     const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
-    const totalDisp = formatMs(d.totalMs);
-    return [rank, d.name, d.count, firstStr, totalSec, totalDisp].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    const allTimes = d.logs.map(log => toDateTime(log.startTs)).join('\n');
+    return [rank, d.name, d.count, allTimes, `${totalSec}秒`]
+      .map(v => `"${String(v).replace(/"/g, '""')}"`)
+      .join(',');
   });
 
   const csv = BOM + header.join(',') + '\n' + rows.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const dateStr = new Date().toISOString().slice(0, 10);
-  a.href = url; a.download = `tabaway_report_${dateStr}.csv`;
+
+  // ファイル名は日付（YYYY年MM月DD日）
+  const now = new Date();
+  const y = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  a.href = url;
+  a.download = `${y}年${mo}月${day}日_離脱レポート.csv`;
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);

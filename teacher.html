@@ -1223,21 +1223,40 @@ function listenStudents(){
   startListenAnswers();
 }
 
-// キーフレーム強制取得 — タブ切り替え時の画面更新遅延を解消
-// re-negotiation で新しいofferを送り、エンコーダ側にキーフレーム生成を強制する
+// キーフレーム強制取得
+// 1) RTCRtpReceiver.requestKeyFrame()（PLI直接送信・最速）
+// 2) フォールバック: re-negotiation
 const keyframeTimers={};
 async function forceKeyframe(sid){
   clearTimeout(keyframeTimers[sid]);
-  keyframeTimers[sid]=setTimeout(async()=>{
-    const pc=peerConnections[sid];
-    if(!pc||pc.signalingState==='closed')return;
-    try{
-      // iceRestart:false で軽量なre-negotiationのみ実施
-      const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
-      await pc.setLocalDescription(offer);
-      sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-    }catch(e){}
-  },50); // Firebase遅延を考慮して50ms後に実行
+  // setTimeout なしで即実行
+  const pc=peerConnections[sid];
+  if(!pc||pc.signalingState==='closed')return;
+
+  let pliSent = false;
+  // Chrome 94+: RTCRtpReceiver.requestKeyFrame() で PLI を直接送信
+  try{
+    const receivers = pc.getReceivers().filter(r=>r.track?.kind==='video');
+    for(const receiver of receivers){
+      if(typeof receiver.requestKeyFrame === 'function'){
+        receiver.requestKeyFrame();
+        pliSent = true;
+      }
+    }
+  }catch(e){}
+
+  // PLI API が使えなければ re-negotiation でキーフレームを強制
+  if(!pliSent){
+    keyframeTimers[sid]=setTimeout(async()=>{
+      const pc=peerConnections[sid];
+      if(!pc||pc.signalingState==='closed')return;
+      try{
+        const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
+        await pc.setLocalDescription(offer);
+        sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+      }catch(e){}
+    },0);
+  }
 }
 
 // ===== WebRTC Monitoring =====

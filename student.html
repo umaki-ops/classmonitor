@@ -819,7 +819,9 @@
         if (!studentId) return;
 
         if (document.hidden) {
-          // 別タブ or 最小化 → 離脱開始
+          // 別タブへ移動した瞬間 → 即キーフレーム要求（移動先画面を素早く表示）
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
+
           if (!_tabIsAway) {
             _tabIsAway = true;
             _tabAwayCount++;
@@ -832,32 +834,7 @@
             });
           }
         } else {
-          // このタブに戻ってきた
-          // タブ切り替わり直後にキーフレームを強制送信してteacher側のデコーダを即更新
-          if (localStream && pc) {
-            const senders = pc.getSenders().filter(s => s.track?.kind === 'video');
-            senders.forEach(async sender => {
-              try {
-                const p = sender.getParameters();
-                if (p.encodings && p.encodings.length) {
-                  // maxBitrateを一時的に上げてキーフレームを促進
-                  const orig = p.encodings[0].maxBitrate;
-                  p.encodings[0].maxBitrate = 10000000;
-                  await sender.setParameters(p);
-                  setTimeout(async () => {
-                    try {
-                      const p2 = sender.getParameters();
-                      if (p2.encodings && p2.encodings.length) {
-                        p2.encodings[0].maxBitrate = 6000000;
-                        await sender.setParameters(p2);
-                      }
-                    } catch(e) {}
-                  }, 500);
-                }
-              } catch(e) {}
-            });
-          }
-          // teacher側にキーフレーム要求シグナルを送る
+          // 戻ってきた → もう一度キーフレーム要求
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
 
           if (_tabIsAway) {

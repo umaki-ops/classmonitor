@@ -742,14 +742,25 @@ window.endSession = async function() {
         const logs = d.tabAwayLog ? Object.values(d.tabAwayLog) : [];
         // startTs でソート
         logs.sort((a, b) => (a.startTs || 0) - (b.startTs || 0));
-        let totalMs = 0;
         const now = Date.now();
+        let totalMs = 0;
         logs.forEach(log => {
-          if (log.startTs) {
-            const end = log.endTs || now;
-            totalMs += (end - log.startTs);
-          }
+          if (!log.startTs) return;
+          // endTs が null/undefined = まだ離脱中 → セッション終了時刻(now)まで計算
+          const end = (log.endTs != null && log.endTs > 0) ? log.endTs : now;
+          totalMs += Math.max(0, end - log.startTs);
         });
+
+        // フォールバック: logsが空なのに count >= 1 の場合
+        // （Firebaseへの書き込みタイミングの問題で tabAwayLog が欠落した場合）
+        if (logs.length === 0 && tabAway) {
+          // tabAway.ts は最後の離脱開始 or 復帰の時刻
+          // away=true なら ts = 離脱開始時刻として計算
+          if (tabAway.away && tabAway.ts) {
+            totalMs = Math.max(0, now - tabAway.ts);
+          }
+          // away=false でもログなしの場合は時間不明のため 0 のまま
+        }
         reportData.push({ name, count, logs, totalMs, sid });
       });
     }

@@ -82,10 +82,6 @@
   /* Screen area */
   .screen-area{position:relative;background:#000;aspect-ratio:16/9;overflow:hidden;cursor:pointer;}
   .screen-area video{width:100%;height:100%;object-fit:contain;display:none;}
-  /* タブ離脱中の最終フレーム保持canvas */
-  .screen-area .frozen-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;opacity:0.55;}
-  .screen-area .away-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);}
-  .screen-area .away-overlay span{color:#ef4444;font-size:11px;font-weight:700;background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:6px;}
   .screen-ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--surface2);}
   .screen-ph-icon{font-size:20px;opacity:0.3;}
   .screen-ph-text{font-size:10px;color:var(--muted);}
@@ -1261,69 +1257,6 @@ async function forceKeyframe(sid){
 
 // ===== WebRTC Monitoring =====
 let reconnectTimers={};
-// 各生徒のフレームキャプチャループ管理
-const frozenFrameTimers={};
-
-function startFrozenFrameCapture(sid, videoEl){
-  if(frozenFrameTimers[sid]) clearInterval(frozenFrameTimers[sid]);
-
-  let lastFrameTime = performance.now();
-  let frozen = false;
-  // canvas に常に最新フレームを保持
-  const captureCanvas = () => {
-    const v  = document.getElementById('v-'      + sid);
-    const cv = document.getElementById('frozen-' + sid);
-    if(v && cv && v.readyState >= 2 && v.videoWidth > 0 && v.style.display !== 'none'){
-      cv.width = v.videoWidth; cv.height = v.videoHeight;
-      try{ cv.getContext('2d').drawImage(v, 0, 0); }catch(e){}
-    }
-  };
-
-  // フレーム到着を検知するループ
-  const checkFrame = () => {
-    const v  = document.getElementById('v-'       + sid);
-    const cv = document.getElementById('frozen-'  + sid);
-    const ov = document.getElementById('away-ov-' + sid);
-    if(!v) return; // カード削除済み
-
-    const now = performance.now();
-    const stalled = (now - lastFrameTime) > 300; // 300ms 以上フレームが来ない
-
-    if(stalled && !frozen && cv && cv.width > 0){
-      // フレームが止まった → canvas を表示
-      frozen = true;
-      cv.style.display = 'block';
-      if(v.style.display !== 'none') v.style.display = 'none';
-    } else if(!stalled && frozen){
-      // フレームが再開した → video に戻す
-      frozen = false;
-      if(cv) cv.style.display = 'none';
-      if(ov) ov.style.display = 'none';
-      v.style.display = 'block';
-      v.play().catch(()=>{});
-    }
-  };
-
-  // requestVideoFrameCallback が使えれば最優先（フレーム到着を正確に検知）
-  const v = videoEl;
-  if(v.requestVideoFrameCallback){
-    const onFrame = (now) => {
-      const cv = document.getElementById('frozen-' + sid);
-      if(!document.getElementById('v-' + sid)) return; // カード削除済み
-      lastFrameTime = now;
-      captureCanvas();
-      checkFrame();
-      v.requestVideoFrameCallback(onFrame);
-    };
-    v.requestVideoFrameCallback(onFrame);
-  }
-
-  // rAF で定期的にフレーム停止を監視（rVFC のフォールバック兼用）
-  frozenFrameTimers[sid] = setInterval(() => {
-    captureCanvas();
-    checkFrame();
-  }, 150);
-}
 
 async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
@@ -1339,15 +1272,7 @@ async function setupPC(sid){
       else{const ms=new MediaStream();ms.addTrack(ev.track);v.srcObject=ms;}
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
-      // 定期的に最後フレームをcanvasに焼き付ける（mute時のフリーズフレーム用）
-      startFrozenFrameCapture(sid, v);
     }
-    ev.track.onunmute=()=>{
-      // フレーム再開はstartFrozenFrameCaptureのrVFCループが検知するため最小限の処理
-      const v=document.getElementById('v-'+sid);
-      if(v&&v.srcObject)v.play().catch(()=>{});
-    };
-    ev.track.onmute=()=>{ /* フレーム停止はrVFCループが検知 */ };
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
 
@@ -1709,8 +1634,6 @@ function updateCardContent(sid){
     contentEl.innerHTML=`
       <div class="screen-area" onclick="openFullscreen('${sid}')">
         <video id="v-${sid}" autoplay playsinline></video>
-        <canvas id="frozen-${sid}" class="frozen-frame"></canvas>
-        <div class="away-overlay" id="away-ov-${sid}"><span>⚠ 離脱中</span></div>
         <div class="screen-ph" id="ph-${sid}"><div class="screen-ph-icon">⏳</div><div class="screen-ph-text">画面共有を待っています</div></div>
       </div>`;
     actionsEl.innerHTML=`
@@ -1756,7 +1679,6 @@ function updateCardContent(sid){
 function removeCard(sid){
   document.getElementById('card-'+sid)?.remove();
   clearTimeout(reconnectTimers[sid]);delete reconnectTimers[sid];
-  if(frozenFrameTimers[sid]){clearInterval(frozenFrameTimers[sid]);delete frozenFrameTimers[sid];}
   peerConnections[sid]?.close();delete peerConnections[sid];
   twPcs[sid]?.close();delete twPcs[sid];
   studentBcastPcs[sid]?.close();delete studentBcastPcs[sid];
@@ -1771,28 +1693,13 @@ function setBadge(sid,status){const b=document.getElementById('badge-'+sid);if(!
 function updateStats(){const total=Object.keys(students).length;let s=0,f=0;document.querySelectorAll('.badge-live').forEach(()=>s++);document.querySelectorAll('.badge-focused').forEach(()=>f++);document.getElementById('stat-c').textContent=total;document.getElementById('stat-s').textContent=s;document.getElementById('stat-f').textContent=f;}
 
 function updateTabAway(sid, tabAway) {
-  const card = document.getElementById('card-' + sid);
+  const card  = document.getElementById('card-'  + sid);
   const badge = document.getElementById('badge-' + sid);
   if (!card) return;
 
-  const v  = document.getElementById('v-'       + sid);
-  const cv = document.getElementById('frozen-'  + sid);
-  const ov = document.getElementById('away-ov-' + sid);
-
   if (tabAway && tabAway.away) {
-    // ── 離脱 ──
-    // onmute を待たず Firebase シグナル到着時点で即切替
-    if (cv && v && v.videoWidth > 0) {
-      cv.width = v.videoWidth; cv.height = v.videoHeight;
-      try { cv.getContext('2d').drawImage(v, 0, 0); } catch(e) {}
-      cv.style.display = 'block';
-    }
-    if (ov) ov.style.display = 'flex';
-    if (v)  v.style.display  = 'none';
-
     card.classList.add('tab-away');
     if (badge) { badge.classList.add('badge-tab-away'); badge.textContent = '⚠ 離脱中'; }
-
     const headerEl = card.querySelector('.card-header');
     let cntEl = document.getElementById('tab-away-count-' + sid);
     if (!cntEl && headerEl) {
@@ -1803,11 +1710,6 @@ function updateTabAway(sid, tabAway) {
     }
     if (cntEl) cntEl.textContent = tabAway.count + '回目';
   } else {
-    // ── 復帰 ──
-    if (cv) cv.style.display = 'none';
-    if (ov) ov.style.display = 'none';
-    if (v)  { v.style.display = 'block'; v.play().catch(()=>{}); }
-
     card.classList.remove('tab-away');
     if (badge) badge.classList.remove('badge-tab-away');
     const cntEl = document.getElementById('tab-away-count-' + sid);

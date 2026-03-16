@@ -844,10 +844,9 @@
               count: _tabAwayCount,
               ts: _tabAwayStartTs
             });
-            // 離脱ログ（1件ずつ蓄積）
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/${_tabAwayStartTs}`), {
-              startTs: _tabAwayStartTs,
-              endTs: null
+            // 離脱ログ（1件ずつ蓄積）キーは文字列にしてFirebaseの配列変換を防ぐ
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+              startTs: _tabAwayStartTs
             });
           }
         } else {
@@ -863,7 +862,7 @@
             });
             // 対応するログに終了時刻を追記
             if (_tabAwayStartTs) {
-              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/${_tabAwayStartTs}`), {
+              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
                 startTs: _tabAwayStartTs,
                 endTs: endTs
               });

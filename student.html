@@ -676,6 +676,8 @@
           status: 'waiting'
         });
         showState('connected');
+        // セッション参加確定後にタブ監視を起動
+        initTabMonitor(db, sessionId, studentId);
       }, {onlyOnce:true});
 
       // セッション終了監視
@@ -810,55 +812,6 @@
         if (active === false) hideTeacher();
       });
       listenMyGroup();
-
-      // ===== タブ離脱カウント =====
-      let _tabLeaveCount = 0;
-      let _tabHidden = false;
-      let _tabLeaveStartTime = null; // 離脱開始時刻
-      window._tabMonitorReady = false;
-      setTimeout(() => { window._tabMonitorReady = true; }, 2000);
-
-      function onTabLeave() {
-        if (!window._tabMonitorReady || _tabHidden) return;
-        _tabHidden = true;
-        _tabLeaveCount++;
-        _tabLeaveStartTime = Date.now();
-        const logKey = `log_${_tabLeaveCount}`;
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabLeaveCount`), _tabLeaveCount);
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), true);
-        // 離脱ログ：開始時刻を記録
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/leaveLogs/${logKey}`), {
-          leaveAt: _tabLeaveStartTime,
-          returnAt: null,
-          duration: null
-        });
-      }
-
-      function onTabReturn() {
-        if (!window._tabMonitorReady || !_tabHidden) return;
-        _tabHidden = false;
-        const returnAt = Date.now();
-        const duration = _tabLeaveStartTime ? Math.round((returnAt - _tabLeaveStartTime) / 1000) : null;
-        const logKey = `log_${_tabLeaveCount}`;
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), false);
-        // 離脱ログ：復帰時刻と離脱時間を更新
-        if (_tabLeaveStartTime) {
-          set(ref(db, `sessions/${sessionId}/students/${studentId}/leaveLogs/${logKey}`), {
-            leaveAt: _tabLeaveStartTime,
-            returnAt,
-            duration
-          });
-        }
-        _tabLeaveStartTime = null;
-      }
-
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) onTabLeave();
-        else onTabReturn();
-      });
-
-      window.addEventListener('blur', () => { onTabLeave(); });
-      window.addEventListener('focus', () => { onTabReturn(); });
 
       // main()内のローカル関数をHTMLのonclickから呼べるよう window に公開
       window.hideTeacher  = window.hideTeacher || hideTeacher;
@@ -1010,8 +963,8 @@
     // ===== 画面共有 =====
     window.startShare = async function() {
       window._shareActive = true;
-      // 画面共有ダイアログ表示中のblurをカウントしないよう一時停止
-      window._tabMonitorReady = false;
+      // 画面共有ダイアログ表示中のblurをカウントしないよう監視を一時停止
+      if (window._tabMonitorPause) window._tabMonitorPause();
       try {
         localStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
@@ -1032,15 +985,19 @@
         if (settings.displaySurface && settings.displaySurface !== 'monitor') {
           localStream.getTracks().forEach(t => t.stop());
           window._shareActive = false;
+          if (window._tabMonitorResume) window._tabMonitorResume(500);
           showState('connected');
           alert('「画面全体」を選択してください。ウィンドウやタブの共有は使用できません。');
           return;
         }
       } catch(e) {
         window._shareActive = false;
+        if (window._tabMonitorResume) window._tabMonitorResume(500);
         showState('connected');
         return;
       }
+      // 共有開始後、フォーカスが戻るまで待って監視再開
+      if (window._tabMonitorResume) window._tabMonitorResume(1000);
       const v = document.getElementById('preview-video');
       if (v) v.srcObject = localStream;
       showState('live');
@@ -2236,6 +2193,71 @@
 
   } // end main
   main();
+
+  // ===== タブ離脱監視（セッション参加確定後に呼び出す） =====
+  let _tabMonitorInitialized = false;
+  function initTabMonitor(db, sessionId, studentId) {
+    // 二重初期化防止
+    if (_tabMonitorInitialized) return;
+    _tabMonitorInitialized = true;
+
+    const { ref, set } = window.FB;
+    let _tabLeaveCount = 0;
+    let _tabHidden = false;
+    let _tabLeaveStartTime = null;
+    let _ready = false;
+
+    // ページ表示直後の誤検知を防ぐため2秒後に有効化
+    setTimeout(() => { _ready = true; }, 2000);
+
+    function onTabLeave() {
+      if (!_ready || _tabHidden) return;
+      _tabHidden = true;
+      _tabLeaveCount++;
+      _tabLeaveStartTime = Date.now();
+      const logKey = 'log_' + _tabLeaveCount;
+      set(ref(db, 'sessions/' + sessionId + '/students/' + studentId + '/tabLeaveCount'), _tabLeaveCount);
+      set(ref(db, 'sessions/' + sessionId + '/students/' + studentId + '/tabAway'), true);
+      set(ref(db, 'sessions/' + sessionId + '/students/' + studentId + '/leaveLogs/' + logKey), {
+        leaveAt: _tabLeaveStartTime,
+        returnAt: null,
+        duration: null
+      });
+    }
+
+    function onTabReturn() {
+      if (!_ready || !_tabHidden) return;
+      _tabHidden = false;
+      const returnAt = Date.now();
+      const duration = _tabLeaveStartTime ? Math.round((returnAt - _tabLeaveStartTime) / 1000) : null;
+      const logKey = 'log_' + _tabLeaveCount;
+      set(ref(db, 'sessions/' + sessionId + '/students/' + studentId + '/tabAway'), false);
+      if (_tabLeaveStartTime) {
+        set(ref(db, 'sessions/' + sessionId + '/students/' + studentId + '/leaveLogs/' + logKey), {
+          leaveAt: _tabLeaveStartTime,
+          returnAt,
+          duration
+        });
+      }
+      _tabLeaveStartTime = null;
+    }
+
+    // Chromeタブ運用では visibilitychange が最も確実
+    // （別タブへの切り替えで必ず hidden=true が発火する）
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) onTabLeave();
+      else onTabReturn();
+    });
+
+    // ※ window.blur/focus は使わない
+    // Chromeタブ環境では別ウィンドウ切り替え・DevTools開閉・
+    // アドレスバークリック等でも blur が発火するため誤カウントの原因になる
+    // visibilitychange だけで「別タブに移動した」を正確に検知できる
+
+    // startShare との連携：画面共有ダイアログ中は監視を一時停止
+    window._tabMonitorPause  = () => { _ready = false; };
+    window._tabMonitorResume = (delay) => { setTimeout(() => { _ready = true; }, delay || 500); };
+  }
 
 </script>
 </body>

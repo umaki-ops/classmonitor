@@ -1238,18 +1238,18 @@ async function setupPC(sid){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // disconnectedは10秒様子見してからICE再起動
+    // disconnectedは1.5秒様子見してからICE再起動（タブ切り替え復帰を素早く検知）
     if(iceState==='disconnected'){
       reconnectTimers[sid]=setTimeout(async()=>{
         if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
         if(pc.iceConnectionState!=='disconnected')return;
-        console.log('[ICE] disconnected > 10s, restarting:',sid);
+        console.log('[ICE] disconnected > 1.5s, restarting:',sid);
         try{
           const offer=await pc.createOffer({iceRestart:true,offerToReceiveVideo:true,offerToReceiveAudio:false});
           await pc.setLocalDescription(offer);
           sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
         }catch(e){if(students[sid])setupPC(sid);}
-      },10000);
+      },1500);
     } else {
       clearTimeout(reconnectTimers[sid]);
     }
@@ -1635,7 +1635,6 @@ function updateStats(){const total=Object.keys(students).length;let s=0,f=0;docu
 function updateTabAway(sid, tabAway) {
   const card = document.getElementById('card-' + sid);
   const badge = document.getElementById('badge-' + sid);
-  const countEl = document.getElementById('tab-away-count-' + sid);
   if (!card) return;
   if (tabAway && tabAway.away) {
     // 離脱中
@@ -1655,10 +1654,10 @@ function updateTabAway(sid, tabAway) {
     }
     if (cntEl) cntEl.textContent = tabAway.count + '回目';
   } else {
-    // 戻ってきた
+    // 戻ってきた → 即ICE再起動offerを送って映像を復帰
     card.classList.remove('tab-away');
     if (badge) badge.classList.remove('badge-tab-away');
-    // カウントは消さずに保持（何回離脱したか残す）
+    // カウントは消さずに保持
     const cntEl = document.getElementById('tab-away-count-' + sid);
     if (cntEl) cntEl.textContent = (tabAway?.count || 0) + '回';
     // ステータスを元に戻す
@@ -1667,6 +1666,21 @@ function updateTabAway(sid, tabAway) {
       if (stu.focused) setBadge(sid, 'focused');
       else if (stu.status === 'sharing') setBadge(sid, 'live');
       else setBadge(sid, 'waiting');
+    }
+    // 共有中であればICE再起動offerを即送信（黒画面解消）
+    const pc = peerConnections[sid];
+    if (pc && stu?.status === 'sharing') {
+      clearTimeout(reconnectTimers[sid]);
+      (async () => {
+        try {
+          const offer = await pc.createOffer({ iceRestart: true, offerToReceiveVideo: true, offerToReceiveAudio: false });
+          await pc.setLocalDescription(offer);
+          sig(sid, { type: 'offer', from: 'teacher', to: sid, sdp: { type: offer.type, sdp: offer.sdp } });
+        } catch(e) {
+          // offerに失敗した場合はPC全体を再確立
+          if (students[sid]) setupPC(sid);
+        }
+      })();
     }
   }
 }

@@ -817,6 +817,21 @@
       let _tabAwayStartTs = null;
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
+
+        // ===== 画面共有ストリームの維持 =====
+        // タブに戻ってきた際、Chromeがトラックのフレーム送出を止めている場合があるため
+        // contentHint を再セットしてエンコーダを再起動させる
+        if (!document.hidden && localStream && pc) {
+          localStream.getVideoTracks().forEach(t => {
+            if (t.readyState === 'live') {
+              // contentHint を一時的に変更して戻す（エンコーダのウェイクアップ）
+              const prev = t.contentHint;
+              t.contentHint = '';
+              setTimeout(() => { t.contentHint = prev || 'detail'; }, 30);
+            }
+          });
+        }
+
         if (document.hidden) {
           // 別タブ or 最小化 → 離脱開始
           if (!_tabIsAway) {

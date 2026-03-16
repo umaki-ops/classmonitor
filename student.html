@@ -833,6 +833,33 @@
           }
         } else {
           // このタブに戻ってきた
+          // タブ切り替わり直後にキーフレームを強制送信してteacher側のデコーダを即更新
+          if (localStream && pc) {
+            const senders = pc.getSenders().filter(s => s.track?.kind === 'video');
+            senders.forEach(async sender => {
+              try {
+                const p = sender.getParameters();
+                if (p.encodings && p.encodings.length) {
+                  // maxBitrateを一時的に上げてキーフレームを促進
+                  const orig = p.encodings[0].maxBitrate;
+                  p.encodings[0].maxBitrate = 10000000;
+                  await sender.setParameters(p);
+                  setTimeout(async () => {
+                    try {
+                      const p2 = sender.getParameters();
+                      if (p2.encodings && p2.encodings.length) {
+                        p2.encodings[0].maxBitrate = 6000000;
+                        await sender.setParameters(p2);
+                      }
+                    } catch(e) {}
+                  }, 500);
+                }
+              } catch(e) {}
+            });
+          }
+          // teacher側にキーフレーム要求シグナルを送る
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
+
           if (_tabIsAway) {
             _tabIsAway = false;
             const endTs = Date.now();
@@ -876,7 +903,7 @@
       if (localStream) {
         const senders = pc.getSenders();
         localStream.getTracks().forEach(track => {
-          track.contentHint = 'detail'; // スクリーン共有: 動きより鮮明さ優先
+        track.contentHint = 'motion'; // 画面変化への追従速度を優先
           if (!senders.find(s => s.track === track)) {
             pc.addTrack(track, localStream);
           }

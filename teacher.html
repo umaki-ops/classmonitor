@@ -1192,6 +1192,8 @@ function listenStudents(){
     if(d.shareType)updateShareType(sid,d.shareType);
     // tabAway の変化を処理
     if(d.hasOwnProperty('tabAway'))updateTabAway(sid,d.tabAway);
+    // キーフレーム要求（タブ切り替え時の画面更新遅延解消）
+    if(d.hasOwnProperty('keyframeReq'))forceKeyframe(sid);
     // status が含まれていない変化（shareType だけ等）は無視
     if(!d.hasOwnProperty('status'))return;
     if(d.status==='waiting'){
@@ -1221,24 +1223,87 @@ function listenStudents(){
   startListenAnswers();
 }
 
+// キーフレーム強制取得 — タブ切り替え時の画面更新遅延を解消
+// re-negotiation で新しいofferを送り、エンコーダ側にキーフレーム生成を強制する
+const keyframeTimers={};
+async function forceKeyframe(sid){
+  clearTimeout(keyframeTimers[sid]);
+  keyframeTimers[sid]=setTimeout(async()=>{
+    const pc=peerConnections[sid];
+    if(!pc||pc.signalingState==='closed')return;
+    try{
+      // iceRestart:false で軽量なre-negotiationのみ実施
+      const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
+      await pc.setLocalDescription(offer);
+      sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+    }catch(e){}
+  },50); // Firebase遅延を考慮して50ms後に実行
+}
+
 // ===== WebRTC Monitoring =====
 let reconnectTimers={};
 // 各生徒のフレームキャプチャループ管理
 const frozenFrameTimers={};
 
 function startFrozenFrameCapture(sid, videoEl){
-  // 既存ループ停止
   if(frozenFrameTimers[sid]) clearInterval(frozenFrameTimers[sid]);
-  frozenFrameTimers[sid]=setInterval(()=>{
-    const v=document.getElementById('v-'+sid);
-    const cv=document.getElementById('frozen-'+sid);
-    if(!v||!cv||v.readyState<2||v.videoWidth===0)return;
-    if(v.style.display!=='none'){
-      const ctx=cv.getContext('2d');
-      cv.width=v.videoWidth;cv.height=v.videoHeight;
-      try{ctx.drawImage(v,0,0);}catch(e){}
+
+  let lastFrameTime = performance.now();
+  let frozen = false;
+  // canvas に常に最新フレームを保持
+  const captureCanvas = () => {
+    const v  = document.getElementById('v-'      + sid);
+    const cv = document.getElementById('frozen-' + sid);
+    if(v && cv && v.readyState >= 2 && v.videoWidth > 0 && v.style.display !== 'none'){
+      cv.width = v.videoWidth; cv.height = v.videoHeight;
+      try{ cv.getContext('2d').drawImage(v, 0, 0); }catch(e){}
     }
-  },100); // 100msごとに最新フレームを保存
+  };
+
+  // フレーム到着を検知するループ
+  const checkFrame = () => {
+    const v  = document.getElementById('v-'       + sid);
+    const cv = document.getElementById('frozen-'  + sid);
+    const ov = document.getElementById('away-ov-' + sid);
+    if(!v) return; // カード削除済み
+
+    const now = performance.now();
+    const stalled = (now - lastFrameTime) > 300; // 300ms 以上フレームが来ない
+
+    if(stalled && !frozen && cv && cv.width > 0){
+      // フレームが止まった → canvas を表示
+      frozen = true;
+      cv.style.display = 'block';
+      if(v.style.display !== 'none') v.style.display = 'none';
+    } else if(!stalled && frozen){
+      // フレームが再開した → video に戻す
+      frozen = false;
+      if(cv) cv.style.display = 'none';
+      if(ov) ov.style.display = 'none';
+      v.style.display = 'block';
+      v.play().catch(()=>{});
+    }
+  };
+
+  // requestVideoFrameCallback が使えれば最優先（フレーム到着を正確に検知）
+  const v = videoEl;
+  if(v.requestVideoFrameCallback){
+    const onFrame = (now) => {
+      const cv = document.getElementById('frozen-' + sid);
+      if(!document.getElementById('v-' + sid)) return; // カード削除済み
+      lastFrameTime = now;
+      captureCanvas();
+      checkFrame();
+      v.requestVideoFrameCallback(onFrame);
+    };
+    v.requestVideoFrameCallback(onFrame);
+  }
+
+  // rAF で定期的にフレーム停止を監視（rVFC のフォールバック兼用）
+  frozenFrameTimers[sid] = setInterval(() => {
+    captureCanvas();
+    checkFrame();
+  }, 150);
 }
 
 async function setupPC(sid){
@@ -1259,29 +1324,11 @@ async function setupPC(sid){
       startFrozenFrameCapture(sid, v);
     }
     ev.track.onunmute=()=>{
-      // 映像復帰 → video表示・canvas/overlay非表示
+      // フレーム再開はstartFrozenFrameCaptureのrVFCループが検知するため最小限の処理
       const v=document.getElementById('v-'+sid);
-      const cv=document.getElementById('frozen-'+sid);
-      const ov=document.getElementById('away-ov-'+sid);
-      if(v){v.style.display='block';v.play().catch(()=>{});}
-      if(cv)cv.style.display='none';
-      if(ov)ov.style.display='none';
-      setBadge(sid,'live');updateStats();
+      if(v&&v.srcObject)v.play().catch(()=>{});
     };
-    ev.track.onmute=()=>{
-      // 映像停止 → 最後フレームを表示してvideo非表示
-      const v=document.getElementById('v-'+sid);
-      const cv=document.getElementById('frozen-'+sid);
-      const ov=document.getElementById('away-ov-'+sid);
-      if(cv&&v){
-        const ctx=cv.getContext('2d');
-        cv.width=v.videoWidth||320;cv.height=v.videoHeight||180;
-        try{ctx.drawImage(v,0,0,cv.width,cv.height);}catch(e){}
-        cv.style.display='block';
-      }
-      if(ov)ov.style.display='flex';
-      if(v)v.style.display='none';
-    };
+    ev.track.onmute=()=>{ /* フレーム停止はrVFCループが検知 */ };
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
 

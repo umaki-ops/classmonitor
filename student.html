@@ -818,20 +818,6 @@
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
 
-        // ===== 画面共有ストリームの維持 =====
-        // タブに戻ってきた際、Chromeがトラックのフレーム送出を止めている場合があるため
-        // contentHint を再セットしてエンコーダを再起動させる
-        if (!document.hidden && localStream && pc) {
-          localStream.getVideoTracks().forEach(t => {
-            if (t.readyState === 'live') {
-              // contentHint を一時的に変更して戻す（エンコーダのウェイクアップ）
-              const prev = t.contentHint;
-              t.contentHint = '';
-              setTimeout(() => { t.contentHint = prev || 'detail'; }, 30);
-            }
-          });
-        }
-
         if (document.hidden) {
           // 別タブ or 最小化 → 離脱開始
           if (!_tabIsAway) {
@@ -1023,34 +1009,36 @@
     window.startShare = async function() {
       window._shareActive = true;
       try {
+        // preferCurrentTab: true でこのタブ自体をキャプチャ。
+        // monitor（画面全体）だと生徒が別タブに移動した瞬間にChromeが
+        // フレーム送出を止めて黒画面になるため、タブキャプチャに変更。
+        // タブキャプチャは別タブに移動しても「このタブのコンテンツ」を
+        // 継続的にキャプチャし続けるので黒画面にならない。
         localStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            displaySurface: 'monitor',
-            width:  { ideal: 2560, max: 3840 },
-            height: { ideal: 1440, max: 2160 },
-            frameRate: { ideal: 60, max: 60 },
-            latencyHint: 0
+            displaySurface: 'browser',
+            width:  { ideal: 1920, max: 2560 },
+            height: { ideal: 1080, max: 1440 },
+            frameRate: { ideal: 30, max: 60 },
           },
           audio: false,
-          selfBrowserSurface: 'exclude',
-          preferCurrentTab: false,
-          surfaceSwitching: 'exclude'
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+          surfaceSwitching: 'exclude',
+          systemAudio: 'exclude',
         });
-        // 画面全体以外は拒否
-        const track = localStream.getVideoTracks()[0];
-        const settings = track.getSettings();
-        if (settings.displaySurface && settings.displaySurface !== 'monitor') {
-          localStream.getTracks().forEach(t => t.stop());
-          window._shareActive = false;
-          showState('connected');
-          alert('「画面全体」を選択してください。ウィンドウやタブの共有は使用できません。');
-          return;
-        }
       } catch(e) {
         window._shareActive = false;
         showState('connected');
         return;
       }
+
+      // 共有開始後にShareTypeをFirebaseへ通知
+      const track = localStream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      const shareType = settings.displaySurface === 'browser' ? 'タブ' : settings.displaySurface || '画面';
+      set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), shareType);
+
       const v = document.getElementById('preview-video');
       if (v) v.srcObject = localStream;
       showState('live');

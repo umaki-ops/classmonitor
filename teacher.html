@@ -1233,13 +1233,12 @@ function startFrozenFrameCapture(sid, videoEl){
     const v=document.getElementById('v-'+sid);
     const cv=document.getElementById('frozen-'+sid);
     if(!v||!cv||v.readyState<2||v.videoWidth===0)return;
-    // videoが表示中（mute前）のフレームを常時更新して保持
     if(v.style.display!=='none'){
       const ctx=cv.getContext('2d');
       cv.width=v.videoWidth;cv.height=v.videoHeight;
       try{ctx.drawImage(v,0,0);}catch(e){}
     }
-  },500); // 0.5秒ごとに最新フレームを保存
+  },100); // 100msごとに最新フレームを保存
 }
 
 async function setupPC(sid){
@@ -1709,14 +1708,25 @@ function updateTabAway(sid, tabAway) {
   const card = document.getElementById('card-' + sid);
   const badge = document.getElementById('badge-' + sid);
   if (!card) return;
+
+  const v  = document.getElementById('v-'       + sid);
+  const cv = document.getElementById('frozen-'  + sid);
+  const ov = document.getElementById('away-ov-' + sid);
+
   if (tabAway && tabAway.away) {
-    // 離脱中
-    card.classList.add('tab-away');
-    if (badge) {
-      badge.classList.add('badge-tab-away');
-      badge.textContent = '⚠ 離脱中';
+    // ── 離脱 ──
+    // onmute を待たず Firebase シグナル到着時点で即切替
+    if (cv && v && v.videoWidth > 0) {
+      cv.width = v.videoWidth; cv.height = v.videoHeight;
+      try { cv.getContext('2d').drawImage(v, 0, 0); } catch(e) {}
+      cv.style.display = 'block';
     }
-    // カウントバッジを更新（なければ作成）
+    if (ov) ov.style.display = 'flex';
+    if (v)  v.style.display  = 'none';
+
+    card.classList.add('tab-away');
+    if (badge) { badge.classList.add('badge-tab-away'); badge.textContent = '⚠ 離脱中'; }
+
     const headerEl = card.querySelector('.card-header');
     let cntEl = document.getElementById('tab-away-count-' + sid);
     if (!cntEl && headerEl) {
@@ -1727,13 +1737,15 @@ function updateTabAway(sid, tabAway) {
     }
     if (cntEl) cntEl.textContent = tabAway.count + '回目';
   } else {
-    // 戻ってきた
+    // ── 復帰 ──
+    if (cv) cv.style.display = 'none';
+    if (ov) ov.style.display = 'none';
+    if (v)  { v.style.display = 'block'; v.play().catch(()=>{}); }
+
     card.classList.remove('tab-away');
     if (badge) badge.classList.remove('badge-tab-away');
-    // カウントは消さずに保持
     const cntEl = document.getElementById('tab-away-count-' + sid);
     if (cntEl) cntEl.textContent = (tabAway?.count || 0) + '回';
-    // ステータスを元に戻す
     const stu = students[sid];
     if (stu) {
       if (stu.focused) setBadge(sid, 'focused');

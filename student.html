@@ -2532,17 +2532,27 @@
       
       // WBの監視（WBが既に開いている場合は再度openしない）
       let _gsWbActive = false;
+      let _gsWbCloseTimer = null; // デバウンス用タイマー
       _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/wb`), wbSnap => {
         console.log('[WB監視] データ受信 - exists:', wbSnap.exists(), 'val:', wbSnap.val());
         
-        // WBデータが存在しない場合は閉じる
+        // タイマーをクリア
+        if (_gsWbCloseTimer) {
+          clearTimeout(_gsWbCloseTimer);
+          _gsWbCloseTimer = null;
+        }
+        
+        // WBデータが存在しない場合は閉じる（ただし500ms遅延して確認）
         if (!wbSnap.exists()) {
-          console.log('[WB監視] データなし - WBを閉じる');
-          _gsWbActive = false;
-          if (!gWbFromImg) {
-            console.log('[WB監視] gWbClose()を呼び出し');
-            gWbClose();
-          }
+          console.log('[WB監視] データなし - 500ms後に閉じる判定');
+          _gsWbCloseTimer = setTimeout(() => {
+            console.log('[WB監視] WBを閉じる');
+            _gsWbActive = false;
+            if (!gWbFromImg) {
+              console.log('[WB監視] gWbClose()を呼び出し');
+              gWbClose();
+            }
+          }, 500); // 500ms待ってから閉じる
           return;
         }
         
@@ -2555,12 +2565,15 @@
         console.log('[WB監視] active:', wbData.active, 'hasContent:', hasContent, 'isActive:', isActive);
         
         if (!isActive) {
-          console.log('[WB監視] 非アクティブ - WBを閉じる');
-          _gsWbActive = false;
-          if (!gWbFromImg) {
-            console.log('[WB監視] gWbClose()を呼び出し');
-            gWbClose();
-          }
+          console.log('[WB監視] 非アクティブ - 500ms後に閉じる判定');
+          _gsWbCloseTimer = setTimeout(() => {
+            console.log('[WB監視] WBを閉じる');
+            _gsWbActive = false;
+            if (!gWbFromImg) {
+              console.log('[WB監視] gWbClose()を呼び出し');
+              gWbClose();
+            }
+          }, 500);
           return;
         }
         

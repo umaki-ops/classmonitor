@@ -554,7 +554,7 @@
 <script type="module">
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, update, onValue, onChildAdded, get} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import { getDatabase, ref, set, update, onValue, onChildAdded, get, remove} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   // ===== 状態管理 =====
@@ -716,6 +716,7 @@
       // WB用にwindowに公開（canvas event closureから使用）
       window.FBDB = { ref, set, get, db };
       window.FBDB2 = { ref, get };
+      window.FB = { ref, set, get, remove, onValue };
       window.wbDb = db;
       window.wbSid = studentId;
       window.wbName = user.displayName || user.email || 'unknown';
@@ -2271,22 +2272,29 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove } = window.FB;
       
+      console.log('[GroupSelect] リスナー開始');
+      
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
         const isActive = activeSnap.exists() ? activeSnap.val() : false;
+        console.log('[GroupSelect] active状態:', isActive);
         
         if (isActive) {
           // 既に選択済みでない場合のみポップアップ表示
+          console.log('[GroupSelect] myGroupSelectId:', myGroupSelectId, 'myGroupSelectStatus:', myGroupSelectStatus);
           if (!myGroupSelectId || myGroupSelectStatus !== 'approved') {
+            console.log('[GroupSelect] ポップアップを表示');
             showGroupSelectPopup();
           }
         } else {
+          console.log('[GroupSelect] ポップアップを非表示');
           hideGroupSelectPopup();
         }
       });
       
       // 全班データを監視して自分の状態を確認
       onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
+        console.log('[GroupSelect] 班データ更新:', snap.exists());
         if (!snap.exists()) {
           myGroupSelectId = null;
           myGroupSelectStatus = null;
@@ -2330,13 +2338,16 @@
     }
     
     function showGroupSelectPopup() {
+      console.log('[GroupSelect] showGroupSelectPopup呼び出し');
       const { ref, get } = window.FB;
       
       // 班データを一度取得して表示
       get(ref(db, `sessions/${sessionId}/groupsSelect`)).then(snap => {
+        console.log('[GroupSelect] 班データ取得:', snap.exists());
         if (!snap.exists()) return;
         
         const buttonsDiv = document.getElementById('group-select-buttons');
+        console.log('[GroupSelect] buttonsDiv:', buttonsDiv);
         buttonsDiv.innerHTML = '';
         
         const groups = [];
@@ -2345,6 +2356,8 @@
           const g = child.val();
           groups.push({ id: child.key, name: g.name });
         });
+        
+        console.log('[GroupSelect] 班数:', groups.length);
         
         groups.sort((a, b) => {
           const na = parseInt(a.id.replace('gs',''));
@@ -2362,7 +2375,10 @@
           buttonsDiv.appendChild(btn);
         });
         
-        document.getElementById('group-select-popup').style.display = 'flex';
+        const popup = document.getElementById('group-select-popup');
+        console.log('[GroupSelect] popup要素:', popup);
+        popup.style.display = 'flex';
+        console.log('[GroupSelect] ポップアップ表示完了');
         updateGroupSelectStatus();
       });
     }

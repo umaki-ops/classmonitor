@@ -3014,7 +3014,12 @@ window.closeAllGroupSelectWb = async function() {
 
 // 画像配布
 window.sendGroupSelectImg = async function(gid) {
-  if (!gsDistImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+  if (!gsDistImgDataUrl) { 
+    // 画像が選択されていない場合はファイル選択ダイアログを開く
+    document.getElementById('gs-dist-img-input').click();
+    toast('📷 配布する画像を選択してください'); 
+    return; 
+  }
   const { ref, set } = window.FB;
   await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: gsDistImgDataUrl, strokes: null, texts: null });
   toast(`✅ ${groupSelectDefs[gid]?.name || gid} に画像を配布しました`);
@@ -3027,7 +3032,12 @@ window.collectGroupSelectImg = async function(gid) {
 };
 
 window.sendAllGroupSelectImg = async function() {
-  if (!gsDistImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+  if (!gsDistImgDataUrl) { 
+    // 画像が選択されていない場合はファイル選択ダイアログを開く
+    document.getElementById('gs-dist-img-input').click();
+    toast('📷 配布する画像を選択してください'); 
+    return; 
+  }
   const { ref, set } = window.FB;
   const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
     Object.values(g.members || {}).some(s => s === 'approved')

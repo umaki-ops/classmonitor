@@ -2472,12 +2472,19 @@
       if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
       
       // WBの監視
+      let _gsWbActive = false;
       _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/wb`), wbSnap => {
         if (!wbSnap.exists() || !wbSnap.val()?.active) {
+          _gsWbActive = false;
           if (!gWbFromImg) gWbClose();
           return;
         }
         const wbData = wbSnap.val();
+        // WBが既に開いている場合は何もしない（書き込み中にリセットされるのを防ぐ）
+        if (_gsWbActive && gWbGroupId === groupId) {
+          return;
+        }
+        _gsWbActive = true;
         gWbFromImg = false;
         gWbOpen(groupId, wbData, true); // 第3引数でgroupsSelectモードを示す
       });

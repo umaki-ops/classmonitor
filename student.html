@@ -815,12 +815,32 @@
       let _tabAwayCount = 0;
       let _tabIsAway = false;
       let _tabAwayStartTs = null;
+      let _monitoringEnabled = true; // 初期値はtrue、Firebaseから上書き
+
+      // monitoringEnabled を監視（先生がON/OFFを切り替えたとき即反映）
+      onValue(ref(db, `sessions/${sessionId}/monitoringEnabled`), snap => {
+        const prev = _monitoringEnabled;
+        _monitoringEnabled = snap.exists() ? snap.val() : true;
+
+        // OFFに切り替わったとき：現在離脱中なら離脱状態を即リセット
+        if (prev && !_monitoringEnabled && _tabIsAway) {
+          _tabIsAway = false;
+          _tabAwayStartTs = null;
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+            away: false, count: _tabAwayCount, ts: Date.now()
+          });
+        }
+      });
+
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
 
         if (document.hidden) {
           // 別タブへ移動した瞬間 → 即キーフレーム要求（移動先画面を素早く表示）
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
+
+          // モニタリングOFFのときはカウント・記録しない
+          if (!_monitoringEnabled) return;
 
           if (!_tabIsAway) {
             _tabIsAway = true;

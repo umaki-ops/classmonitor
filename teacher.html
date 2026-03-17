@@ -239,6 +239,28 @@
     margin-left:3px;
   }
 
+  /* ===== モニタリングON/OFFスライダー ===== */
+  .monitoring-toggle-wrap {
+    display:flex; align-items:center; gap:8px;
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:8px; padding:5px 10px; white-space:nowrap;
+  }
+  .monitoring-toggle-label { font-size:11px; font-weight:600; color:var(--muted); }
+  .monitoring-toggle-label.on { color:var(--green); }
+  .toggle-switch { position:relative; width:36px; height:20px; flex-shrink:0; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-slider {
+    position:absolute; cursor:pointer; inset:0;
+    background:var(--border); border-radius:20px; transition:.25s;
+  }
+  .toggle-slider:before {
+    content:''; position:absolute;
+    width:14px; height:14px; left:3px; bottom:3px;
+    background:white; border-radius:50%; transition:.25s;
+  }
+  .toggle-switch input:checked + .toggle-slider { background:var(--green); }
+  .toggle-switch input:checked + .toggle-slider:before { transform:translateX(16px); }
+
   /* ===== 離脱レポートモーダル ===== */
   #tabaway-report-modal {
     display:none; position:fixed; inset:0; z-index:4000;
@@ -333,6 +355,14 @@
       <div class="stat"><div class="stat-value" id="stat-f">0</div><div class="stat-label">集中中</div></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <!-- モニタリングON/OFF -->
+      <div class="monitoring-toggle-wrap" id="monitoring-toggle-wrap">
+        <span class="monitoring-toggle-label" id="monitoring-toggle-label">👁 離脱検知: ON</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="monitoring-toggle" checked onchange="toggleMonitoring(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
       <!-- View tabs -->
       <div class="view-tabs">
         <button class="view-tab active" id="tab-monitor" onclick="switchView('monitor')">🖥 モニタリング</button>
@@ -702,7 +732,7 @@ window.startSession=async function(){
 
   sessionId=gid();
   const{ref,set}=window.FB;
-  await set(ref(db,`sessions/${sessionId}`),{className:document.getElementById('class-name').value||'クラス',createdAt:Date.now(),active:true});
+  await set(ref(db,`sessions/${sessionId}`),{className:document.getElementById('class-name').value||'クラス',createdAt:Date.now(),active:true,monitoringEnabled:true});
   const base=location.href.replace('teacher.html','student.html');
   const url=`${base}?session=${sessionId}&db=${encodeURIComponent(du)}&apiKey=${encodeURIComponent(ak)}&projectId=${encodeURIComponent(pi)}`;
   document.getElementById('setup-panel').style.display='none';
@@ -1168,6 +1198,35 @@ window.wbLbNav=function(dir){
   else if(wbSubmissions[sid]) document.getElementById('fs-wb-img').src=wbSubmissions[sid].image;
   document.getElementById('fs-wb-name').textContent=students[sid]?.name||'生徒';
   document.getElementById('fs-wb-nav').textContent=`${wbLbIdx+1} / ${wbLbKeys.length}`;
+};
+
+// ===== モニタリングON/OFF =====
+window.toggleMonitoring = function(enabled) {
+  const { ref, set } = window.FB;
+  set(ref(db, `sessions/${sessionId}/monitoringEnabled`), enabled);
+  const label = document.getElementById('monitoring-toggle-label');
+  if (label) {
+    label.textContent = enabled ? '👁 離脱検知: ON' : '👁 離脱検知: OFF';
+    label.classList.toggle('on', enabled);
+  }
+  if (!enabled) {
+    // OFFにしたとき：全員のtabAway表示をリセット
+    Object.keys(students).forEach(sid => {
+      const card = document.getElementById('card-' + sid);
+      const badge = document.getElementById('badge-' + sid);
+      const cntEl = document.getElementById('tab-away-count-' + sid);
+      if (card) card.classList.remove('tab-away');
+      if (badge) badge.classList.remove('badge-tab-away');
+      if (cntEl) cntEl.textContent = '';
+      const stu = students[sid];
+      if (stu) {
+        if (stu.focused) setBadge(sid, 'focused');
+        else if (stu.status === 'sharing') setBadge(sid, 'live');
+        else setBadge(sid, 'waiting');
+      }
+    });
+  }
+  toast(enabled ? '👁 離脱検知をONにしました' : '🔕 離脱検知をOFFにしました');
 };
 
 // ===== LISTEN =====
@@ -1697,8 +1756,11 @@ function updateTabAway(sid, tabAway) {
   const badge = document.getElementById('badge-' + sid);
   if (!card) return;
 
-  if (tabAway && tabAway.away) {
-    card.classList.add('tab-away');
+  // モニタリングOFFのときは赤点滅・カウント表示をしない
+  const monitoringOn = document.getElementById('monitoring-toggle')?.checked !== false;
+  if (!monitoringOn) return;
+
+  if (tabAway && tabAway.away) {    card.classList.add('tab-away');
     if (badge) { badge.classList.add('badge-tab-away'); badge.textContent = '⚠ 離脱中'; }
     const headerEl = card.querySelector('.card-header');
     let cntEl = document.getElementById('tab-away-count-' + sid);

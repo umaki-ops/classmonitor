@@ -368,7 +368,8 @@
         <button class="view-tab active" id="tab-monitor" onclick="switchView('monitor')">🖥 モニタリング</button>
         <button class="view-tab" id="tab-wb" onclick="switchView('wb')">📋 ホワイトボード</button>
         <button class="view-tab" id="tab-img" onclick="switchView('img')">🖼 画像</button>
-        <button class="view-tab" id="tab-group" onclick="switchView('group')">👥 班別学習</button>
+        <button class="view-tab" id="tab-group" onclick="switchView('group')">👥 班別学習(教員作成)</button>
+        <button class="view-tab" id="tab-group-select" onclick="switchView('group-select')">🎯 班別学習(番号選択)</button>
       </div>
       <select id="grid-size" onchange="updateGridSize()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:7px;font-family:inherit;font-size:11px;outline:none;">
         <option value="2">2列</option><option value="3">3列</option><option value="4" selected>4列</option><option value="5">5列</option>
@@ -510,6 +511,56 @@
     </div>
     <!-- 班カードグリッド -->
     <div id="group-monitor-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;"></div>
+  </div>
+</div>
+
+<!-- 班別学習(番号選択)パネル -->
+<div id="group-select-panel" style="display:none;padding:16px;">
+  <div style="background:var(--surface2);border-radius:12px;padding:16px;margin-bottom:16px;">
+    <h3 style="margin:0 0 12px;font-size:15px;">🎯 班の番号選択設定</h3>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+      <label style="font-size:13px;">班の数：</label>
+      <input type="text" id="group-select-count" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="例: 4"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'')"
+        style="width:60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;text-align:center;">
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="startGroupSelection()">班選択を指示</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#10b981;color:#fff;" onclick="approveAllGroups()">✅ 全班許可</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;" onclick="dissolveAllGroups()">❌ 全班解散</button>
+    </div>
+    
+    <!-- 生徒選択状況 -->
+    <div id="selection-status-area" style="display:none;margin-top:12px;">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">📊 選択状況</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;" id="group-select-columns"></div>
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">👤 未選択の生徒</div>
+        <div id="unselected-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:36px;background:var(--surface);border-radius:8px;padding:8px;border:1px dashed var(--border);"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 確定済み班のモニタリングエリア -->
+  <div id="group-select-content-area" style="display:none;">
+    <!-- ツールバー：列数 + 一括操作 -->
+    <div id="group-select-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;margin-right:6px;">
+          <span style="font-size:12px;color:var(--muted);">列数</span>
+          <div style="display:flex;gap:3px;" id="col-switcher-select">
+            <button onclick="setGroupSelectCols(2)" id="gscol-2" class="gscol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:12px;cursor:pointer;">2</button>
+            <button onclick="setGroupSelectCols(3)" id="gscol-3" class="gscol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">3</button>
+            <button onclick="setGroupSelectCols(4)" id="gscol-4" class="gscol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">4</button>
+          </div>
+        </div>
+        <div style="width:1px;height:24px;background:var(--border);margin:0 2px;"></div>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupSelectWb()">📋 全班WB配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupSelectWb()">📋 全班WB回収</button>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupSelectImg()">🖼 全班画像配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupSelectImg()">🖼 全班画像回収</button>
+      </div>
+    </div>
+    <!-- 班カードグリッド -->
+    <div id="group-select-monitor-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;"></div>
   </div>
 </div>
 
@@ -745,6 +796,7 @@ window.startSession=async function(){
   document.getElementById('cstatus').textContent=sessionId;
   listenStudents();
   listenGroups();
+  listenGroupSelectData();
   toast('✅ セッション開始！URLを生徒に送ってください');
 };
 
@@ -926,14 +978,17 @@ window.switchView=function(v){
   document.getElementById('tab-wb').classList.toggle('active',v==='wb');
   document.getElementById('tab-img').classList.toggle('active',v==='img');
   document.getElementById('tab-group').classList.toggle('active',v==='group');
+  document.getElementById('tab-group-select').classList.toggle('active',v==='group-select');
   document.getElementById('wb-controls').style.display=v==='wb'?'block':'none';
   document.getElementById('img-controls').style.display=v==='img'?'block':'none';
   document.getElementById('group-panel').style.display=v==='group'?'block':'none';
-  document.getElementById('grid').style.display=(v==='img'||v==='group')?'none':'';
-  if(v!=='group') Object.keys(students).forEach(sid=>updateCardContent(sid));
+  document.getElementById('group-select-panel').style.display=v==='group-select'?'block':'none';
+  document.getElementById('grid').style.display=(v==='img'||v==='group'||v==='group-select')?'none':'';
+  if(v!=='group'&&v!=='group-select') Object.keys(students).forEach(sid=>updateCardContent(sid));
   if(v==='wb') listenWbData();
   if(v==='img'){ distImgRefreshUI(); listenDistImgData(); renderDistImgGrid(); }
   if(v==='group') renderGroupPanel();
+  if(v==='group-select') renderGroupSelectPanel();
 };
 
 // ===== WHITEBOARD =====
@@ -2375,6 +2430,7 @@ function updateGroupScreens() {
 }
 
 let _groupMsgGid = null;
+let currentGroupSelectId = null;
 window.sendGroupMsg = function(gid) {
   _groupMsgGid = gid;
   const name = groupDefs[gid]?.name || gid;
@@ -2388,6 +2444,7 @@ window.closeGroupMsgModal = function() {
   document.getElementById('group-msg-modal').style.display = 'none';
   // メッセージモードに戻す
   _groupMsgIsComment = false;
+  currentGroupSelectId = null;
   const title = document.getElementById('gm-modal-title');
   if (title) title.textContent = '💬 メッセージを送る';
   const qbtns = document.getElementById('gm-quick-btns');
@@ -2424,18 +2481,28 @@ window.sendGroupMessage = function() {
   const text = document.getElementById('gminput').value.trim();
   if (!_groupMsgIsComment && !text) { toast('⚠️ メッセージを入力してください'); return; }
   const { ref, set } = window.FB;
+  
+  // groupsSelectモードかどうかを判定
+  const isSelectMode = currentGroupSelectId !== null;
+  const basePath = isSelectMode ? 'groupsSelect' : 'groups';
+  const targetDefs = isSelectMode ? groupSelectDefs : groupDefs;
+  const targetGid = isSelectMode ? currentGroupSelectId : _groupMsgGid;
+  
   if (text) {
     // テキストがある場合のみメッセージを送信
-    if (_groupMsgGid === 'all') {
-      for (const gid of Object.keys(groupDefs)) {
-        set(ref(db, `sessions/${sessionId}/groups/${gid}/message`), { text, ts: Date.now() });
+    if (targetGid === 'all') {
+      for (const gid of Object.keys(targetDefs)) {
+        set(ref(db, `sessions/${sessionId}/${basePath}/${gid}/message`), { text, ts: Date.now() });
       }
       if (!_groupMsgIsComment) toast('💬 全班にメッセージを送りました');
     } else {
-      set(ref(db, `sessions/${sessionId}/groups/${_groupMsgGid}/message`), { text, ts: Date.now() });
-      if (!_groupMsgIsComment) toast(`💬 ${groupDefs[_groupMsgGid]?.name || _groupMsgGid} にメッセージを送りました`);
+      set(ref(db, `sessions/${sessionId}/${basePath}/${targetGid}/message`), { text, ts: Date.now() });
+      if (!_groupMsgIsComment) toast(`💬 ${targetDefs[targetGid]?.name || targetGid} にメッセージを送りました`);
     }
   }
+  
+  // モードをリセット
+  currentGroupSelectId = null;
   window.closeGroupMsgModal();
 };
 
@@ -2478,6 +2545,517 @@ function listenGroups() {
       groupDefs[child.key] = g;
     });
     if (currentView === 'group') renderGroupPanel();
+  });
+}
+
+// ===== 班別学習(番号選択) =====
+let groupSelectDefs = {};      // {groupId: {name, members:{uid:status}}} status: 'pending'/'approved'
+let groupSelectListeners = {}; // groupId → unsubscribe関数
+let groupSelectActive = false; // 選択指示が有効かどうか
+
+function renderGroupSelectPanel() {
+  const saved = Object.keys(groupSelectDefs).filter(gid => {
+    const g = groupSelectDefs[gid];
+    return Object.values(g.members || {}).some(s => s === 'approved');
+  }).length > 0;
+  
+  document.getElementById('selection-status-area').style.display = groupSelectActive ? 'block' : 'none';
+  document.getElementById('group-select-content-area').style.display = saved ? 'block' : 'none';
+  
+  if (groupSelectActive) renderSelectionStatus();
+  if (saved) renderGroupSelectContentArea();
+}
+
+// 班選択を指示
+window.startGroupSelection = async function() {
+  const raw = document.getElementById('group-select-count').value.trim();
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { 
+    toast('⚠️ 班の数を2〜10の整数で入力してください'); 
+    return; 
+  }
+  
+  const { ref, set, remove } = window.FB;
+  
+  // 既存の選択データをリセット
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect`));
+  
+  groupSelectDefs = {};
+  for (let i = 1; i <= n; i++) {
+    const gid = 'gs' + i;
+    groupSelectDefs[gid] = { name: `${i}班`, members: {} };
+  }
+  
+  // Firebaseに班構造を保存
+  for (const [gid, g] of Object.entries(groupSelectDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}`), {
+      name: g.name,
+      members: g.members || {},
+      createdAt: Date.now()
+    });
+  }
+  
+  // 選択指示を有効化
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/active`), true);
+  groupSelectActive = true;
+  
+  toast('✅ 生徒に班選択を指示しました');
+  renderGroupSelectPanel();
+};
+
+// 選択状況を表示
+function renderSelectionStatus() {
+  const cols = document.getElementById('group-select-columns');
+  const unselected = document.getElementById('unselected-list');
+  cols.innerHTML = '';
+  unselected.innerHTML = '';
+  
+  // 班ごとの列を作成
+  Object.entries(groupSelectDefs).sort((a,b) => {
+    const na = parseInt(a[0].replace('gs',''));
+    const nb = parseInt(b[0].replace('gs',''));
+    return na - nb;
+  }).forEach(([gid, g]) => {
+    const col = document.createElement('div');
+    col.style.cssText = 'background:var(--surface);border-radius:8px;padding:10px;border:1px solid var(--border);';
+    
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+    header.innerHTML = `<span style="font-size:13px;font-weight:700;color:var(--accent);">${g.name}</span>`;
+    
+    // 班ごとの許可/解散ボタン
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;gap:4px;';
+    
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'btn';
+    approveBtn.style.cssText = 'padding:3px 8px;font-size:10px;background:#10b981;color:#fff;';
+    approveBtn.textContent = '✅ 許可';
+    approveBtn.onclick = () => approveGroup(gid);
+    
+    const dissolveBtn = document.createElement('button');
+    dissolveBtn.className = 'btn';
+    dissolveBtn.style.cssText = 'padding:3px 8px;font-size:10px;background:#ef4444;color:#fff;';
+    dissolveBtn.textContent = '❌ 解散';
+    dissolveBtn.onclick = () => dissolveGroup(gid);
+    
+    btnWrap.appendChild(approveBtn);
+    btnWrap.appendChild(dissolveBtn);
+    header.appendChild(btnWrap);
+    col.appendChild(header);
+    
+    // メンバー表示
+    const memberList = document.createElement('div');
+    memberList.style.cssText = 'display:flex;flex-direction:column;gap:4px;min-height:40px;';
+    
+    Object.entries(g.members || {}).forEach(([uid, status]) => {
+      if (students[uid]) {
+        const chip = document.createElement('div');
+        chip.style.cssText = 'display:flex;align-items:center;gap:6px;background:var(--surface2);border-radius:6px;padding:4px 8px;font-size:11px;border:1px solid var(--border);';
+        
+        const statusBadge = status === 'approved' 
+          ? '<span style="background:#10b981;color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;">確定</span>'
+          : '<span style="background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;">待機</span>';
+        
+        chip.innerHTML = `<img src="${students[uid].photoURL||''}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'"> ${students[uid].name||students[uid].email||uid} ${statusBadge}`;
+        memberList.appendChild(chip);
+      }
+    });
+    
+    col.appendChild(memberList);
+    cols.appendChild(col);
+  });
+  
+  // 未選択生徒
+  const selectedUids = new Set();
+  Object.values(groupSelectDefs).forEach(g => {
+    Object.keys(g.members || {}).forEach(uid => selectedUids.add(uid));
+  });
+  
+  Object.keys(students).forEach(uid => {
+    if (!selectedUids.has(uid)) {
+      const chip = document.createElement('div');
+      chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border-radius:6px;padding:4px 8px;font-size:11px;border:1px solid var(--border);';
+      chip.innerHTML = `<img src="${students[uid].photoURL||''}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'"> ${students[uid].name||students[uid].email||uid}`;
+      unselected.appendChild(chip);
+    }
+  });
+}
+
+// 班を許可
+window.approveGroup = async function(gid) {
+  const { ref, update } = window.FB;
+  const g = groupSelectDefs[gid];
+  if (!g || !g.members) return;
+  
+  const updates = {};
+  Object.keys(g.members).forEach(uid => {
+    updates[`sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`] = 'approved';
+    if (groupSelectDefs[gid].members[uid]) {
+      groupSelectDefs[gid].members[uid] = 'approved';
+    }
+  });
+  
+  await update(ref(db), updates);
+  toast(`✅ ${g.name}を許可しました`);
+  renderGroupSelectPanel();
+};
+
+// 班を解散
+window.dissolveGroup = async function(gid) {
+  const { ref, remove } = window.FB;
+  const g = groupSelectDefs[gid];
+  if (!g) return;
+  
+  if (!confirm(`${g.name}を解散しますか？`)) return;
+  
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members`));
+  groupSelectDefs[gid].members = {};
+  
+  toast(`${g.name}を解散しました`);
+  renderGroupSelectPanel();
+};
+
+// 全班許可
+window.approveAllGroups = async function() {
+  const { ref, update } = window.FB;
+  const updates = {};
+  
+  Object.entries(groupSelectDefs).forEach(([gid, g]) => {
+    Object.keys(g.members || {}).forEach(uid => {
+      updates[`sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`] = 'approved';
+      if (groupSelectDefs[gid].members[uid]) {
+        groupSelectDefs[gid].members[uid] = 'approved';
+      }
+    });
+  });
+  
+  await update(ref(db), updates);
+  toast('✅ 全ての班を許可しました');
+  renderGroupSelectPanel();
+};
+
+// 全班解散
+window.dissolveAllGroups = async function() {
+  if (!confirm('全ての班を解散しますか？')) return;
+  
+  const { ref, remove } = window.FB;
+  
+  Object.keys(groupSelectDefs).forEach(gid => {
+    groupSelectDefs[gid].members = {};
+  });
+  
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect`));
+  
+  // 班構造だけ再作成
+  const { set } = window.FB;
+  for (const [gid, g] of Object.entries(groupSelectDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}`), {
+      name: g.name,
+      members: {},
+      createdAt: Date.now()
+    });
+  }
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/active`), true);
+  
+  toast('全ての班を解散しました');
+  renderGroupSelectPanel();
+};
+
+// ===== 班別モニタリングUI (番号選択) =====
+let _groupSelectCols = 2;
+
+window.setGroupSelectCols = function(n) {
+  _groupSelectCols = n;
+  const grid = document.getElementById('group-select-monitor-grid');
+  if (grid) grid.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`;
+  [2,3,4].forEach(i => {
+    const btn = document.getElementById('gscol-' + i);
+    if (!btn) return;
+    if (i === n) {
+      btn.style.background = 'var(--accent)'; btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--accent)';
+    } else {
+      btn.style.background = 'var(--surface)'; btn.style.color = 'var(--text)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  });
+};
+
+function renderGroupSelectContentArea() {
+  const grid = document.getElementById('group-select-monitor-grid');
+  const bulkPanel = document.getElementById('group-select-bulk-panel');
+  
+  const approvedGroups = Object.entries(groupSelectDefs).filter(([gid, g]) => {
+    return Object.values(g.members || {}).some(s => s === 'approved');
+  });
+  
+  if (approvedGroups.length === 0) {
+    if (grid) grid.innerHTML = '<p style="color:var(--muted);font-size:13px;">確定済みの班がありません</p>';
+    if (bulkPanel) bulkPanel.style.display = 'none';
+    return;
+  }
+  
+  // 既存のプレビューリスナーをすべて解除
+  Object.keys(groupSelectListeners).forEach(key => {
+    if (key.endsWith('_prev') && typeof groupSelectListeners[key] === 'function') {
+      groupSelectListeners[key]();
+      delete groupSelectListeners[key];
+    }
+  });
+  
+  if (bulkPanel) bulkPanel.style.display = 'block';
+  grid.style.gridTemplateColumns = `repeat(${_groupSelectCols},minmax(0,1fr))`;
+  grid.innerHTML = '';
+  
+  approvedGroups.sort((a,b) => {
+    const na = parseInt(a[0].replace('gs',''));
+    const nb = parseInt(b[0].replace('gs',''));
+    return na - nb;
+  }).forEach(([gid, g]) => {
+    const approvedMembers = Object.entries(g.members || {}).filter(([uid, status]) => status === 'approved').map(([uid]) => uid);
+    
+    const card = document.createElement('div');
+    card.id = 'gscard-' + gid;
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;';
+    
+    // ヘッダー
+    const header = document.createElement('div');
+    header.style.cssText = 'background:var(--surface2);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;';
+    const titleWrap = document.createElement('div');
+    titleWrap.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    const gname = document.createElement('span');
+    gname.style.cssText = 'font-weight:700;font-size:14px;color:var(--text);';
+    gname.textContent = g.name;
+    titleWrap.appendChild(gname);
+    approvedMembers.forEach(uid => {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:1px 8px;';
+      chip.textContent = students[uid]?.name || uid.slice(0,6);
+      titleWrap.appendChild(chip);
+    });
+    header.appendChild(titleWrap);
+    
+    const statusBadge = document.createElement('span');
+    statusBadge.id = 'gsstatus-' + gid;
+    statusBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:99px;background:var(--surface);border:1px solid var(--border);color:var(--muted);';
+    statusBadge.textContent = '未配布';
+    header.appendChild(statusBadge);
+    card.appendChild(header);
+    
+    // プレビュー
+    const preview = document.createElement('div');
+    preview.id = 'gsprev-' + gid;
+    preview.style.cssText = 'flex:1;min-height:120px;background:#fff;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;border-bottom:1px solid var(--border);overflow:hidden;';
+    preview.innerHTML = `<div id="gsprev-placeholder-${gid}" style="display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0.35;">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/></svg>
+      <span style="font-size:11px;color:var(--muted);">未配布</span>
+    </div>
+    <canvas id="gsprev-canvas-${gid}" style="display:none;width:100%;height:100%;object-fit:contain;"></canvas>
+    <img id="gsprev-img-${gid}" style="display:none;width:100%;height:100%;object-fit:contain;" />`;
+    preview.onclick = () => openGroupSelectZoom(gid);
+    card.appendChild(preview);
+    
+    // 操作ボタン
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-top:1px solid var(--border);';
+    const btns = [
+      { label:'WB配布', icon:'<path d="M3 3h18v18H3z" stroke-linejoin="round"/><path d="M8 12h8M12 8v8"/>', color:'#2563eb', action:`openGroupSelectWb('${gid}')`, id:`gsbtn-wb-open-${gid}` },
+      { label:'WB回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`closeGroupSelectWb('${gid}')`, id:`gsbtn-wb-close-${gid}` },
+      { label:'画像配布', icon:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-4 4-2-2-4 4"/>', color:'#2563eb', action:`sendGroupSelectImg('${gid}')`, id:`gsbtn-img-open-${gid}` },
+      { label:'画像回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`collectGroupSelectImg('${gid}')`, id:`gsbtn-img-close-${gid}` },
+      { label:'メッセージ', icon:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>', color:'#7c3aed', action:`sendGroupSelectMsg('${gid}')`, id:'' },
+    ];
+    btns.forEach((b, i) => {
+      const btn = document.createElement('button');
+      if (b.id) btn.id = b.id;
+      btn.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 2px;font-size:10px;background:var(--surface);border:none;border-right:${i<4?'1px solid var(--border)':'none'};cursor:pointer;color:var(--muted);transition:.1s;`;
+      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${b.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${b.icon}</svg>${b.label}`;
+      btn.onmouseenter = () => btn.style.background = 'var(--surface2)';
+      btn.onmouseleave = () => btn.style.background = 'var(--surface)';
+      btn.onclick = () => eval(b.action);
+      actions.appendChild(btn);
+    });
+    card.appendChild(actions);
+    grid.appendChild(card);
+    
+    listenGroupSelectPreview(gid);
+  });
+}
+
+// プレビュー監視
+function listenGroupSelectPreview(gid) {
+  if (groupSelectListeners[gid + '_prev']) {
+    groupSelectListeners[gid + '_prev']();
+    delete groupSelectListeners[gid + '_prev'];
+  }
+  const { ref, onValue } = window.FB;
+  
+  let wbSnapshot  = null;
+  let distImgData = null;
+  
+  function redraw() {
+    const badge       = document.getElementById('gsstatus-' + gid);
+    const placeholder = document.getElementById('gsprev-placeholder-' + gid);
+    const canvas      = document.getElementById('gsprev-canvas-' + gid);
+    const imgEl       = document.getElementById('gsprev-img-' + gid);
+    if (!canvas) return;
+    
+    const wbActive = wbSnapshot?.active === true;
+    const hasImg   = distImgData !== null;
+    
+    if (wbActive || hasImg) {
+      if (imgEl) imgEl.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'none';
+      canvas.style.display = 'block';
+      if (badge) {
+        if (wbActive) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
+        else          { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
+      }
+      requestAnimationFrame(() => {
+        const parent = canvas.parentElement;
+        const W = Math.round(parent?.offsetWidth  || 280);
+        const H = Math.round(parent?.offsetHeight || 158);
+        if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+        const bgUrl = hasImg ? distImgData.dataUrl : null;
+        const strokes = wbActive ? (wbSnapshot?.strokes || null) : (hasImg ? (distImgData?.strokes || null) : null);
+        const texts   = wbActive ? (wbSnapshot?.texts   || null) : (hasImg ? (distImgData?.texts   || null) : null);
+        replayWithBg(canvas, strokes, bgUrl, texts);
+      });
+    } else {
+      canvas.style.display = 'none';
+      if (imgEl) imgEl.style.display = 'none';
+      if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+      if (placeholder) placeholder.style.display = 'flex';
+    }
+  }
+  
+  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), snap => {
+    wbSnapshot = snap.exists() ? snap.val() : null;
+    redraw();
+  });
+  
+  const unsubImg = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), snap => {
+    distImgData = snap.exists() ? snap.val() : null;
+    redraw();
+  });
+  
+  groupSelectListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); };
+}
+
+// WB配布
+window.openGroupSelectWb = async function(gid) {
+  const { ref, set } = window.FB;
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), { active: true, strokes: null, texts: null });
+  toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
+};
+
+window.closeGroupSelectWb = async function(gid) {
+  const { ref, remove } = window.FB;
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`));
+  toast(`🗑 ${groupSelectDefs[gid]?.name || gid} のWBを回収しました`);
+};
+
+window.openAllGroupSelectWb = async function() {
+  const { ref, set } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), { active: true, strokes: null, texts: null });
+  }
+  toast('✅ 全班にWBを配布しました');
+};
+
+window.closeAllGroupSelectWb = async function() {
+  const { ref, remove } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`));
+  }
+  toast('🗑 全班のWBを回収しました');
+};
+
+// 画像配布
+window.sendGroupSelectImg = async function(gid) {
+  if (!distImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+  const { ref, set } = window.FB;
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: distImgDataUrl, strokes: null, texts: null });
+  toast(`✅ ${groupSelectDefs[gid]?.name || gid} に画像を配布しました`);
+};
+
+window.collectGroupSelectImg = async function(gid) {
+  const { ref, remove } = window.FB;
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`));
+  toast(`🗑 ${groupSelectDefs[gid]?.name || gid} の画像を回収しました`);
+};
+
+window.sendAllGroupSelectImg = async function() {
+  if (!distImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+  const { ref, set } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: distImgDataUrl, strokes: null, texts: null });
+  }
+  toast('✅ 全班に画像を配布しました');
+};
+
+window.collectAllGroupSelectImg = async function() {
+  const { ref, remove } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`));
+  }
+  toast('🗑 全班の画像を回収しました');
+};
+
+// メッセージ送信
+window.sendGroupSelectMsg = function(gid) {
+  const g = groupSelectDefs[gid];
+  if (!g) return;
+  currentGroupSelectId = gid;
+  document.getElementById('gm-modal-title').textContent = `💬 ${g.name}にメッセージ`;
+  document.getElementById('gmtarget').textContent = `送信先: ${g.name}の全員`;
+  document.getElementById('gminput').value = '';
+  document.getElementById('group-msg-modal').style.display = 'flex';
+};
+
+// 拡大表示
+window.openGroupSelectZoom = function(gid) {
+  // 既存のグループズームモーダルを流用可能
+  // ここでは省略（必要に応じて専用モーダルを追加）
+  toast('拡大表示機能は実装中です');
+};
+
+// Firebaseリスナー
+function listenGroupSelectData() {
+  const { ref, onValue } = window.FB;
+  
+  onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {
+    groupSelectActive = snap.exists() ? snap.val() : false;
+    if (currentView === 'group-select') renderGroupSelectPanel();
+  });
+  
+  onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
+    if (!snap.exists()) {
+      groupSelectDefs = {};
+      if (currentView === 'group-select') renderGroupSelectPanel();
+      return;
+    }
+    groupSelectDefs = {};
+    snap.forEach(child => {
+      if (child.key === 'active') return;
+      const g = child.val();
+      if (!g.members) g.members = {};
+      groupSelectDefs[child.key] = g;
+    });
+    if (currentView === 'group-select') renderGroupSelectPanel();
   });
 }
 

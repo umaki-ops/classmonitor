@@ -402,6 +402,16 @@
     onclick="document.getElementById('watch-overlay').style.display='none';">✕ 閉じる</button>
 </div>
 
+<!-- 班番号選択ポップアップ -->
+<div id="group-select-popup" style="display:none;position:fixed;inset:0;z-index:9500;background:rgba(15,23,42,.85);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:18px;padding:32px;max-width:500px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.4);border:3px solid #2563eb;">
+    <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#1e293b;text-align:center;">🎯 班を選んでください</h2>
+    <p style="margin:0 0 24px;font-size:14px;color:#64748b;text-align:center;">あなたが入りたい班を選択してください</p>
+    <div id="group-select-buttons" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;"></div>
+    <div id="group-select-status" style="margin-top:20px;padding:14px;background:#f1f5f9;border-radius:10px;text-align:center;font-size:15px;font-weight:700;color:#1e293b;display:none;"></div>
+  </div>
+</div>
+
 <!-- 班別WBオーバーレイ -->
 <div id="group-wb-overlay" style="display:none;position:fixed;inset:0;z-index:6000;background:var(--bg,#0f172a);flex-direction:column;">
   <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.1);">
@@ -810,6 +820,7 @@
         if (active === false) hideTeacher();
       });
       listenMyGroup();
+      listenGroupSelect();
 
       // ===== タブ離脱検知 =====
       let _tabAwayCount = 0;
@@ -1775,10 +1786,11 @@
             fontSize: gWbFontSize, fontSizePct: gWbFontSize / (_canvas2?.height || 500) * 100,
             canvasW: _canvas2?.width || 800, canvasH: _canvas2?.height || 500, ts: Date.now() };
           if (gWbGroupId) {
+            const basePath = gWbIsSelectMode ? 'groupsSelect' : 'groups';
             if (gWbFromImg) {
-              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts/${textKey}`), textData);
+              set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/distImg/texts/${textKey}`), textData);
             } else {
-              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts/${textKey}`), textData);
+              set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/wb/texts/${textKey}`), textData);
             }
           }
           return;
@@ -1812,11 +1824,12 @@
         gWbDrawing = false;
         if (gWbCurrentStroke && gWbGroupId) {
           const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
+          const basePath = gWbIsSelectMode ? 'groupsSelect' : 'groups';
           if (gWbFromImg) {
             // 画像配布モード: distImg/strokes に保存（WBストロークと分離）
-            await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
+            await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
           } else {
-            await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
+            await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
           }
           gWbScheduleSnapshot();
         }
@@ -2075,9 +2088,12 @@
       }
     }
 
-    function gWbOpen(groupId, data) {
+    let gWbIsSelectMode = false; // groupsSelectモードかどうか
+    
+    function gWbOpen(groupId, data, isSelectMode = false) {
       const alreadyOpen = gWbGroupId === groupId;
       gWbGroupId = groupId;
+      gWbIsSelectMode = isSelectMode;
       const overlay = document.getElementById('group-wb-overlay');
       overlay.style.display = 'flex';
       document.getElementById('group-wb-title').textContent = '📋 班のホワイトボード';
@@ -2094,12 +2110,13 @@
       // alreadyOpen でもリスナーを再設定（gWbFromImg が変わった場合に対応）
       setTimeout(() => {
         if (!alreadyOpen) gWbInit();
+        const basePath = isSelectMode ? 'groupsSelect' : 'groups';
         if (gWbFromImg) {
-          gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
-          gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
+          gWbListenStrokes(groupId, `sessions/${sessionId}/${basePath}/${groupId}/distImg/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/${basePath}/${groupId}/distImg/texts`);
         } else {
-          gWbListenStrokes(groupId);
-          gWbListenTexts(groupId);
+          gWbListenStrokes(groupId, `sessions/${sessionId}/${basePath}/${groupId}/wb/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/${basePath}/${groupId}/wb/texts`);
         }
       }, 100);
     }
@@ -2143,13 +2160,14 @@
     window.gWbClear = async function() {
       if (!gWbGroupId) return;
       if (!confirm('班全員のホワイトボードをリセットします')) return;
+      const basePath = gWbIsSelectMode ? 'groupsSelect' : 'groups';
       if (gWbFromImg) {
-        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes`), null);
-        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/texts`),   null);
+        await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/distImg/strokes`), null);
+        await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/distImg/texts`),   null);
       } else {
-        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes`), null);
-        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/texts`),   null);
-        await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/resetTs`), Date.now());
+        await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/wb/strokes`), null);
+        await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/wb/texts`),   null);
+        await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/wb/resetTs`), Date.now());
       }
       // 背景は維持してキャンバスをクリア
       if (gWbCtx) { gWbReplayStrokes(null); }
@@ -2158,7 +2176,8 @@
       const canvas = document.getElementById('group-wb-canvas');
       if (!canvas || !gWbGroupId) return;
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/submissions/${studentId}`), {
+      const basePath = gWbIsSelectMode ? 'groupsSelect' : 'groups';
+      await set(ref(db, `sessions/${sessionId}/${basePath}/${gWbGroupId}/wb/submissions/${studentId}`), {
         name: user.displayName || studentId, image: dataUrl, submittedAt: Date.now()
       });
       wbToast('✅ 提出しました！');
@@ -2240,6 +2259,218 @@
               showMsgPopup(msg.text);
             }
           });
+        }
+      });
+    }
+
+    // ===== 班別学習(番号選択) =====
+    let myGroupSelectId = null;
+    let myGroupSelectStatus = null; // 'pending' or 'approved'
+    let _gsWbUnsub = null, _gsImgUnsub = null;
+    
+    function listenGroupSelect() {
+      const { ref, onValue, set, remove } = window.FB;
+      
+      // 選択指示の監視
+      onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
+        const isActive = activeSnap.exists() ? activeSnap.val() : false;
+        
+        if (isActive) {
+          // 既に選択済みでない場合のみポップアップ表示
+          if (!myGroupSelectId || myGroupSelectStatus !== 'approved') {
+            showGroupSelectPopup();
+          }
+        } else {
+          hideGroupSelectPopup();
+        }
+      });
+      
+      // 全班データを監視して自分の状態を確認
+      onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
+        if (!snap.exists()) {
+          myGroupSelectId = null;
+          myGroupSelectStatus = null;
+          gWbClose();
+          return;
+        }
+        
+        let foundGroupId = null;
+        let foundStatus = null;
+        
+        snap.forEach(child => {
+          if (child.key === 'active') return;
+          const g = child.val();
+          if (g.members && g.members[studentId]) {
+            foundGroupId = child.key;
+            foundStatus = g.members[studentId];
+          }
+        });
+        
+        const prevGroupId = myGroupSelectId;
+        const prevStatus = myGroupSelectStatus;
+        myGroupSelectId = foundGroupId;
+        myGroupSelectStatus = foundStatus;
+        
+        // ステータス表示を更新
+        updateGroupSelectStatus();
+        
+        // 班が確定した場合、WB/画像の監視を開始
+        if (foundGroupId && foundStatus === 'approved') {
+          if (prevGroupId !== foundGroupId || prevStatus !== 'approved') {
+            // 新しく確定した場合、リスナーをセットアップ
+            setupGroupSelectListeners(foundGroupId);
+          }
+        } else if (foundStatus !== 'approved') {
+          // まだ確定していない、または解散された場合
+          if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
+          if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
+          gWbClose();
+        }
+      });
+    }
+    
+    function showGroupSelectPopup() {
+      const { ref, onValue } = window.FB;
+      
+      onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
+        if (!snap.exists()) return;
+        
+        const buttonsDiv = document.getElementById('group-select-buttons');
+        buttonsDiv.innerHTML = '';
+        
+        const groups = [];
+        snap.forEach(child => {
+          if (child.key === 'active') return;
+          const g = child.val();
+          groups.push({ id: child.key, name: g.name });
+        });
+        
+        groups.sort((a, b) => {
+          const na = parseInt(a.id.replace('gs',''));
+          const nb = parseInt(b.id.replace('gs',''));
+          return na - nb;
+        });
+        
+        groups.forEach(g => {
+          const btn = document.createElement('button');
+          btn.style.cssText = 'padding:20px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:12px;font-size:18px;font-weight:700;cursor:pointer;transition:.2s;';
+          btn.textContent = g.name;
+          btn.onmouseenter = () => btn.style.transform = 'scale(1.05)';
+          btn.onmouseleave = () => btn.style.transform = 'scale(1)';
+          btn.onclick = () => selectGroup(g.id);
+          buttonsDiv.appendChild(btn);
+        });
+        
+        document.getElementById('group-select-popup').style.display = 'flex';
+        updateGroupSelectStatus();
+      }, { onlyOnce: true });
+    }
+    
+    function hideGroupSelectPopup() {
+      document.getElementById('group-select-popup').style.display = 'none';
+    }
+    
+    async function selectGroup(gid) {
+      const { ref, set, get, remove } = window.FB;
+      
+      // 既存の選択を削除（他の班から移動する場合）
+      const allGroupsSnap = await get(ref(db, `sessions/${sessionId}/groupsSelect`));
+      if (allGroupsSnap.exists()) {
+        const promises = [];
+        allGroupsSnap.forEach(child => {
+          if (child.key === 'active') return;
+          const g = child.val();
+          if (g.members && g.members[studentId]) {
+            promises.push(remove(ref(db, `sessions/${sessionId}/groupsSelect/${child.key}/members/${studentId}`)));
+          }
+        });
+        await Promise.all(promises);
+      }
+      
+      // 新しい班に参加（pending状態で）
+      await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members/${studentId}`), 'pending');
+      
+      myGroupSelectId = gid;
+      myGroupSelectStatus = 'pending';
+      updateGroupSelectStatus();
+    }
+    
+    function updateGroupSelectStatus() {
+      const statusDiv = document.getElementById('group-select-status');
+      
+      if (!myGroupSelectId) {
+        statusDiv.style.display = 'none';
+        return;
+      }
+      
+      statusDiv.style.display = 'block';
+      
+      if (myGroupSelectStatus === 'approved') {
+        statusDiv.textContent = `✅ ${getGroupSelectName(myGroupSelectId)} 確定！`;
+        statusDiv.style.background = '#dcfce7';
+        statusDiv.style.color = '#15803d';
+        hideGroupSelectPopup();
+      } else {
+        statusDiv.textContent = `⏳ ${getGroupSelectName(myGroupSelectId)} 許可待ち...`;
+        statusDiv.style.background = '#fef3c7';
+        statusDiv.style.color = '#92400e';
+      }
+    }
+    
+    function getGroupSelectName(gid) {
+      const num = gid.replace('gs', '');
+      return `${num}班`;
+    }
+    
+    function setupGroupSelectListeners(groupId) {
+      const { ref, onValue } = window.FB;
+      
+      // 既存のリスナーを解除
+      if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
+      if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
+      
+      // WBの監視
+      _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/wb`), wbSnap => {
+        if (!wbSnap.exists() || !wbSnap.val()?.active) {
+          if (!gWbFromImg) gWbClose();
+          return;
+        }
+        const wbData = wbSnap.val();
+        gWbFromImg = false;
+        gWbOpen(groupId, wbData, true); // 第3引数でgroupsSelectモードを示す
+      });
+      
+      // 画像配布の監視
+      _gsImgUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/distImg`), imgSnap => {
+        if (!imgSnap.exists()) {
+          gWbBgImage = null;
+          if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
+          return;
+        }
+        const imgData = imgSnap.val();
+        if (imgData.active && imgData.dataUrl) {
+          if (!gWbGroupId || gWbGroupId !== groupId) {
+            gWbFromImg = true;
+            gWbBgImage = imgData.dataUrl;
+            gWbOpen(groupId, { instruction: '画像に書き込みましょう', _skipReset: true }, true);
+          } else {
+            gWbSetBgImage(imgData.dataUrl);
+          }
+        } else if (!imgData.active) {
+          gWbBgImage = null;
+          if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
+          else gWbSetBgImage(null);
+        }
+      });
+      
+      // メッセージの監視
+      let _lastMsgTs = 0;
+      onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/message`), msgSnap => {
+        if (!msgSnap.exists()) return;
+        const msg = msgSnap.val();
+        if (msg.ts && msg.ts > _lastMsgTs) {
+          _lastMsgTs = msg.ts;
+          showMsgPopup(msg.text);
         }
       });
     }

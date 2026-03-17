@@ -2533,16 +2533,44 @@
       // WBの監視（WBが既に開いている場合は再度openしない）
       let _gsWbActive = false;
       _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/wb`), wbSnap => {
-        if (!wbSnap.exists() || !wbSnap.val()?.active) {
+        console.log('[WB監視] データ受信 - exists:', wbSnap.exists(), 'val:', wbSnap.val());
+        
+        // WBデータが存在しない場合は閉じる
+        if (!wbSnap.exists()) {
+          console.log('[WB監視] データなし - WBを閉じる');
           _gsWbActive = false;
-          if (!gWbFromImg) gWbClose();
+          if (!gWbFromImg) {
+            console.log('[WB監視] gWbClose()を呼び出し');
+            gWbClose();
+          }
           return;
         }
+        
         const wbData = wbSnap.val();
+        // activeフラグがfalseの場合、またはactiveがなくstrokesもtextsもない場合は閉じる
+        // ただし、activeがなくてもstrokesやtextsがあれば有効なWBとして扱う（書き込み中の状態）
+        const hasContent = wbData.strokes || wbData.texts;
+        const isActive = wbData.active === true || hasContent;
+        
+        console.log('[WB監視] active:', wbData.active, 'hasContent:', hasContent, 'isActive:', isActive);
+        
+        if (!isActive) {
+          console.log('[WB監視] 非アクティブ - WBを閉じる');
+          _gsWbActive = false;
+          if (!gWbFromImg) {
+            console.log('[WB監視] gWbClose()を呼び出し');
+            gWbClose();
+          }
+          return;
+        }
+        
+        console.log('[WB監視] _gsWbActive:', _gsWbActive, 'gWbGroupId:', gWbGroupId, 'groupId:', groupId, 'gWbFromImg:', gWbFromImg);
         // WBが既に開いている場合は何もしない（書き込み中にリセットされるのを防ぐ）
         if (_gsWbActive && gWbGroupId === groupId && !gWbFromImg) {
+          console.log('[WB監視] 既に開いているのでスキップ');
           return;
         }
+        console.log('[WB監視] WBを開く');
         _gsWbActive = true;
         gWbFromImg = false;
         gWbOpen(groupId, wbData, true); // 第3引数でgroupsSelectモードを示す

@@ -2346,6 +2346,7 @@
         if (!snap.exists()) {
           myGroupSelectId = null;
           myGroupSelectStatus = null;
+          hideGroupSelectPopup();
           gWbClose();
           return;
         }
@@ -2369,6 +2370,16 @@
         
         // ステータス表示を更新
         updateGroupSelectStatus();
+        
+        // 解散された場合（班に所属していない）はポップアップを再表示
+        if (!foundGroupId) {
+          const isActive = snap.child('active').exists() ? snap.child('active').val() : false;
+          if (isActive) {
+            showGroupSelectPopup();
+          } else {
+            hideGroupSelectPopup();
+          }
+        }
         
         // 班が確定した場合、WB/画像の監視を開始
         if (foundGroupId && foundStatus === 'approved') {
@@ -2519,13 +2530,20 @@
       if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
       if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
       
-      // WBの監視
+      // WBの監視（WBが既に開いている場合は再度openしない）
+      let _gsWbActive = false;
       _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/wb`), wbSnap => {
         if (!wbSnap.exists() || !wbSnap.val()?.active) {
+          _gsWbActive = false;
           if (!gWbFromImg) gWbClose();
           return;
         }
         const wbData = wbSnap.val();
+        // WBが既に開いている場合は何もしない（書き込み中にリセットされるのを防ぐ）
+        if (_gsWbActive && gWbGroupId === groupId && !gWbFromImg) {
+          return;
+        }
+        _gsWbActive = true;
         gWbFromImg = false;
         gWbOpen(groupId, wbData, true); // 第3引数でgroupsSelectモードを示す
       });

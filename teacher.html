@@ -2736,6 +2736,7 @@ window.dissolveGroup = async function(gid) {
   
   if (!confirm(`${g.name}を解散しますか？`)) return;
   
+  // メンバーを削除するが、active状態は維持（他の班が選択中の場合があるため）
   await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members`));
   groupSelectDefs[gid].members = {};
   

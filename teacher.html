@@ -2956,12 +2956,12 @@ function listenGroupSelectPreview(gid) {
     }
   }
   
-  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), snap => {
+  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), snap => {
     wbSnapshot = snap.exists() ? snap.val() : null;
     redraw();
   });
   
-  const unsubImg = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), snap => {
+  const unsubImg = onValue(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`), snap => {
     distImgData = snap.exists() ? snap.val() : null;
     redraw();
   });
@@ -2972,13 +2972,14 @@ function listenGroupSelectPreview(gid) {
 // WB配布
 window.openGroupSelectWb = async function(gid) {
   const { ref, set } = window.FB;
-  await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), { active: true, strokes: null, texts: null });
+  // WBデータを groupsSelect の外に保存
+  await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), { active: true, strokes: null, texts: null });
   toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
 };
 
 window.closeGroupSelectWb = async function(gid) {
   const { ref, remove } = window.FB;
-  await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`));
+  await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
   toast(`🗑 ${groupSelectDefs[gid]?.name || gid} のWBを回収しました`);
 };
 
@@ -2988,7 +2989,7 @@ window.openAllGroupSelectWb = async function() {
     Object.values(g.members || {}).some(s => s === 'approved')
   );
   for (const [gid] of approved) {
-    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), { active: true, strokes: null, texts: null });
+    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), { active: true, strokes: null, texts: null });
   }
   toast('✅ 全班にWBを配布しました');
 };
@@ -2999,7 +3000,7 @@ window.closeAllGroupSelectWb = async function() {
     Object.values(g.members || {}).some(s => s === 'approved')
   );
   for (const [gid] of approved) {
-    await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`));
+    await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
   }
   toast('🗑 全班のWBを回収しました');
 };
@@ -3015,7 +3016,7 @@ window.sendGroupSelectImg = async function(gid) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const { ref, set } = window.FB;
-      await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), {
+      await set(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`), {
         dataUrl: e.target.result,
         active: true,
         strokes: null,
@@ -3031,7 +3032,7 @@ window.sendGroupSelectImg = async function(gid) {
 
 window.collectGroupSelectImg = async function(gid) {
   const { ref, remove } = window.FB;
-  await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`));
+  await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`));
   toast(`🗑 ${groupSelectDefs[gid]?.name || gid} の画像を回収しました`);
 };
 
@@ -3055,7 +3056,7 @@ window.sendAllGroupSelectImg = async function() {
       const dataUrl = e.target.result;
       const { ref, set } = window.FB;
       await Promise.all(approved.map(([gid]) =>
-        set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), {
+        set(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`), {
           dataUrl: dataUrl,
           active: true,
           strokes: null,
@@ -3076,7 +3077,7 @@ window.collectAllGroupSelectImg = async function() {
     Object.values(g.members || {}).some(s => s === 'approved')
   );
   for (const [gid] of approved) {
-    await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`));
+    await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`));
   }
   toast('🗑 全班の画像を回収しました');
 };
@@ -3147,16 +3148,16 @@ window.openGroupSelectZoom = function(gid) {
     });
   }
 
-  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), wbSnap => {
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectWB/${gid}`), wbSnap => {
     _zoomWbSnap = wbSnap.exists() ? wbSnap.val() : null;
     gsZoomRedraw();
   }));
-  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), imgSnap => {
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectImg/${gid}`), imgSnap => {
     _zoomImgData = (imgSnap.exists() && imgSnap.val()?.active === true) ? imgSnap.val() : null;
     gsZoomRedraw();
   }));
-  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg/strokes`), () => gsZoomRedraw()));
-  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg/texts`),   () => gsZoomRedraw()));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectImg/${gid}/strokes`), () => gsZoomRedraw()));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectImg/${gid}/texts`),   () => gsZoomRedraw()));
 
   document.getElementById('gs-zoom-modal').style.display = 'flex';
 };
@@ -3175,6 +3176,8 @@ function listenGroupSelectData() {
     if (currentView === 'group-select') renderGroupSelectPanel();
   });
   
+  // groupsSelect全体ではなく、各班の基本情報（name, members, createdAt）のみを監視
+  // wb/distImgは除外することで、WB書き込み時に班データ更新イベントが発火しないようにする
   onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
     if (!snap.exists()) {
       groupSelectDefs = {};
@@ -3185,12 +3188,17 @@ function listenGroupSelectData() {
     snap.forEach(child => {
       if (child.key === 'active') return;
       const g = child.val();
-      if (!g.members) g.members = {};
-      groupSelectDefs[child.key] = g;
+      // wb/distImg以外のプロパティのみ保存
+      groupSelectDefs[child.key] = {
+        name: g.name,
+        members: g.members || {},
+        createdAt: g.createdAt
+      };
     });
     if (currentView === 'group-select') renderGroupSelectPanel();
   });
 }
+
 
 </script>
 </body>

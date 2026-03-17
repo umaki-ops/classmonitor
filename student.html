@@ -2418,13 +2418,11 @@
     let _myMemberStatusUnsub = null;
     function listenMyMemberStatus(gid) {
       const { ref, onValue } = window.FB;
-      // 既存リスナーを解除
       if (_myMemberStatusUnsub) { _myMemberStatusUnsub(); _myMemberStatusUnsub = null; }
       _myMemberStatusUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members/${studentId}`), snap => {
         const status = snap.exists() ? snap.val() : null;
         console.log('[GroupSelect] 直接ステータス監視:', status);
         if (status === null) {
-          // 解散された
           myGroupSelectId = null;
           myGroupSelectStatus = null;
           if (_myMemberStatusUnsub) { _myMemberStatusUnsub(); _myMemberStatusUnsub = null; }

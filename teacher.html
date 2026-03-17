@@ -541,6 +541,15 @@
   
   <!-- 確定済み班のモニタリングエリア -->
   <div id="group-select-content-area" style="display:none;">
+    <!-- 画像選択エリア -->
+    <div style="background:var(--surface2);border-radius:12px;padding:10px 14px;margin-bottom:10px;border:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--muted);font-weight:600;">配布する画像</span>
+      <input type="file" id="gs-dist-img-input" accept="image/*" onchange="gsDistImgSelected(this)" style="display:none;"/>
+      <button class="btn-img-upload" onclick="document.getElementById('gs-dist-img-input').click()" style="padding:4px 10px;font-size:12px;">&#x1F5BC;&#xFE0F; 画像を選択</button>
+      <img id="gs-dist-img-preview" style="display:none;height:36px;border-radius:4px;border:1px solid var(--border);object-fit:contain;" />
+      <span id="gs-dist-img-status" style="font-size:11px;color:var(--muted);">画像未選択</span>
+      <button class="btn" onclick="gsDistImgClear()" style="padding:4px 8px;font-size:11px;background:#ef4444;color:#fff;border-color:#ef4444;margin-left:auto;">&#x2715; クリア</button>
+    </div>
     <!-- ツールバー：列数 + 一括操作 -->
     <div id="group-select-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -553,10 +562,10 @@
           </div>
         </div>
         <div style="width:1px;height:24px;background:var(--border);margin:0 2px;"></div>
-        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupSelectWb()">📋 全班WB配布</button>
-        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupSelectWb()">📋 全班WB回収</button>
-        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupSelectImg()">🖼 全班画像配布</button>
-        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupSelectImg()">🖼 全班画像回収</button>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupSelectWb()">&#x1F4CB; 全班WB配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupSelectWb()">&#x1F4CB; 全班WB回収</button>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupSelectImg()">&#x1F5BC; 全班画像配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupSelectImg()">&#x1F5BC; 全班画像回収</button>
       </div>
     </div>
     <!-- 班カードグリッド -->
@@ -685,9 +694,9 @@
 
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import{getDatabase,ref,set,get,update,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,get,update,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
@@ -2979,10 +2988,35 @@ window.closeAllGroupSelectWb = async function() {
 };
 
 // 画像配布
+// 班別学習(番号選択)専用の配布画像
+let gsDistImgDataUrl = null;
+
+window.gsDistImgSelected = function(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    gsDistImgDataUrl = e.target.result;
+    const preview = document.getElementById('gs-dist-img-preview');
+    preview.src = gsDistImgDataUrl;
+    preview.style.display = 'inline-block';
+    document.getElementById('gs-dist-img-status').textContent = '配布準備完了';
+  };
+  reader.readAsDataURL(file);
+};
+
+window.gsDistImgClear = function() {
+  gsDistImgDataUrl = null;
+  const preview = document.getElementById('gs-dist-img-preview');
+  preview.src = ''; preview.style.display = 'none';
+  document.getElementById('gs-dist-img-status').textContent = '画像未選択';
+  document.getElementById('gs-dist-img-input').value = '';
+};
+
 window.sendGroupSelectImg = async function(gid) {
-  if (!distImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+  if (!gsDistImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
   const { ref, set } = window.FB;
-  await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: distImgDataUrl, strokes: null, texts: null });
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: gsDistImgDataUrl, strokes: null, texts: null });
   toast(`✅ ${groupSelectDefs[gid]?.name || gid} に画像を配布しました`);
 };
 
@@ -2993,13 +3027,13 @@ window.collectGroupSelectImg = async function(gid) {
 };
 
 window.sendAllGroupSelectImg = async function() {
-  if (!distImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
+  if (!gsDistImgDataUrl) { toast('⚠️ 先に画像を選択してください'); return; }
   const { ref, set } = window.FB;
   const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
     Object.values(g.members || {}).some(s => s === 'approved')
   );
   for (const [gid] of approved) {
-    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: distImgDataUrl, strokes: null, texts: null });
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: gsDistImgDataUrl, strokes: null, texts: null });
   }
   toast('✅ 全班に画像を配布しました');
 };

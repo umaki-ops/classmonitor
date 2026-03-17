@@ -1890,13 +1890,60 @@
     }
 
     let gWbTextListenerUnsub = null;
+    let _lastStrokesSnapshot = null; // 前回のストロークスナップショットを保持
 
     function gWbListenStrokes(groupId, pathOverride) {
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
+      _lastStrokesSnapshot = null; // リセット
       const strokesPath = pathOverride || `sessions/${sessionId}/groups/${groupId}/wb/strokes`;
       gWbStrokeListenerUnsub = onValue(ref(db, strokesPath), snap => {
         if (!gWbCtx) return;
-        gWbReplayStrokes(snap.exists() ? snap.val() : null);
+        const newStrokes = snap.exists() ? snap.val() : null;
+        
+        // 描画中は更新をスキップ（自分の線が消えるのを防ぐ）
+        if (gWbDrawing) {
+          _lastStrokesSnapshot = newStrokes;
+          return;
+        }
+        
+        // 初回または大きな変更がある場合のみ全体再描画
+        const needsFullRedraw = !_lastStrokesSnapshot || 
+                                _lastStrokesSnapshot === null ||
+                                newStrokes === null ||
+                                Object.keys(newStrokes || {}).length < Object.keys(_lastStrokesSnapshot || {}).length;
+        
+        if (needsFullRedraw) {
+          gWbReplayStrokes(newStrokes);
+        } else {
+          // 増分更新: 新しいストロークのみ描画
+          const oldKeys = new Set(Object.keys(_lastStrokesSnapshot || {}));
+          Object.entries(newStrokes || {}).forEach(([key, stroke]) => {
+            if (!oldKeys.has(key)) {
+              // 新しいストロークのみ描画
+              const canvas = document.getElementById('group-wb-canvas');
+              if (!canvas) return;
+              const pts = stroke.points;
+              if (!pts || pts.length < 2) return;
+              let scaledSize = stroke.size;
+              if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
+                const scaleX = canvas.width  / stroke.canvasW;
+                const scaleY = canvas.height / stroke.canvasH;
+                scaledSize = Math.max(0.5, stroke.size * Math.sqrt(scaleX * scaleY));
+              }
+              for (let i = 1; i < pts.length; i++) {
+                let x1 = pts[i-1][0], y1 = pts[i-1][1];
+                let x2 = pts[i][0],   y2 = pts[i][1];
+                if (stroke.normalized) {
+                  x1 = x1 / 100 * canvas.width;  y1 = y1 / 100 * canvas.height;
+                  x2 = x2 / 100 * canvas.width;  y2 = y2 / 100 * canvas.height;
+                }
+                gWbDrawSegment(x1, y1, x2, y2, stroke.tool, stroke.color, scaledSize);
+              }
+            }
+          });
+        }
+        
+        _lastStrokesSnapshot = newStrokes;
       });
     }
 
@@ -2095,6 +2142,7 @@
       const alreadyOpen = gWbGroupId === groupId;
       gWbGroupId = groupId;
       gWbIsSelectMode = isSelectMode;
+      _lastStrokesSnapshot = null; // WBを開くときにスナップショットをリセット
       const overlay = document.getElementById('group-wb-overlay');
       overlay.style.display = 'flex';
       document.getElementById('group-wb-title').textContent = '📋 班のホワイトボード';
@@ -2472,19 +2520,12 @@
       if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
       
       // WBの監視
-      let _gsWbActive = false;
       _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/wb`), wbSnap => {
         if (!wbSnap.exists() || !wbSnap.val()?.active) {
-          _gsWbActive = false;
           if (!gWbFromImg) gWbClose();
           return;
         }
         const wbData = wbSnap.val();
-        // WBが既に開いている場合は何もしない（書き込み中にリセットされるのを防ぐ）
-        if (_gsWbActive && gWbGroupId === groupId) {
-          return;
-        }
-        _gsWbActive = true;
         gWbFromImg = false;
         gWbOpen(groupId, wbData, true); // 第3引数でgroupsSelectモードを示す
       });

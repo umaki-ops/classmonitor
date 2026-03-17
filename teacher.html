@@ -541,15 +541,6 @@
   
   <!-- 確定済み班のモニタリングエリア -->
   <div id="group-select-content-area" style="display:none;">
-    <!-- 画像選択エリア -->
-    <div style="background:var(--surface2);border-radius:12px;padding:10px 14px;margin-bottom:10px;border:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:12px;color:var(--muted);font-weight:600;">配布する画像</span>
-      <input type="file" id="gs-dist-img-input" accept="image/*" onchange="gsDistImgSelected(this)" style="display:none;"/>
-      <button class="btn-img-upload" onclick="document.getElementById('gs-dist-img-input').click()" style="padding:4px 10px;font-size:12px;">&#x1F5BC;&#xFE0F; 画像を選択</button>
-      <img id="gs-dist-img-preview" style="display:none;height:36px;border-radius:4px;border:1px solid var(--border);object-fit:contain;" />
-      <span id="gs-dist-img-status" style="font-size:11px;color:var(--muted);">画像未選択</span>
-      <button class="btn" onclick="gsDistImgClear()" style="padding:4px 8px;font-size:11px;background:#ef4444;color:#fff;border-color:#ef4444;margin-left:auto;">&#x2715; クリア</button>
-    </div>
     <!-- ツールバー：列数 + 一括操作 -->
     <div id="group-select-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -3012,17 +3003,29 @@ window.closeAllGroupSelectWb = async function() {
   toast('🗑 全班のWBを回収しました');
 };
 
-// 画像配布
+// 画像配布（教員作成版と同じ即座選択方式）
 window.sendGroupSelectImg = async function(gid) {
-  if (!gsDistImgDataUrl) { 
-    // 画像が選択されていない場合はファイル選択ダイアログを開く
-    document.getElementById('gs-dist-img-input').click();
-    toast('📷 配布する画像を選択してください'); 
-    return; 
-  }
-  const { ref, set } = window.FB;
-  await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: gsDistImgDataUrl, strokes: null, texts: null });
-  toast(`✅ ${groupSelectDefs[gid]?.name || gid} に画像を配布しました`);
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const { ref, set } = window.FB;
+      await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), {
+        dataUrl: e.target.result,
+        active: true,
+        strokes: null,
+        texts: null,
+        ts: Date.now()
+      });
+      toast(`✅ ${groupSelectDefs[gid]?.name || gid} に画像を配布しました`);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
 };
 
 window.collectGroupSelectImg = async function(gid) {
@@ -3032,20 +3035,38 @@ window.collectGroupSelectImg = async function(gid) {
 };
 
 window.sendAllGroupSelectImg = async function() {
-  if (!gsDistImgDataUrl) { 
-    // 画像が選択されていない場合はファイル選択ダイアログを開く
-    document.getElementById('gs-dist-img-input').click();
-    toast('📷 配布する画像を選択してください'); 
-    return; 
-  }
-  const { ref, set } = window.FB;
   const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
     Object.values(g.members || {}).some(s => s === 'approved')
   );
-  await Promise.all(approved.map(([gid]) =>
-    set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), { active: true, dataUrl: gsDistImgDataUrl, strokes: null, texts: null })
-  ));
-  toast('✅ 全班に画像を配布しました');
+  if (approved.length === 0) {
+    toast('⚠️ 確定済みの班がありません');
+    return;
+  }
+  
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      const { ref, set } = window.FB;
+      await Promise.all(approved.map(([gid]) =>
+        set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), {
+          dataUrl: dataUrl,
+          active: true,
+          strokes: null,
+          texts: null,
+          ts: Date.now()
+        })
+      ));
+      toast('✅ 全班に画像を配布しました');
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
 };
 
 window.collectAllGroupSelectImg = async function() {
@@ -3071,31 +3092,6 @@ window.sendGroupSelectMsg = function(gid) {
 };
 
 // 拡大表示
-// 班別学習(番号選択)専用の配布画像
-let gsDistImgDataUrl = null;
-
-window.gsDistImgSelected = function(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    gsDistImgDataUrl = e.target.result;
-    const preview = document.getElementById('gs-dist-img-preview');
-    preview.src = gsDistImgDataUrl;
-    preview.style.display = 'inline-block';
-    document.getElementById('gs-dist-img-status').textContent = '配布準備完了';
-  };
-  reader.readAsDataURL(file);
-};
-
-window.gsDistImgClear = function() {
-  gsDistImgDataUrl = null;
-  const preview = document.getElementById('gs-dist-img-preview');
-  preview.src = ''; preview.style.display = 'none';
-  document.getElementById('gs-dist-img-status').textContent = '画像未選択';
-  document.getElementById('gs-dist-img-input').value = '';
-};
-
 window.openGroupSelectZoom = function(gid) {
   const g = groupSelectDefs[gid];
   if (!g) return;

@@ -685,9 +685,9 @@
 
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import{getDatabase,ref,set,get,update,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,get,update,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));

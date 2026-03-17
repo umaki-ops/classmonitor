@@ -668,6 +668,36 @@
     </div>
   </div>
 </div>
+
+<!-- 班別学習(番号選択) 拡大モーダル -->
+<div id="gs-zoom-modal" style="display:none;position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.8);align-items:flex-start;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;" onclick="closeGroupSelectZoom()">
+  <div style="background:var(--surface);border-radius:16px;width:100%;max-width:860px;margin:auto;" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <span id="gs-zoom-title" style="font-weight:700;font-size:16px;color:var(--text);"></span>
+      <button onclick="closeGroupSelectZoom()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;">✕</button>
+    </div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">ホワイトボード / 配布画像</div>
+      <div id="gs-zoom-preview" style="background:#fff;border-radius:10px;border:1px solid var(--border);width:100%;aspect-ratio:16/9;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;">
+        <canvas id="gs-zoom-canvas" style="width:100%;height:100%;display:none;"></canvas>
+        <img id="gs-zoom-img" style="width:100%;height:100%;object-fit:contain;display:none;" />
+        <div id="gs-zoom-nopreview" style="color:var(--muted);font-size:13px;opacity:0.5;">未配布</div>
+      </div>
+    </div>
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">メンバー</div>
+      <div id="gs-zoom-members" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
+    <div style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap;">
+      <div id="gs-zoom-gid" style="display:none;"></div>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="openGroupSelectWb(document.getElementById('gs-zoom-gid').dataset.gid)">📋 WB配布</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeGroupSelectWb(document.getElementById('gs-zoom-gid').dataset.gid)">📋 WB回収</button>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="sendGroupSelectImg(document.getElementById('gs-zoom-gid').dataset.gid)">🖼 画像配布</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectGroupSelectImg(document.getElementById('gs-zoom-gid').dataset.gid)">🖼 画像回収</button>
+      <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;" onclick="sendGroupSelectMsg(document.getElementById('gs-zoom-gid').dataset.gid)">💬 メッセージ</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <!-- 離脱レポートモーダル -->
@@ -685,9 +715,9 @@
 
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import{getDatabase,ref,set,get,update,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,get,update,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
@@ -2684,17 +2714,19 @@ function renderSelectionStatus() {
 
 // 班を許可
 window.approveGroup = async function(gid) {
-  const { ref, set } = window.FB;
+  const { ref, update } = window.FB;
   const g = groupSelectDefs[gid];
   if (!g || !g.members) return;
   
-  const promises = [];
+  const updates = {};
   Object.keys(g.members).forEach(uid => {
-    promises.push(set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`), 'approved'));
-    groupSelectDefs[gid].members[uid] = 'approved';
+    updates[`sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`] = 'approved';
+    if (groupSelectDefs[gid].members[uid]) {
+      groupSelectDefs[gid].members[uid] = 'approved';
+    }
   });
   
-  await Promise.all(promises);
+  await update(ref(db), updates);
   toast(`✅ ${g.name}を許可しました`);
   renderGroupSelectPanel();
 };
@@ -2716,17 +2748,19 @@ window.dissolveGroup = async function(gid) {
 
 // 全班許可
 window.approveAllGroups = async function() {
-  const { ref, set } = window.FB;
-  const promises = [];
+  const { ref, update } = window.FB;
+  const updates = {};
   
   Object.entries(groupSelectDefs).forEach(([gid, g]) => {
     Object.keys(g.members || {}).forEach(uid => {
-      promises.push(set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`), 'approved'));
-      groupSelectDefs[gid].members[uid] = 'approved';
+      updates[`sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`] = 'approved';
+      if (groupSelectDefs[gid].members[uid]) {
+        groupSelectDefs[gid].members[uid] = 'approved';
+      }
     });
   });
   
-  await Promise.all(promises);
+  await update(ref(db), updates);
   toast('✅ 全ての班を許可しました');
   renderGroupSelectPanel();
 };
@@ -3024,9 +3058,76 @@ window.sendGroupSelectMsg = function(gid) {
 
 // 拡大表示
 window.openGroupSelectZoom = function(gid) {
-  // 既存のグループズームモーダルを流用可能
-  // ここでは省略（必要に応じて専用モーダルを追加）
-  toast('拡大表示機能は実装中です');
+  const g = groupSelectDefs[gid];
+  if (!g) return;
+
+  const approvedMembers = Object.entries(g.members || {})
+    .filter(([, status]) => status === 'approved')
+    .map(([uid]) => uid);
+
+  document.getElementById('gs-zoom-gid').dataset.gid = gid;
+  document.getElementById('gs-zoom-title').textContent = `${g.name}（${approvedMembers.length}名）`;
+
+  const membersEl = document.getElementById('gs-zoom-members');
+  membersEl.innerHTML = '';
+  approvedMembers.forEach(uid => {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'font-size:13px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:3px 12px;';
+    chip.textContent = students[uid]?.name || uid.slice(0, 6);
+    membersEl.appendChild(chip);
+  });
+
+  const canvas    = document.getElementById('gs-zoom-canvas');
+  const imgEl     = document.getElementById('gs-zoom-img');
+  const nopreview = document.getElementById('gs-zoom-nopreview');
+  canvas.style.display    = 'none';
+  imgEl.style.display     = 'none';
+  nopreview.style.display = 'block';
+
+  if (window._gsZoomUnsubs) window._gsZoomUnsubs.forEach(f => f());
+  window._gsZoomUnsubs = [];
+  const { ref: fbRef, onValue: fbOnValue } = window.FB;
+
+  let _zoomWbSnap  = null;
+  let _zoomImgData = null;
+
+  function gsZoomRedraw() {
+    const wbActive = _zoomWbSnap?.active === true;
+    const hasImg   = _zoomImgData !== null;
+    if (!wbActive && !hasImg) {
+      canvas.style.display = 'none'; imgEl.style.display = 'none'; nopreview.style.display = 'block';
+      return;
+    }
+    nopreview.style.display = 'none'; imgEl.style.display = 'none'; canvas.style.display = 'block';
+    requestAnimationFrame(() => {
+      const container = document.getElementById('gs-zoom-preview');
+      const W = container.offsetWidth || 820;
+      const H = Math.round(W * 9 / 16);
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+      const bgUrl   = hasImg ? _zoomImgData.dataUrl : null;
+      const strokes = wbActive ? (_zoomWbSnap?.strokes || null) : (hasImg ? (_zoomImgData?.strokes || null) : null);
+      const texts   = wbActive ? (_zoomWbSnap?.texts   || null) : (hasImg ? (_zoomImgData?.texts   || null) : null);
+      replayWithBg(canvas, strokes, bgUrl, texts);
+    });
+  }
+
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/wb`), wbSnap => {
+    _zoomWbSnap = wbSnap.exists() ? wbSnap.val() : null;
+    gsZoomRedraw();
+  }));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg`), imgSnap => {
+    _zoomImgData = (imgSnap.exists() && imgSnap.val()?.active === true) ? imgSnap.val() : null;
+    gsZoomRedraw();
+  }));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg/strokes`), () => gsZoomRedraw()));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupsSelect/${gid}/distImg/texts`),   () => gsZoomRedraw()));
+
+  document.getElementById('gs-zoom-modal').style.display = 'flex';
+};
+
+window.closeGroupSelectZoom = function() {
+  document.getElementById('gs-zoom-modal').style.display = 'none';
+  if (window._gsZoomUnsubs) { window._gsZoomUnsubs.forEach(f => f()); window._gsZoomUnsubs = []; }
 };
 
 // Firebaseリスナー

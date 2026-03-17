@@ -405,7 +405,7 @@
 <!-- 班番号選択ポップアップ -->
 <div id="group-select-popup" style="display:none;position:fixed;inset:0;z-index:9500;background:rgba(15,23,42,.85);align-items:center;justify-content:center;padding:16px;">
   <div style="background:#fff;border-radius:18px;padding:32px;max-width:500px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.4);border:3px solid #2563eb;">
-    <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#1e293b;text-align:center;">🎯 班を選んでください</h2>
+    <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#1e293b;text-align:center;">🙏 班を選んでください</h2>
     <p style="margin:0 0 24px;font-size:14px;color:#64748b;text-align:center;">あなたが入りたい班を選択してください</p>
     <div id="group-select-buttons" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;"></div>
     <div id="group-select-status" style="margin-top:20px;padding:14px;background:#f1f5f9;border-radius:10px;text-align:center;font-size:15px;font-weight:700;color:#1e293b;display:none;"></div>
@@ -2330,9 +2330,10 @@
     }
     
     function showGroupSelectPopup() {
-      const { ref, onValue } = window.FB;
+      const { ref, get } = window.FB;
       
-      onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
+      // 班データを一度取得して表示
+      get(ref(db, `sessions/${sessionId}/groupsSelect`)).then(snap => {
         if (!snap.exists()) return;
         
         const buttonsDiv = document.getElementById('group-select-buttons');
@@ -2363,7 +2364,7 @@
         
         document.getElementById('group-select-popup').style.display = 'flex';
         updateGroupSelectStatus();
-      }, { onlyOnce: true });
+      });
     }
     
     function hideGroupSelectPopup() {

@@ -2388,9 +2388,9 @@
     let _gsWbUnsub = null, _gsImgUnsub = null;
     
     function listenGroupSelect() {
-      const { ref, onValue, set, remove } = window.FB;
+      const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v2');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v5');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2410,58 +2410,63 @@
         }
       });
       
-      // 全班データを監視して自分の状態を確認
-      onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
-        console.log('[GroupSelect] 班データ更新:', snap.exists());
+      // 初回は全班データを取得して自分がどの班に所属しているか確認
+      get(ref(db, `sessions/${sessionId}/groupsSelect`)).then(snap => {
+        console.log('[GroupSelect] 初回班データ取得:', snap.exists());
         if (!snap.exists()) {
           myGroupSelectId = null;
           myGroupSelectStatus = null;
           hideGroupSelectPopup();
-          gWbClose();
           return;
         }
-        
-        let foundGroupId = null;
-        let foundStatus = null;
         
         snap.forEach(child => {
           if (child.key === 'active') return;
           const g = child.val();
           if (g.members && g.members[studentId]) {
-            foundGroupId = child.key;
-            foundStatus = g.members[studentId];
+            myGroupSelectId = child.key;
+            myGroupSelectStatus = g.members[studentId];
           }
         });
         
-        const prevGroupId = myGroupSelectId;
-        const prevStatus = myGroupSelectStatus;
-        myGroupSelectId = foundGroupId;
-        myGroupSelectStatus = foundStatus;
-        
-        // ステータス表示を更新
         updateGroupSelectStatus();
         
-        // 解散された場合（班に所属していない）はポップアップを再表示
-        if (!foundGroupId) {
-          const isActive = snap.child('active').exists() ? snap.child('active').val() : false;
-          if (isActive) {
-            showGroupSelectPopup();
-          } else {
-            hideGroupSelectPopup();
-          }
+        // 自分の班のメンバーステータスを監視（この班だけ）
+        if (myGroupSelectId) {
+          console.log('[GroupSelect] 自分の班を監視:', myGroupSelectId);
+          _myMemberStatusUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${myGroupSelectId}/members/${studentId}`), snap => {
+            console.log('[GroupSelect] 自分のステータス変更:', snap.val());
+            const newStatus = snap.exists() ? snap.val() : null;
+            
+            if (!newStatus) {
+              // 解散された
+              myGroupSelectId = null;
+              myGroupSelectStatus = null;
+              hideGroupSelectPopup();
+              if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
+              if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
+              gWbClose();
+              // activeがtrueなら再度ポップアップ表示
+              get(ref(db, `sessions/${sessionId}/groupsSelect/active`)).then(activeSnap => {
+                if (activeSnap.exists() && activeSnap.val()) {
+                  showGroupSelectPopup();
+                }
+              });
+            } else {
+              myGroupSelectStatus = newStatus;
+              updateGroupSelectStatus();
+              
+              // approvedになったらWB/画像監視開始
+              if (newStatus === 'approved') {
+                setupGroupSelectListeners(myGroupSelectId);
+              }
+            }
+          });
         }
         
         // 班が確定した場合、WB/画像の監視を開始
-        if (foundGroupId && foundStatus === 'approved') {
-          if (prevGroupId !== foundGroupId || prevStatus !== 'approved') {
-            // 新しく確定した場合、リスナーをセットアップ
-            setupGroupSelectListeners(foundGroupId);
-          }
-        } else if (foundStatus !== 'approved') {
-          // まだ確定していない、または解散された場合
-          if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
-          if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
-          gWbClose();
+        if (myGroupSelectId && myGroupSelectStatus === 'approved') {
+          setupGroupSelectListeners(myGroupSelectId);
         }
       });
     }

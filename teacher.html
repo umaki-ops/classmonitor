@@ -2971,9 +2971,20 @@ function listenGroupSelectPreview(gid) {
 
 // WB配布
 window.openGroupSelectWb = async function(gid) {
-  const { ref, set } = window.FB;
-  // WBデータを groupsSelect の外に保存
-  await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), { active: true, strokes: null, texts: null });
+  console.log('[Teacher] openGroupSelectWb呼び出し - gid:', gid);
+  const { ref, set, get } = window.FB;
+  const path = `sessions/${sessionId}/groupSelectWB/${gid}`;
+  console.log('[Teacher] WB配布先パス:', path);
+  // 既存のWBデータを取得
+  const wbSnap = await get(ref(db, path));
+  const existingData = wbSnap.exists() ? wbSnap.val() : {};
+  console.log('[Teacher] 既存データ:', existingData);
+  // activeフラグだけを更新（既存のstrokes/textsは保持）
+  await set(ref(db, path), {
+    ...existingData,
+    active: true
+  });
+  console.log('[Teacher] WB配布完了');
   toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
 };
 
@@ -2984,12 +2995,17 @@ window.closeGroupSelectWb = async function(gid) {
 };
 
 window.openAllGroupSelectWb = async function() {
-  const { ref, set } = window.FB;
+  const { ref, set, get } = window.FB;
   const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
     Object.values(g.members || {}).some(s => s === 'approved')
   );
   for (const [gid] of approved) {
-    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), { active: true, strokes: null, texts: null });
+    const wbSnap = await get(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
+    const existingData = wbSnap.exists() ? wbSnap.val() : {};
+    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), {
+      ...existingData,
+      active: true
+    });
   }
   toast('✅ 全班にWBを配布しました');
 };
@@ -3169,6 +3185,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v2');
   const { ref, onValue } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

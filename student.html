@@ -2390,7 +2390,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v2');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2603,26 +2603,29 @@
       // WBの監視（WBが既に開いている場合は再度openしない）
       let _gsWbActive = false;
       let _gsWbCloseTimer = null; // デバウンス用タイマー
-      _gsWbUnsub = onValue(ref(db, `sessions/${sessionId}/groupSelectWB/${groupId}`), wbSnap => {
+      const wbPath = `sessions/${sessionId}/groupSelectWB/${groupId}`;
+      console.log('[WB監視] 監視パス:', wbPath);
+      _gsWbUnsub = onValue(ref(db, wbPath), wbSnap => {
         console.log('[WB監視] データ受信 - exists:', wbSnap.exists(), 'val:', wbSnap.val());
         
         // タイマーをクリア
         if (_gsWbCloseTimer) {
           clearTimeout(_gsWbCloseTimer);
           _gsWbCloseTimer = null;
+          console.log('[WB監視] タイマーキャンセル');
         }
         
-        // WBデータが存在しない場合は閉じる（ただし500ms遅延して確認）
+        // WBデータが存在しない場合は閉じる（ただし2000ms遅延して確認）
         if (!wbSnap.exists()) {
-          console.log('[WB監視] データなし - 500ms後に閉じる判定');
+          console.log('[WB監視] データなし - 2000ms後に閉じる判定');
           _gsWbCloseTimer = setTimeout(() => {
-            console.log('[WB監視] WBを閉じる');
+            console.log('[WB監視] WBを閉じる（2秒間データなし）');
             _gsWbActive = false;
             if (!gWbFromImg) {
               console.log('[WB監視] gWbClose()を呼び出し');
               gWbClose();
             }
-          }, 500); // 500ms待ってから閉じる
+          }, 2000); // 2秒待ってから閉じる（一時的な欠落に対応）
           return;
         }
         
@@ -2635,15 +2638,15 @@
         console.log('[WB監視] active:', wbData.active, 'hasContent:', hasContent, 'isActive:', isActive);
         
         if (!isActive) {
-          console.log('[WB監視] 非アクティブ - 500ms後に閉じる判定');
+          console.log('[WB監視] 非アクティブ - 2000ms後に閉じる判定');
           _gsWbCloseTimer = setTimeout(() => {
-            console.log('[WB監視] WBを閉じる');
+            console.log('[WB監視] WBを閉じる（2秒間非アクティブ）');
             _gsWbActive = false;
             if (!gWbFromImg) {
               console.log('[WB監視] gWbClose()を呼び出し');
               gWbClose();
             }
-          }, 500);
+          }, 2000);
           return;
         }
         

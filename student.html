@@ -2314,7 +2314,11 @@
     function listenMyGroup() {
       // groupsノードを監視して自分の班を特定
       onValue(ref(db, `sessions/${sessionId}/groups`), snap => {
-        if (!snap.exists()) { gWbClose(); return; }
+        if (!snap.exists()) {
+          // 番号選択モードのWBは閉じない（gWbIsSelectModeで判定）
+          if (!gWbIsSelectMode) gWbClose();
+          return;
+        }
 
         // 自分の班を探す
         let foundGroupId = null, foundGroupData = null;
@@ -2326,7 +2330,11 @@
           }
         });
 
-        if (!foundGroupId) { gWbClose(); return; }
+        if (!foundGroupId) {
+          // 番号選択モードのWBは閉じない
+          if (!gWbIsSelectMode) gWbClose();
+          return;
+        }
 
         // 班が変わった場合は古いリスナーを解除
         if (_myGroupId !== foundGroupId) {
@@ -2337,8 +2345,8 @@
           // WBの監視
           _wbUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/wb`), wbSnap => {
             if (!wbSnap.exists() || !wbSnap.val()?.active) {
-              // distImg経由で開いている場合は閉じない
-              if (!gWbFromImg) gWbClose();
+              // 番号選択モードのWBは閉じない、distImg経由で開いている場合も閉じない
+              if (!gWbIsSelectMode && !gWbFromImg) gWbClose();
               return;
             }
             const wbData = wbSnap.val();
@@ -2352,7 +2360,8 @@
           _imgUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/distImg`), imgSnap => {
             if (!imgSnap.exists()) {
               gWbBgImage = null;
-              if (gWbFromImg) { gWbClose(); gWbFromImg = false; }
+              // 番号選択モードのWBは閉じない
+              if (gWbFromImg && !gWbIsSelectMode) { gWbClose(); gWbFromImg = false; }
               return;
             }
             const imgData = imgSnap.val();
@@ -2397,7 +2406,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v9 (gWbCloseスタックトレース)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v10 (教員作成モードガード追加)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

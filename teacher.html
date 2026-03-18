@@ -3174,7 +3174,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v7');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v8');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {
@@ -3206,14 +3206,18 @@ function listenGroupSelectData() {
   
   onChildChanged(groupsRef, snap => {
     if (snap.key === 'active') return;
-    console.log('[Teacher GroupSelect] 班変更:', snap.key, 'データ:', snap.val());
+    console.log('[Teacher GroupSelect] 班変更:', snap.key);
     const g = snap.val();
     groupSelectDefs[snap.key] = {
       name: g.name,
       members: g.members || {},
       createdAt: g.createdAt
     };
-    if (currentView === 'group-select') renderGroupSelectPanel();
+    // デバウンスを使って過剰なrenderを防ぐ
+    clearTimeout(window._gsRenderDebounce);
+    window._gsRenderDebounce = setTimeout(() => {
+      if (currentView === 'group-select') renderGroupSelectPanel();
+    }, 500);  // 500ms待ってから1回だけrender
   });
 }
 

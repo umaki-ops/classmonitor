@@ -2205,7 +2205,27 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
   };
   if (bgDataUrl) {
     const img = new Image();
-    img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); drawRest(); };
+    img.onload = () => {
+      // アスペクト比を保って描画
+      const imgAspect = img.width / img.height;
+      const canvasAspect = canvas.width / canvas.height;
+      let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
+      
+      if (imgAspect > canvasAspect) {
+        // 画像の方が横長 → 幅を基準
+        drawWidth = canvas.width;
+        drawHeight = canvas.width / imgAspect;
+        offsetY = (canvas.height - drawHeight) / 2;
+      } else {
+        // 画像の方が縦長 → 高さを基準
+        drawHeight = canvas.height;
+        drawWidth = canvas.height * imgAspect;
+        offsetX = (canvas.width - drawWidth) / 2;
+      }
+      
+      ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+      drawRest();
+    };
     img.onerror = () => drawRest();
     img.src = bgDataUrl;
   } else {
@@ -3202,7 +3222,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v9');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v10 (画像アスペクト比修正)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

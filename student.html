@@ -1837,9 +1837,13 @@
           if (gWbIsSelectMode) {
             // 番号選択モード: 別パスに保存
             if (gWbFromImg) {
-              await set(ref(db, `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`), gWbCurrentStroke);
+              const path = `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`;
+              console.log('[ストローク保存] パス:', path);
+              await set(ref(db, path), gWbCurrentStroke);
             } else {
-              await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`), gWbCurrentStroke);
+              const path = `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`;
+              console.log('[ストローク保存] パス:', path);
+              await set(ref(db, path), gWbCurrentStroke);
             }
           } else {
             // 教員作成モード: 元のパス
@@ -2392,7 +2396,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v6');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v7 (詳細ログ)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2618,7 +2622,8 @@
       const wbPath = `sessions/${sessionId}/groupSelectWB/${groupId}`;
       console.log('[WB監視] 監視パス:', wbPath);
       _gsWbUnsub = onValue(ref(db, wbPath), wbSnap => {
-        console.log('[WB監視] データ受信 - exists:', wbSnap.exists(), 'val:', wbSnap.val());
+        const now = new Date().toISOString().substr(11, 12);  // HH:MM:SS.mmm
+        console.log(`[WB監視 ${now}] データ受信 - exists:`, wbSnap.exists(), 'val:', wbSnap.val());
         
         // タイマーをクリア
         if (_gsWbCloseTimer) {

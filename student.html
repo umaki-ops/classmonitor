@@ -2407,7 +2407,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v16 (wasApprovedフラグ追加)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v17 (wasApprovedフラグ修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2476,10 +2476,11 @@
             
             if (!newStatus) {
               // 解散された
-              console.log('[GroupSelect] 解散されました - 前回ステータス:', myGroupSelectStatus);
-              // 承認済みだった場合は解散フラグを立てる
-              if (myGroupSelectStatus === 'approved') {
+              console.log('[GroupSelect] 解散されました - wasApproved:', myGroupSelectWasApproved);
+              // 一度でも承認されていた場合は解散フラグを立てる
+              if (myGroupSelectWasApproved) {
                 myGroupSelectWasDissolved = true;
+                console.log('[GroupSelect] 解散フラグを立てました');
               }
               myGroupSelectId = null;
               myGroupSelectStatus = null;
@@ -2562,8 +2563,9 @@
       const { ref, set, get, remove } = window.FB;
       
       console.log('[GroupSelect] 班選択:', gid);
-      // 新しい班を選択したら解散フラグをリセット
+      // 新しい班を選択したら解散フラグと承認フラグをリセット
       myGroupSelectWasDissolved = false;
+      myGroupSelectWasApproved = false;
       
       // 既存の選択を削除（他の班から移動する場合）
       const allGroupsSnap = await get(ref(db, `sessions/${sessionId}/groupsSelect`));

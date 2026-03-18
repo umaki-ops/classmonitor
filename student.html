@@ -2407,7 +2407,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v18 (active:true時にも解散チェック)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v19 (wasApprovedフラグ設定漏れ修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2615,6 +2615,8 @@
         }
         updateGroupSelectStatus();
         if (status === 'approved') {
+          myGroupSelectWasApproved = true;  // フラグを立てる
+          console.log('[GroupSelect] 承認されました - wasApprovedフラグを立てる');
           setupGroupSelectListeners(gid);
         }
       });

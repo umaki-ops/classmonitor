@@ -2756,6 +2756,10 @@ window.dissolveGroup = async function(gid) {
   
   if (!confirm(`${g.name}を解散しますか？`)) return;
   
+  // WBと画像を回収
+  await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
+  await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`));
+  
   // メンバーを削除するが、active状態は維持（他の班が選択中の場合があるため）
   await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members`));
   groupSelectDefs[gid].members = {};
@@ -2785,16 +2789,19 @@ window.approveAllGroups = async function() {
 window.dissolveAllGroups = async function() {
   if (!confirm('全ての班を解散しますか？')) return;
   
-  const { ref, remove } = window.FB;
+  const { ref, remove, set } = window.FB;
   
   Object.keys(groupSelectDefs).forEach(gid => {
     groupSelectDefs[gid].members = {};
   });
   
+  // 全班のWBと画像を回収
+  await remove(ref(db, `sessions/${sessionId}/groupSelectWB`));
+  await remove(ref(db, `sessions/${sessionId}/groupSelectImg`));
+  
   await remove(ref(db, `sessions/${sessionId}/groupsSelect`));
   
   // 班構造だけ再作成
-  const { set } = window.FB;
   for (const [gid, g] of Object.entries(groupSelectDefs)) {
     await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}`), {
       name: g.name,
@@ -3222,7 +3229,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v10 (画像アスペクト比修正)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v11 (解散時にWB・画像回収)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

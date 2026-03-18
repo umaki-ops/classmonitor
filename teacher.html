@@ -3185,33 +3185,45 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v2');
-  const { ref, onValue } = window.FB;
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v4');
+  const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {
     groupSelectActive = snap.exists() ? snap.val() : false;
     if (currentView === 'group-select') renderGroupSelectPanel();
   });
   
-  // groupsSelect全体ではなく、各班の基本情報（name, members, createdAt）のみを監視
-  // wb/distImgは除外することで、WB書き込み時に班データ更新イベントが発火しないようにする
-  onValue(ref(db, `sessions/${sessionId}/groupsSelect`), snap => {
-    if (!snap.exists()) {
-      groupSelectDefs = {};
-      if (currentView === 'group-select') renderGroupSelectPanel();
-      return;
-    }
-    groupSelectDefs = {};
-    snap.forEach(child => {
-      if (child.key === 'active') return;
-      const g = child.val();
-      // wb/distImg以外のプロパティのみ保存
-      groupSelectDefs[child.key] = {
-        name: g.name,
-        members: g.members || {},
-        createdAt: g.createdAt
-      };
-    });
+  // child_added/removed/changedを使うことで、必要最小限の更新のみを検知
+  const groupsRef = ref(db, `sessions/${sessionId}/groupsSelect`);
+  
+  onChildAdded(groupsRef, snap => {
+    if (snap.key === 'active') return;
+    console.log('[Teacher GroupSelect] 班追加:', snap.key);
+    const g = snap.val();
+    groupSelectDefs[snap.key] = {
+      name: g.name,
+      members: g.members || {},
+      createdAt: g.createdAt
+    };
+    if (currentView === 'group-select') renderGroupSelectPanel();
+  });
+  
+  onChildRemoved(groupsRef, snap => {
+    if (snap.key === 'active') return;
+    console.log('[Teacher GroupSelect] 班削除:', snap.key);
+    delete groupSelectDefs[snap.key];
+    if (currentView === 'group-select') renderGroupSelectPanel();
+  });
+  
+  onChildChanged(groupsRef, snap => {
+    if (snap.key === 'active') return;
+    console.log('[Teacher GroupSelect] 班変更:', snap.key);
+    const g = snap.val();
+    groupSelectDefs[snap.key] = {
+      name: g.name,
+      members: g.members || {},
+      createdAt: g.createdAt
+    };
     if (currentView === 'group-select') renderGroupSelectPanel();
   });
 }

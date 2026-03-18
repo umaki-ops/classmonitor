@@ -2972,18 +2972,11 @@ function listenGroupSelectPreview(gid) {
 // WB配布
 window.openGroupSelectWb = async function(gid) {
   console.log('[Teacher] openGroupSelectWb呼び出し - gid:', gid);
-  const { ref, set, get } = window.FB;
+  const { ref, update } = window.FB;
   const path = `sessions/${sessionId}/groupSelectWB/${gid}`;
   console.log('[Teacher] WB配布先パス:', path);
-  // 既存のWBデータを取得
-  const wbSnap = await get(ref(db, path));
-  const existingData = wbSnap.exists() ? wbSnap.val() : {};
-  console.log('[Teacher] 既存データ:', existingData);
-  // activeフラグだけを更新（既存のstrokes/textsは保持）
-  await set(ref(db, path), {
-    ...existingData,
-    active: true
-  });
+  // updateを使うことで、既存データを削除せずにactiveフラグだけを更新
+  await update(ref(db, path), { active: true });
   console.log('[Teacher] WB配布完了');
   toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
 };
@@ -3185,7 +3178,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v4');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v6');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

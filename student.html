@@ -2233,6 +2233,8 @@
     }
 
     function gWbClose() {
+      const now = new Date().toISOString().substr(11, 12);
+      console.log(`[gWbClose ${now}] 呼び出し元:`, new Error().stack);
       document.getElementById('group-wb-overlay').style.display = 'none';
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
       if (gWbTextListenerUnsub)   { gWbTextListenerUnsub();   gWbTextListenerUnsub = null; }
@@ -2395,7 +2397,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v8 (タイマーなし)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v9 (gWbCloseスタックトレース)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

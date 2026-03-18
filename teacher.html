@@ -2971,14 +2971,42 @@ function listenGroupSelectPreview(gid) {
 
 // WB配布
 window.openGroupSelectWb = async function(gid) {
-  console.log('[Teacher] openGroupSelectWb呼び出し - gid:', gid);
-  const { ref, set } = window.FB;
-  const activePath = `sessions/${sessionId}/groupSelectWB/${gid}/active`;
-  console.log('[Teacher] activeフラグ設定先パス:', activePath);
-  // activeフラグのパスだけに書き込むことで、既存のstrokes/textsを削除しない
-  await set(ref(db, activePath), true);
-  console.log('[Teacher] WB配布完了');
-  toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
+  // ダブルクリック防止
+  if (window._wbOpenPending) {
+    console.log('[Teacher] WB配布処理中のため、リクエストを無視');
+    return;
+  }
+  window._wbOpenPending = true;
+  
+  try {
+    console.log('[Teacher] openGroupSelectWb呼び出し - gid:', gid);
+    const { ref, set, get } = window.FB;
+    const wbPath = `sessions/${sessionId}/groupSelectWB/${gid}`;
+    console.log('[Teacher] WBパス:', wbPath);
+    
+    // 既存のWBデータを確認
+    const wbSnap = await get(ref(db, wbPath));
+    
+    if (!wbSnap.exists()) {
+      // 初回作成：完全なオブジェクトを作成
+      console.log('[Teacher] 初回WB作成');
+      await set(ref(db, wbPath), {
+        active: true,
+        strokes: {},
+        texts: {}
+      });
+    } else {
+      // 既に存在する場合：activeフラグだけ更新
+      const activePath = `${wbPath}/active`;
+      console.log('[Teacher] activeフラグ更新:', activePath);
+      await set(ref(db, activePath), true);
+    }
+    
+    console.log('[Teacher] WB配布完了');
+    toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
+  } finally {
+    window._wbOpenPending = false;
+  }
 };
 
 window.closeGroupSelectWb = async function(gid) {
@@ -3174,7 +3202,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v8');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v9');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

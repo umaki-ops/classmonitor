@@ -2407,14 +2407,20 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v17 (wasApprovedフラグ修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v18 (active:true時にも解散チェック)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
         const isActive = activeSnap.exists() ? activeSnap.val() : false;
-        console.log('[GroupSelect] active状態:', isActive, 'myGroupSelectStatus:', myGroupSelectStatus, 'dissolved:', myGroupSelectWasDissolved);
+        console.log('[GroupSelect] active状態:', isActive, 'myGroupSelectStatus:', myGroupSelectStatus, 'dissolved:', myGroupSelectWasDissolved, 'wasApproved:', myGroupSelectWasApproved);
         
         if (isActive) {
+          // activeがtrueになったとき、承認済みフラグをチェック（解散検知の補完）
+          if (myGroupSelectWasApproved && !myGroupSelectId) {
+            console.log('[GroupSelect] 承認済みだったが所属班なし → 解散フラグを立てる');
+            myGroupSelectWasDissolved = true;
+          }
+          
           // 解散フラグが立っている場合はポップアップ表示しない
           if (myGroupSelectWasDissolved) {
             console.log('[GroupSelect] 解散済みのためポップアップ非表示');

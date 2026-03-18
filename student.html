@@ -1901,7 +1901,27 @@
       gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
       if (gWbBgImage) {
         const img = new Image();
-        img.onload = () => { gWbCtx.drawImage(img, 0, 0, canvas.width, canvas.height); drawStrokes(); };
+        img.onload = () => {
+          // アスペクト比を保って描画
+          const imgAspect = img.width / img.height;
+          const canvasAspect = canvas.width / canvas.height;
+          let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
+          
+          if (imgAspect > canvasAspect) {
+            // 画像の方が横長 → 幅を基準
+            drawWidth = canvas.width;
+            drawHeight = canvas.width / imgAspect;
+            offsetY = (canvas.height - drawHeight) / 2;
+          } else {
+            // 画像の方が縦長 → 高さを基準
+            drawHeight = canvas.height;
+            drawWidth = canvas.height * imgAspect;
+            offsetX = (canvas.width - drawWidth) / 2;
+          }
+          
+          gWbCtx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+          drawStrokes();
+        };
         img.onerror = () => drawStrokes();
         img.src = gWbBgImage;
       } else {
@@ -2407,7 +2427,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v19 (wasApprovedフラグ設定漏れ修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v20 (画像アスペクト比修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

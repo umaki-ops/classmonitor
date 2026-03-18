@@ -2386,11 +2386,13 @@
     let myGroupSelectId = null;
     let myGroupSelectStatus = null; // 'pending' or 'approved'
     let _gsWbUnsub = null, _gsImgUnsub = null;
+    let _gsWbActive = false;  // WBが開いているかどうか
+    let _gsWbCloseTimer = null;  // WB閉じる用のデバウンスタイマー
     
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v5');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v6');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2605,9 +2607,14 @@
       if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
       if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
       
+      // タイマーもクリア
+      if (_gsWbCloseTimer) {
+        clearTimeout(_gsWbCloseTimer);
+        _gsWbCloseTimer = null;
+      }
+      _gsWbActive = false;  // リスナー再設定時はリセット
+      
       // WBの監視（WBが既に開いている場合は再度openしない）
-      let _gsWbActive = false;
-      let _gsWbCloseTimer = null; // デバウンス用タイマー
       const wbPath = `sessions/${sessionId}/groupSelectWB/${groupId}`;
       console.log('[WB監視] 監視パス:', wbPath);
       _gsWbUnsub = onValue(ref(db, wbPath), wbSnap => {

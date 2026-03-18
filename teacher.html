@@ -3206,7 +3206,7 @@ function listenGroupSelectData() {
   
   onChildChanged(groupsRef, snap => {
     if (snap.key === 'active') return;
-    console.log('[Teacher GroupSelect] 班変更:', snap.key);
+    console.log('[Teacher GroupSelect] 班変更:', snap.key, 'データ:', snap.val());
     const g = snap.val();
     groupSelectDefs[snap.key] = {
       name: g.name,

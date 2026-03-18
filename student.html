@@ -2399,13 +2399,14 @@
     // ===== 班別学習(番号選択) =====
     let myGroupSelectId = null;
     let myGroupSelectStatus = null; // 'pending' or 'approved'
+    let myGroupSelectWasDissolved = false; // 解散されたかどうか
     let _gsWbUnsub = null, _gsImgUnsub = null;
     let _gsWbActive = false;  // WBが開いているかどうか
     
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v11 (文言修正・解散後ポップアップなし)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v12 (解散フラグ追加)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2413,15 +2414,22 @@
         console.log('[GroupSelect] active状態:', isActive);
         
         if (isActive) {
-          // 既に選択済みでない場合のみポップアップ表示
-          console.log('[GroupSelect] myGroupSelectId:', myGroupSelectId, 'myGroupSelectStatus:', myGroupSelectStatus);
-          if (!myGroupSelectId || myGroupSelectStatus !== 'approved') {
-            console.log('[GroupSelect] ポップアップを表示');
-            showGroupSelectPopup();
+          // activeがfalse→trueになったら、解散フラグをリセット（新しい選択開始）
+          if (!myGroupSelectWasDissolved) {
+            // 既に選択済みでない場合のみポップアップ表示
+            console.log('[GroupSelect] myGroupSelectId:', myGroupSelectId, 'myGroupSelectStatus:', myGroupSelectStatus);
+            if (!myGroupSelectId || myGroupSelectStatus !== 'approved') {
+              console.log('[GroupSelect] ポップアップを表示');
+              showGroupSelectPopup();
+            }
+          } else {
+            console.log('[GroupSelect] 解散済みのためポップアップ非表示');
           }
         } else {
           console.log('[GroupSelect] ポップアップを非表示');
           hideGroupSelectPopup();
+          // activeがfalseになったら解散フラグもリセット（次回の選択に備える）
+          myGroupSelectWasDissolved = false;
         }
       });
       
@@ -2455,8 +2463,10 @@
             
             if (!newStatus) {
               // 解散された
+              console.log('[GroupSelect] 解散されました');
               myGroupSelectId = null;
               myGroupSelectStatus = null;
+              myGroupSelectWasDissolved = true; // 解散フラグを立てる
               hideGroupSelectPopup();
               if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
               if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }

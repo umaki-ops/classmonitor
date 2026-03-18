@@ -2972,11 +2972,11 @@ function listenGroupSelectPreview(gid) {
 // WB配布
 window.openGroupSelectWb = async function(gid) {
   console.log('[Teacher] openGroupSelectWb呼び出し - gid:', gid);
-  const { ref, update } = window.FB;
-  const path = `sessions/${sessionId}/groupSelectWB/${gid}`;
-  console.log('[Teacher] WB配布先パス:', path);
-  // updateを使うことで、既存データを削除せずにactiveフラグだけを更新
-  await update(ref(db, path), { active: true });
+  const { ref, set } = window.FB;
+  const activePath = `sessions/${sessionId}/groupSelectWB/${gid}/active`;
+  console.log('[Teacher] activeフラグ設定先パス:', activePath);
+  // activeフラグのパスだけに書き込むことで、既存のstrokes/textsを削除しない
+  await set(ref(db, activePath), true);
   console.log('[Teacher] WB配布完了');
   toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
 };
@@ -2988,17 +2988,13 @@ window.closeGroupSelectWb = async function(gid) {
 };
 
 window.openAllGroupSelectWb = async function() {
-  const { ref, set, get } = window.FB;
+  const { ref, set } = window.FB;
   const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
     Object.values(g.members || {}).some(s => s === 'approved')
   );
   for (const [gid] of approved) {
-    const wbSnap = await get(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
-    const existingData = wbSnap.exists() ? wbSnap.val() : {};
-    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), {
-      ...existingData,
-      active: true
-    });
+    // activeフラグのパスだけに書き込む
+    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/active`), true);
   }
   toast('✅ 全班にWBを配布しました');
 };
@@ -3178,7 +3174,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v6');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v7');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

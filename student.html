@@ -2406,50 +2406,25 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v13 (全班解散対応)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v14 (シンプルな解散判定)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
         const isActive = activeSnap.exists() ? activeSnap.val() : false;
-        console.log('[GroupSelect] active状態:', isActive);
+        console.log('[GroupSelect] active状態:', isActive, 'myGroupSelectStatus:', myGroupSelectStatus, 'dissolved:', myGroupSelectWasDissolved);
         
         if (isActive) {
-          // activeがtrueになったとき、全班データをチェック
-          get(ref(db, `sessions/${sessionId}/groupsSelect`)).then(snap => {
-            if (!snap.exists()) {
-              console.log('[GroupSelect] 班データなし');
-              return;
-            }
-            
-            // 自分が所属している班を探す
-            let foundGroupId = null;
-            snap.forEach(child => {
-              if (child.key === 'active') return;
-              const g = child.val();
-              if (g.members && g.members[studentId]) {
-                foundGroupId = child.key;
-              }
-            });
-            
-            // 所属班がない場合
-            if (!foundGroupId) {
-              // 以前承認されていた場合は解散されたと判断
-              if (myGroupSelectStatus === 'approved') {
-                console.log('[GroupSelect] 承認済みだったが解散された');
-                myGroupSelectWasDissolved = true;
-              }
-              
-              // 解散フラグが立っていない場合のみポップアップ表示
-              if (!myGroupSelectWasDissolved) {
-                console.log('[GroupSelect] ポップアップを表示');
-                showGroupSelectPopup();
-              } else {
-                console.log('[GroupSelect] 解散済みのためポップアップ非表示');
-              }
-            } else {
-              console.log('[GroupSelect] 既に班に所属: ', foundGroupId);
-            }
-          });
+          // 解散フラグが立っている場合はポップアップ表示しない
+          if (myGroupSelectWasDissolved) {
+            console.log('[GroupSelect] 解散済みのためポップアップ非表示');
+            return;
+          }
+          
+          // 承認済みでない場合のみポップアップ表示
+          if (myGroupSelectStatus !== 'approved') {
+            console.log('[GroupSelect] ポップアップを表示');
+            showGroupSelectPopup();
+          }
         } else {
           console.log('[GroupSelect] ポップアップを非表示');
           hideGroupSelectPopup();

@@ -2328,7 +2328,7 @@
     };
 
     let _myGroupId = null;
-    let _wbUnsub = null, _imgUnsub = null;
+    let _wbUnsub = null, _imgUnsub = null, _msgUnsub = null;
 
     function listenMyGroup() {
       // groupsノードを監視して自分の班を特定
@@ -2359,6 +2359,7 @@
         if (_myGroupId !== foundGroupId) {
           if (_wbUnsub) { _wbUnsub(); _wbUnsub = null; }
           if (_imgUnsub) { _imgUnsub(); _imgUnsub = null; }
+          if (_msgUnsub) { _msgUnsub(); _msgUnsub = null; }
           _myGroupId = foundGroupId;
 
           // WBの監視
@@ -2404,7 +2405,7 @@
 
           // 班メッセージの監視
           let _lastMsgTs = 0;
-          onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/message`), msgSnap => {
+          _msgUnsub = onValue(ref(db, `sessions/${sessionId}/groups/${_myGroupId}/message`), msgSnap => {
             if (!msgSnap.exists()) return;
             const msg = msgSnap.val();
             if (msg.ts && msg.ts > _lastMsgTs) {
@@ -2421,13 +2422,13 @@
     let myGroupSelectStatus = null; // 'pending' or 'approved'
     let myGroupSelectWasApproved = false; // 一度でも承認されたか
     let myGroupSelectWasDissolved = false; // 解散されたかどうか
-    let _gsWbUnsub = null, _gsImgUnsub = null;
+    let _gsWbUnsub = null, _gsImgUnsub = null, _gsMsgUnsub = null;
     let _gsWbActive = false;  // WBが開いているかどうか
     
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v20 (画像アスペクト比修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v21 (メッセージリスナー修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2675,6 +2676,7 @@
       // 既存のリスナーを解除
       if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
       if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }
+      if (_gsMsgUnsub) { _gsMsgUnsub(); _gsMsgUnsub = null; }
       
       _gsWbActive = false;  // リスナー再設定時はリセット
       
@@ -2751,7 +2753,7 @@
       
       // メッセージの監視
       let _lastMsgTs = 0;
-      onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/message`), msgSnap => {
+      _gsMsgUnsub = onValue(ref(db, `sessions/${sessionId}/groupsSelect/${groupId}/message`), msgSnap => {
         if (!msgSnap.exists()) return;
         const msg = msgSnap.val();
         if (msg.ts && msg.ts > _lastMsgTs) {

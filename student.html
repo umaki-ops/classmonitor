@@ -2406,7 +2406,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v12 (解散フラグ追加)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v13 (全班解散対応)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {
@@ -2414,17 +2414,42 @@
         console.log('[GroupSelect] active状態:', isActive);
         
         if (isActive) {
-          // activeがfalse→trueになったら、解散フラグをリセット（新しい選択開始）
-          if (!myGroupSelectWasDissolved) {
-            // 既に選択済みでない場合のみポップアップ表示
-            console.log('[GroupSelect] myGroupSelectId:', myGroupSelectId, 'myGroupSelectStatus:', myGroupSelectStatus);
-            if (!myGroupSelectId || myGroupSelectStatus !== 'approved') {
-              console.log('[GroupSelect] ポップアップを表示');
-              showGroupSelectPopup();
+          // activeがtrueになったとき、全班データをチェック
+          get(ref(db, `sessions/${sessionId}/groupsSelect`)).then(snap => {
+            if (!snap.exists()) {
+              console.log('[GroupSelect] 班データなし');
+              return;
             }
-          } else {
-            console.log('[GroupSelect] 解散済みのためポップアップ非表示');
-          }
+            
+            // 自分が所属している班を探す
+            let foundGroupId = null;
+            snap.forEach(child => {
+              if (child.key === 'active') return;
+              const g = child.val();
+              if (g.members && g.members[studentId]) {
+                foundGroupId = child.key;
+              }
+            });
+            
+            // 所属班がない場合
+            if (!foundGroupId) {
+              // 以前承認されていた場合は解散されたと判断
+              if (myGroupSelectStatus === 'approved') {
+                console.log('[GroupSelect] 承認済みだったが解散された');
+                myGroupSelectWasDissolved = true;
+              }
+              
+              // 解散フラグが立っていない場合のみポップアップ表示
+              if (!myGroupSelectWasDissolved) {
+                console.log('[GroupSelect] ポップアップを表示');
+                showGroupSelectPopup();
+              } else {
+                console.log('[GroupSelect] 解散済みのためポップアップ非表示');
+              }
+            } else {
+              console.log('[GroupSelect] 既に班に所属: ', foundGroupId);
+            }
+          });
         } else {
           console.log('[GroupSelect] ポップアップを非表示');
           hideGroupSelectPopup();
@@ -2463,10 +2488,13 @@
             
             if (!newStatus) {
               // 解散された
-              console.log('[GroupSelect] 解散されました');
+              console.log('[GroupSelect] 解散されました - 前回ステータス:', myGroupSelectStatus);
+              // 承認済みだった場合は解散フラグを立てる
+              if (myGroupSelectStatus === 'approved') {
+                myGroupSelectWasDissolved = true;
+              }
               myGroupSelectId = null;
               myGroupSelectStatus = null;
-              myGroupSelectWasDissolved = true; // 解散フラグを立てる
               hideGroupSelectPopup();
               if (_gsWbUnsub) { _gsWbUnsub(); _gsWbUnsub = null; }
               if (_gsImgUnsub) { _gsImgUnsub(); _gsImgUnsub = null; }

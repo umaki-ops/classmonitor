@@ -861,6 +861,8 @@ window.endSession = async function() {
         const isCurrentlyAway = tabAway && tabAway.away;
         let totalMs = 0;
         
+        console.log(`[離脱計算 開始] ${name}: ログ数=${logs.length}, 現在離脱中=${isCurrentlyAway}`);
+        
         logs.forEach((log, idx) => {
           const isLastLog = idx === logs.length - 1;
           let end;
@@ -868,30 +870,34 @@ window.endSession = async function() {
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
             end = log.endTs;
-          } else if (isLastLog && isCurrentlyAway) {
-            // 最後のログで現在も離脱中 → セッション終了時刻まで
+          } else if (isLastLog && !log.endTs) {
+            // 最後のログで終了時刻が未記録 → セッション終了時刻まで離脱していたとみなす
             end = now;
+            console.log(`[離脱計算] 最後の離脱(ログ${idx + 1})は未復帰 → セッション終了時刻(${now})まで計算`);
           } else if (!log.endTs && tabAway && tabAway.ts && tabAway.ts > log.startTs) {
             // endTs未記録だが、tabAwayに戻り時刻が記録されている
             end = tabAway.ts;
           } else if (!log.endTs) {
-            // endTs未記録で戻り時刻もない → nowで補完（離脱したまま終了）
-            end = now;
+            // endTs未記録で戻り時刻もない → 次のログ開始時刻 or now
+            const nextLog = logs[idx + 1];
+            end = nextLog ? nextLog.startTs : now;
+            console.log(`[離脱計算] ログ${idx + 1}: endTs未記録 → ${nextLog ? '次のログ開始時刻' : 'now'}(${end})を使用`);
           } else {
             end = log.endTs;
           }
           
           const duration = Math.max(0, end - log.startTs);
           totalMs += duration;
-          console.log(`[離脱計算] ログ${idx + 1}: ${log.startTs} → ${end} = ${duration}ms`);
+          console.log(`[離脱計算] ログ${idx + 1}: ${log.startTs} → ${end} = ${duration}ms (${Math.floor(duration/1000)}秒)`);
         });
         
         // フォールバック: logsが空なのに離脱中
         if (logs.length === 0 && isCurrentlyAway && tabAway && tabAway.ts) {
           totalMs = Math.max(0, now - tabAway.ts);
+          console.log(`[離脱計算] ログなし but 現在離脱中: ${tabAway.ts} → ${now} = ${totalMs}ms`);
         }
         
-        console.log(`[離脱計算] ${name}: ${logs.length}回, 合計${totalMs}ms (${Math.floor(totalMs/1000)}秒)`);
+        console.log(`[離脱計算 完了] ${name}: ${logs.length}回, 合計${totalMs}ms (${Math.floor(totalMs/1000)}秒)`);
         reportData.push({ name, count, logs, totalMs, sid });
       });
     }
@@ -3242,7 +3248,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v13 (離脱時間計算修正)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v15 (最後の離脱時間を必ずnowまで計算)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

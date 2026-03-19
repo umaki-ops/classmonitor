@@ -838,7 +838,13 @@ window.endSession = async function() {
 
   // セッション終了時刻を記録（この時点で確定）
   const sessionEndTime = Date.now();
-  console.log('[セッション終了] 終了時刻:', sessionEndTime, new Date(sessionEndTime).toLocaleString());
+  const endTimeStr = new Date(sessionEndTime).toLocaleString('ja-JP', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    fractionalSecondDigits: 3
+  });
+  console.log('[セッション終了] 終了時刻:', sessionEndTime, endTimeStr);
 
   // セッション終了前にtabAwayデータを収集
   let reportData = [];
@@ -874,27 +880,34 @@ window.endSession = async function() {
         console.log(`[離脱計算 開始] ${name}: ログ数=${logs.length}, 現在離脱中=${isCurrentlyAway}, tabAway.away=${tabAway?.away}`);
         
         logs.forEach((log, idx) => {
-          const isLastLog = idx === logs.length - 1;
-          const isAfterSessionEnd = log.startTs > now;
+          const startTimeStr = new Date(log.startTs).toLocaleString('ja-JP', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            fractionalSecondDigits: 3
+          });
+          const endTimeStr = log.endTs ? new Date(log.endTs).toLocaleString('ja-JP', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            fractionalSecondDigits: 3
+          }) : 'なし';
           
-          console.log(`[離脱計算] ログ${idx + 1}/${logs.length}: startTs=${log.startTs}, endTs=${log.endTs}, isLastLog=${isLastLog}, セッション後開始=${isAfterSessionEnd}`);
-          
-          if (isAfterSessionEnd) {
-            // セッション終了後に開始した離脱は無視
-            console.log(`  → セッション終了後に開始した離脱なので無視`);
-            return;
-          }
+          console.log(`[離脱計算] ログ${idx + 1}/${logs.length}:`);
+          console.log(`  startTs=${log.startTs} (${startTimeStr})`);
+          console.log(`  endTs=${log.endTs} (${endTimeStr})`);
+          console.log(`  now=${now} (${endTimeStr})`);
           
           let end;
           
-          if (log.endTs && log.endTs > log.startTs && log.endTs <= now) {
-            // 正常に記録された終了時刻（セッション終了前）
+          if (log.endTs && log.endTs > log.startTs) {
+            // 正常に記録された終了時刻
             end = log.endTs;
             console.log(`  → 正常終了 endTs=${end}`);
-          } else if (!log.endTs || (log.endTs && log.endTs > now)) {
-            // endTs未記録 または endTsがセッション終了後 → セッション終了時刻まで
+          } else if (!log.endTs) {
+            // endTs未記録 → セッション終了時刻まで離脱していた
             end = now;
-            console.log(`  → endTs未記録 or セッション終了後 → now=${now}まで計算`);
+            console.log(`  → endTs未記録 → now=${now}まで計算`);
           } else {
             end = log.endTs;
             console.log(`  → endTs=${end}を使用`);
@@ -3262,7 +3275,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v21 (セッション継続中の離脱を全てカウント)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v23 (詳細な時刻ログ追加)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

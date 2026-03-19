@@ -2512,10 +2512,12 @@ window.setGQM = function(text) {
 };
 let _groupMsgIsComment = false; // コメントモード（空欄送信OK）
 
-window.openGroupCommentModal = function(gid, context) {
+window.openGroupCommentModal = function(gid, context, isSelectMode = false) {
   _groupMsgGid = gid;
   _groupMsgIsComment = true;
-  const name = gid === 'all' ? '全班' : (groupDefs[gid]?.name || gid);
+  currentGroupSelectId = isSelectMode ? gid : null; // groupsSelectモードを設定
+  const targetDefs = isSelectMode ? groupSelectDefs : groupDefs;
+  const name = gid === 'all' ? '全班' : (targetDefs[gid]?.name || gid);
   document.getElementById('gm-modal-title').textContent = '💬 コメントを追加（任意）';
   document.getElementById('gmtarget').textContent = `${context} — ${name}`;
   document.getElementById('gminput').value = '';
@@ -3052,6 +3054,8 @@ window.openAllGroupSelectWb = async function() {
     await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/active`), true);
   }
   toast('✅ 全班にWBを配布しました');
+  // コメントモーダルを表示（任意入力）
+  openGroupCommentModal('all', 'WB配布', true); // 第3引数でgroupsSelectモードを示す
 };
 
 window.closeAllGroupSelectWb = async function() {
@@ -3229,7 +3233,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v11 (解散時にWB・画像回収)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v12 (全班WB配布時コメント追加)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

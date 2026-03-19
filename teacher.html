@@ -859,30 +859,39 @@ window.endSession = async function() {
         const now = Date.now();
         // 現在離脱中かどうか
         const isCurrentlyAway = tabAway && tabAway.away;
-        // 最後の戻り時刻（away===false のとき tabAway.ts が戻り時刻）
-        const lastReturnTs = (!isCurrentlyAway && tabAway && tabAway.ts) ? tabAway.ts : null;
         let totalMs = 0;
-        logs.forEach(log => {
+        
+        logs.forEach((log, idx) => {
+          const isLastLog = idx === logs.length - 1;
           let end;
+          
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
             end = log.endTs;
-          } else if (isCurrentlyAway) {
-            // まだ離脱中 → セッション終了時刻まで
+          } else if (isLastLog && isCurrentlyAway) {
+            // 最後のログで現在も離脱中 → セッション終了時刻まで
             end = now;
-          } else if (lastReturnTs && lastReturnTs > log.startTs) {
-            // endTs未記録だが戻ってきている → tabAway.tsを使用
-            end = lastReturnTs;
+          } else if (!log.endTs && tabAway && tabAway.ts && tabAway.ts > log.startTs) {
+            // endTs未記録だが、tabAwayに戻り時刻が記録されている
+            end = tabAway.ts;
+          } else if (!log.endTs) {
+            // endTs未記録で戻り時刻もない → nowで補完（離脱したまま終了）
+            end = now;
           } else {
-            // それ以外は now で補完
-            end = now;
+            end = log.endTs;
           }
-          totalMs += Math.max(0, end - log.startTs);
+          
+          const duration = Math.max(0, end - log.startTs);
+          totalMs += duration;
+          console.log(`[離脱計算] ログ${idx + 1}: ${log.startTs} → ${end} = ${duration}ms`);
         });
-        // フォールバック: logsが空なのに count >= 1
-        if (logs.length === 0 && tabAway && tabAway.away && tabAway.ts) {
+        
+        // フォールバック: logsが空なのに離脱中
+        if (logs.length === 0 && isCurrentlyAway && tabAway && tabAway.ts) {
           totalMs = Math.max(0, now - tabAway.ts);
         }
+        
+        console.log(`[離脱計算] ${name}: ${logs.length}回, 合計${totalMs}ms (${Math.floor(totalMs/1000)}秒)`);
         reportData.push({ name, count, logs, totalMs, sid });
       });
     }
@@ -3233,7 +3242,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v12 (全班WB配布時コメント追加)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v13 (離脱時間計算修正)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

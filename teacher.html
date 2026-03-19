@@ -864,6 +864,7 @@ window.endSession = async function() {
         const logs = Object.entries(rawLog)
           .filter(([k, v]) => v && v.startTs)
           .map(([k, v]) => v)
+          .filter(log => log.startTs <= sessionEndTime) // セッション終了後の離脱は除外
           .sort((a, b) => a.startTs - b.startTs);
         const now = sessionEndTime; // セッション終了時刻を使用
         // 現在離脱中かどうか
@@ -876,7 +877,17 @@ window.endSession = async function() {
           const isLastLog = idx === logs.length - 1;
           let end;
           
-          console.log(`[離脱計算] ログ${idx + 1}/${logs.length}: startTs=${log.startTs}, endTs=${log.endTs}, isLastLog=${isLastLog}`);
+          // セッション終了後に記録された離脱ログの場合、startTsを調整
+          const adjustedStartTs = Math.min(log.startTs, now);
+          const isAfterSessionEnd = log.startTs > now;
+          
+          console.log(`[離脱計算] ログ${idx + 1}/${logs.length}: startTs=${log.startTs}, endTs=${log.endTs}, isLastLog=${isLastLog}, セッション後=${isAfterSessionEnd}`);
+          
+          if (isAfterSessionEnd) {
+            // セッション終了後の離脱ログは無視（0秒として扱う）
+            console.log(`  → セッション終了後の離脱なので無視`);
+            return;
+          }
           
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
@@ -886,23 +897,23 @@ window.endSession = async function() {
             // 最後のログで終了時刻が未記録 → セッション終了時刻まで離脱していたとみなす
             end = now;
             console.log(`  → 最後のログでendTs未記録 → now=${now}まで計算`);
-          } else if (!log.endTs && tabAway && tabAway.ts && tabAway.ts > log.startTs) {
-            // endTs未記録だが、tabAwayに戻り時刻が記録されている
+          } else if (!log.endTs && tabAway && tabAway.ts && tabAway.ts > log.startTs && tabAway.ts <= now) {
+            // endTs未記録だが、tabAwayに戻り時刻が記録されている（セッション終了前）
             end = tabAway.ts;
             console.log(`  → tabAway.ts=${end}を使用`);
           } else if (!log.endTs) {
             // endTs未記録で戻り時刻もない → 次のログ開始時刻 or now
             const nextLog = logs[idx + 1];
-            end = nextLog ? nextLog.startTs : now;
-            console.log(`  → endTs未記録 → ${nextLog ? '次のログ開始時刻' : 'now'}=${end}を使用`);
+            end = nextLog ? Math.min(nextLog.startTs, now) : now;
+            console.log(`  → endTs未記録 → ${nextLog ? '次のログ開始時刻 or now' : 'now'}=${end}を使用`);
           } else {
             end = log.endTs;
             console.log(`  → endTs=${end}を使用`);
           }
           
-          const duration = Math.max(0, end - log.startTs);
+          const duration = Math.max(0, end - adjustedStartTs);
           totalMs += duration;
-          console.log(`  → 計算: ${log.startTs} → ${end} = ${duration}ms (${Math.floor(duration/1000)}秒)`);
+          console.log(`  → 計算: ${adjustedStartTs} → ${end} = ${duration}ms (${Math.floor(duration/1000)}秒)`);
         });
         
         // フォールバック: logsが空なのに離脱中
@@ -3262,7 +3273,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v17 (セッション終了時刻を固定)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v19 (セッション終了後の離脱ログを無視)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

@@ -2032,8 +2032,18 @@
           if (!existing) _createOwnTextBox(container, key, td);
         } else {
           if (existing) {
-            existing.style.left = td.x + '%';
-            existing.style.top  = td.y + '%';
+            const canvas = document.getElementById('group-wb-canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            
+            // キャンバス基準のパーセンテージ → ピクセル → コンテナ基準のパーセンテージ
+            const canvasX = (td.x / 100) * canvasRect.width;
+            const canvasY = (td.y / 100) * canvasRect.height;
+            const containerX = ((canvasRect.left - containerRect.left + canvasX) / containerRect.width) * 100;
+            const containerY = ((canvasRect.top - containerRect.top + canvasY) / containerRect.height) * 100;
+            
+            existing.style.left = containerX + '%';
+            existing.style.top  = containerY + '%';
             existing.style.width = (td.w || 200) + 'px';
             const span = existing.querySelector('.gwb-peer-text');
             if (span) {
@@ -2060,15 +2070,24 @@
     }
 
     function _createOwnTextBox(container, key, td) {
+      const canvas = document.getElementById('group-wb-canvas');
+      const canvasRect = canvas.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // キャンバス基準のパーセンテージ → ピクセル → コンテナ基準のパーセンテージ
+      const canvasX = (td.x / 100) * canvasRect.width;
+      const canvasY = (td.y / 100) * canvasRect.height;
+      const containerX = ((canvasRect.left - containerRect.left + canvasX) / containerRect.width) * 100;
+      const containerY = ((canvasRect.top - containerRect.top + canvasY) / containerRect.height) * 100;
+      
       const wrap = document.createElement('div');
       wrap.className = 'txt-box-wrap selected';
       wrap.dataset.textKey = key;
-      wrap.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;`;
+      wrap.style.cssText = `position:absolute;left:${containerX}%;top:${containerY}%;width:${td.w||200}px;`;
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input'; ta.placeholder = 'テキスト入力';
       ta.style.color = td.color || gWbColor;
       // フォントサイズを現在のキャンバス高さにスケール
-      const canvas = document.getElementById('group-wb-canvas');
       let fontSize;
       if (td.fontSizePct && canvas) {
         // fontSizePctがある場合は、現在のキャンバス高さに対する割合で計算
@@ -2138,13 +2157,22 @@
     }
 
     function _createPeerTextBox(container, key, td) {
+      const canvas = document.getElementById('group-wb-canvas');
+      const canvasRect = canvas.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // キャンバス基準のパーセンテージ → ピクセル → コンテナ基準のパーセンテージ
+      const canvasX = (td.x / 100) * canvasRect.width;
+      const canvasY = (td.y / 100) * canvasRect.height;
+      const containerX = ((canvasRect.left - containerRect.left + canvasX) / containerRect.width) * 100;
+      const containerY = ((canvasRect.top - containerRect.top + canvasY) / containerRect.height) * 100;
+      
       const div = document.createElement('div');
       div.dataset.textKey = key;
-      div.style.cssText = `position:absolute;left:${td.x}%;top:${td.y}%;width:${td.w||200}px;pointer-events:none;z-index:19;`;
+      div.style.cssText = `position:absolute;left:${containerX}%;top:${containerY}%;width:${td.w||200}px;pointer-events:none;z-index:19;`;
       const span = document.createElement('span');
       span.className = 'gwb-peer-text';
-      const _peerCvs = document.getElementById('group-wb-canvas');
-      const _peerCH = _peerCvs?.height || 500;
+      const _peerCH = canvas?.height || 500;
       let _peerFs;
       if (td.fontSizePct) {
         _peerFs = Math.max(8, Math.round(td.fontSizePct / 100 * _peerCH));
@@ -2476,7 +2504,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v27 (テキストフォントサイズスケール修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v28 (テキスト配置修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

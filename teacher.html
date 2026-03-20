@@ -2301,10 +2301,12 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
   const pW = canvas.width, pH = canvas.height;
   const REF_H = 900; // 固定基準サイズ（16:9, 1600x900）
+  console.log('[教員 テキスト描画] canvas:', pW, 'x', pH, 'テキスト数:', Object.keys(textsObj).length);
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
+    console.log('[教員 テキスト描画] td.x:', td.x, 'td.y:', td.y, '→ ピクセル:', x.toFixed(1), y.toFixed(1));
     // fontSizePct は固定基準サイズ(900)に対する割合なので、現在のキャンバス高さにスケール
     let fs;
     if (td.fontSizePct) {

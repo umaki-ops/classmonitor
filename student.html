@@ -1802,7 +1802,9 @@
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor,
             fontSize: gWbFontSize, fontSizePct: gWbFontSize / REF_H * 100,
             canvasW: 1600, canvasH: REF_H, ts: Date.now() };
-          console.log('[テキスト作成] canvasW:', 1600, 'canvasH:', REF_H, 'fontSizePct:', gWbFontSize / REF_H * 100, '実際のcanvas:', canvas.width, 'x', canvas.height);
+          console.log('[テキスト作成] textData:', JSON.stringify(textData));
+          console.log('[テキスト作成] クリック位置 - client:', e.clientX, e.clientY, 'canvas:', r2.left, r2.top, r2.width, r2.height);
+          console.log('[テキスト作成] パーセント座標:', xPct.toFixed(2), yPct.toFixed(2));
           if (gWbGroupId) {
             if (gWbIsSelectMode) {
               // 番号選択モード: 別パスに保存

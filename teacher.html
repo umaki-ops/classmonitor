@@ -2474,6 +2474,7 @@ window.openGroupWb = async function(gid) {
 window.closeGroupWb = async function(gid) {
   const { ref, set } = window.FB;
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), false);
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), null);
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`), null);
   toast(`${groupDefs[gid]?.name} のWBを回収しました`);
 };
@@ -3334,7 +3335,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v28 (distImgデバッグログ追加)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v29 (WB回収時strokesも削除)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

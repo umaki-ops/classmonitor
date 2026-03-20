@@ -2084,6 +2084,9 @@
       wrap.className = 'txt-box-wrap selected';
       wrap.dataset.textKey = key;
       wrap.style.cssText = `position:absolute;left:${containerX}%;top:${containerY}%;width:${td.w||200}px;`;
+      console.log('[生徒 テキストボックス作成] canvas基準:', td.x.toFixed(2), '%,', td.y.toFixed(2), '% → container基準:', containerX.toFixed(2), '%,', containerY.toFixed(2), '%');
+      console.log('[生徒 テキストボックス作成] canvasRect:', canvasRect.left, canvasRect.top, canvasRect.width, canvasRect.height);
+      console.log('[生徒 テキストボックス作成] containerRect:', containerRect.left, containerRect.top, containerRect.width, containerRect.height);
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input'; ta.placeholder = 'テキスト入力';
       ta.style.color = td.color || gWbColor;

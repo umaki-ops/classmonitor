@@ -446,7 +446,7 @@
     </div>
   </div>
   <div style="position:relative;flex:1;overflow:hidden;">
-    <canvas id="group-wb-canvas" style="position:absolute;inset:0;touch-action:none;width:100%;height:100%;"></canvas>
+    <canvas id="group-wb-canvas" style="position:absolute;inset:0;margin:auto;touch-action:none;"></canvas>
     <div id="group-wb-labels" style="position:absolute;inset:0;pointer-events:none;z-index:20;"></div>
   </div>
 </div>
@@ -2447,7 +2447,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v25 (キャンバス16:9アスペクト比)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v26 (キャンバスCSS歪み修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

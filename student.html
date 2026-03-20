@@ -1768,8 +1768,24 @@
       const canvas = document.getElementById('group-wb-canvas');
       if (!canvas || gWbCtx) return;
       const wrap = canvas.parentElement;
-      canvas.width = wrap.offsetWidth;
-      canvas.height = wrap.offsetHeight;
+      // 固定アスペクト比 16:9
+      const wrapWidth = wrap.offsetWidth;
+      const wrapHeight = wrap.offsetHeight;
+      const wrapAspect = wrapWidth / wrapHeight;
+      const targetAspect = 16 / 9;
+      
+      if (wrapAspect > targetAspect) {
+        // ラップの方が横長 → 高さ基準
+        canvas.height = wrapHeight;
+        canvas.width = Math.round(wrapHeight * targetAspect);
+      } else {
+        // ラップの方が縦長 → 幅基準
+        canvas.width = wrapWidth;
+        canvas.height = Math.round(wrapWidth / targetAspect);
+      }
+      
+      console.log('[WB初期化] キャンバスサイズ:', canvas.width, 'x', canvas.height, 'アスペクト比:', (canvas.width / canvas.height).toFixed(2));
+      
       gWbCtx = canvas.getContext('2d');
       gWbCtx.fillStyle = 'white';
       gWbCtx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1782,11 +1798,11 @@
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
           // 固定基準サイズ（800x600）に対するパーセンテージでフォントサイズを保存
-          const REF_H = 600;
+          const REF_H = 900;  // 16:9のアスペクト比（1600x900）
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor,
             fontSize: gWbFontSize, fontSizePct: gWbFontSize / REF_H * 100,
-            canvasW: 800, canvasH: REF_H, ts: Date.now() };
-          console.log('[テキスト作成] canvasW:', 800, 'canvasH:', REF_H, 'fontSizePct:', gWbFontSize / REF_H * 100, '実際のcanvas:', canvas.width, 'x', canvas.height);
+            canvasW: 1600, canvasH: REF_H, ts: Date.now() };
+          console.log('[テキスト作成] canvasW:', 1600, 'canvasH:', REF_H, 'fontSizePct:', gWbFontSize / REF_H * 100, '実際のcanvas:', canvas.width, 'x', canvas.height);
           if (gWbGroupId) {
             if (gWbIsSelectMode) {
               // 番号選択モード: 別パスに保存
@@ -1817,9 +1833,9 @@
           size: gWbTool === 'eraser' ? gWbSize * 5 : gWbSize,
           points: [[gWbLX, gWbLY]], ts: Date.now(),
           normalized: true,  // パーセント座標フラグ
-          canvasW: 800, canvasH: 600  // 固定基準サイズ
+          canvasW: 1600, canvasH: 900  // 固定基準サイズ（16:9）
         };
-        console.log('[ストローク開始] canvasW:', 800, 'canvasH:', 600, '実際のcanvas:', canvas.width, 'x', canvas.height);
+        console.log('[ストローク開始] canvasW:', 1600, 'canvasH:', 900, '実際のcanvas:', canvas.width, 'x', canvas.height);
       });
       canvas.addEventListener('pointermove', e => {
         if (!gWbDrawing) return;
@@ -2117,11 +2133,11 @@
       if (!gWbGroupId) return;
       const _cvs = document.getElementById('group-wb-canvas');
       const _fs = parseInt(ta.style.fontSize) || gWbFontSize;
-      const REF_H = 600;
+      const REF_H = 900;  // 16:9のアスペクト比（1600x900）
       const textData = { uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
         w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor,
         fontSize: _fs, fontSizePct: _fs / REF_H * 100,
-        canvasW: 800, canvasH: REF_H, ts: Date.now() };
+        canvasW: 1600, canvasH: REF_H, ts: Date.now() };
       if (gWbIsSelectMode) {
         // 番号選択モード: 別パス
         if (gWbFromImg) {
@@ -2431,7 +2447,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v23 (デバッグログ追加)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v25 (キャンバス16:9アスペクト比)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

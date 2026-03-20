@@ -2210,8 +2210,22 @@ function listenGroupPreview(gid) {
       }
       requestAnimationFrame(() => {
         const parent = canvas.parentElement;
-        const W = Math.round(parent?.offsetWidth  || 280);
-        const H = Math.round(parent?.offsetHeight || 158);
+        const parentWidth = parent?.offsetWidth || 280;
+        const parentHeight = parent?.offsetHeight || 158;
+        const parentAspect = parentWidth / parentHeight;
+        const targetAspect = 16 / 9;
+        
+        let W, H;
+        if (parentAspect > targetAspect) {
+          // 親の方が横長 → 高さ基準
+          H = Math.round(parentHeight);
+          W = Math.round(parentHeight * targetAspect);
+        } else {
+          // 親の方が縦長 → 幅基準
+          W = Math.round(parentWidth);
+          H = Math.round(parentWidth / targetAspect);
+        }
+        
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
         const bgUrl = hasImg ? distImgData.dataUrl : null;
         // WB配布中はwbのstrokes/texts、画像配布中はdistImgのstrokes/textsを使う
@@ -2286,12 +2300,12 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
 function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
   const pW = canvas.width, pH = canvas.height;
-  const REF_H = 600; // 固定基準サイズ
+  const REF_H = 900; // 固定基準サイズ（16:9, 1600x900）
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
-    // fontSizePct は固定基準サイズ(600)に対する割合なので、現在のキャンバス高さにスケール
+    // fontSizePct は固定基準サイズ(900)に対する割合なので、現在のキャンバス高さにスケール
     let fs;
     if (td.fontSizePct) {
       fs = td.fontSizePct / 100 * pH;
@@ -2315,8 +2329,21 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
 // 後方互換ラッパー
 function drawStrokeOnPreview(canvas, stroke) { drawStrokeOnCanvas(canvas, stroke); }
 function initPreviewCanvas(canvas) {
-  const W = Math.round(canvas.parentElement?.offsetWidth || 280);
-  const H = Math.round(canvas.parentElement?.offsetHeight || 158);
+  const parent = canvas.parentElement;
+  const parentWidth = parent?.offsetWidth || 280;
+  const parentHeight = parent?.offsetHeight || 158;
+  const parentAspect = parentWidth / parentHeight;
+  const targetAspect = 16 / 9;
+  
+  let W, H;
+  if (parentAspect > targetAspect) {
+    H = Math.round(parentHeight);
+    W = Math.round(parentHeight * targetAspect);
+  } else {
+    W = Math.round(parentWidth);
+    H = Math.round(parentWidth / targetAspect);
+  }
+  
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
 }
@@ -2364,7 +2391,7 @@ window.openGroupZoom = function(gid) {
     requestAnimationFrame(() => {
       const container = document.getElementById('group-zoom-preview');
       const W = container.offsetWidth || 820;
-      const H = Math.round(W * 9/16);
+      const H = Math.round(W * 9/16);  // 16:9のアスペクト比
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
       const bgUrl = hasImg ? _zoomImgData.dataUrl : null;
       const strokes = wbActive ? (_zoomWbSnap?.strokes || null) : (hasImg ? (_zoomImgData?.strokes || null) : null);
@@ -3021,8 +3048,20 @@ function listenGroupSelectPreview(gid) {
       }
       requestAnimationFrame(() => {
         const parent = canvas.parentElement;
-        const W = Math.round(parent?.offsetWidth  || 280);
-        const H = Math.round(parent?.offsetHeight || 158);
+        const parentWidth = parent?.offsetWidth || 280;
+        const parentHeight = parent?.offsetHeight || 158;
+        const parentAspect = parentWidth / parentHeight;
+        const targetAspect = 16 / 9;
+        
+        let W, H;
+        if (parentAspect > targetAspect) {
+          H = Math.round(parentHeight);
+          W = Math.round(parentHeight * targetAspect);
+        } else {
+          W = Math.round(parentWidth);
+          H = Math.round(parentWidth / targetAspect);
+        }
+        
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
         const bgUrl = hasImg ? distImgData.dataUrl : null;
         const strokes = wbActive ? (wbSnapshot?.strokes || null) : (hasImg ? (distImgData?.strokes || null) : null);
@@ -3255,7 +3294,7 @@ window.openGroupSelectZoom = function(gid) {
     requestAnimationFrame(() => {
       const container = document.getElementById('gs-zoom-preview');
       const W = container.offsetWidth || 820;
-      const H = Math.round(W * 9 / 16);
+      const H = Math.round(W * 9 / 16);  // 16:9のアスペクト比
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
       const bgUrl   = hasImg ? _zoomImgData.dataUrl : null;
       const strokes = wbActive ? (_zoomWbSnap?.strokes || null) : (hasImg ? (_zoomImgData?.strokes || null) : null);

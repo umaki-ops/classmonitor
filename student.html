@@ -2191,10 +2191,32 @@
 
     function _saveTextToFb(key, wrap, ta) {
       if (!gWbGroupId) return;
-      const _cvs = document.getElementById('group-wb-canvas');
+      const canvas = document.getElementById('group-wb-canvas');
+      const container = document.getElementById('group-wb-labels');
+      if (!canvas || !container) return;
+      
+      const canvasRect = canvas.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // container基準のパーセンテージ → canvas基準のパーセンテージに戻す
+      const containerX = parseFloat(wrap.style.left) || 0;
+      const containerY = parseFloat(wrap.style.top) || 0;
+      
+      // container基準のパーセント → ピクセル
+      const containerPx = containerX / 100 * containerRect.width;
+      const containerPy = containerY / 100 * containerRect.height;
+      
+      // キャンバスの左上からの相対ピクセル
+      const canvasPx = containerPx - (canvasRect.left - containerRect.left);
+      const canvasPy = containerPy - (canvasRect.top - containerRect.top);
+      
+      // canvas基準のパーセンテージ
+      const canvasX = (canvasPx / canvasRect.width) * 100;
+      const canvasY = (canvasPy / canvasRect.height) * 100;
+      
       const _fs = parseInt(ta.style.fontSize) || gWbFontSize;
       const REF_H = 900;  // 16:9のアスペクト比（1600x900）
-      const textData = { uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
+      const textData = { uid: studentId, x: canvasX, y: canvasY,
         w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor,
         fontSize: _fs, fontSizePct: _fs / REF_H * 100,
         canvasW: 1600, canvasH: REF_H, ts: Date.now() };
@@ -2507,7 +2529,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v28 (テキスト配置修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v29 (テキスト保存時canvas基準に変換)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

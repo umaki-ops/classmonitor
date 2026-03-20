@@ -2034,7 +2034,22 @@
             existing.style.top  = td.y + '%';
             existing.style.width = (td.w || 200) + 'px';
             const span = existing.querySelector('.gwb-peer-text');
-            if (span) { span.textContent = td.text || ''; span.style.color = td.color || '#1e293b'; }
+            if (span) {
+              span.textContent = td.text || '';
+              span.style.color = td.color || '#1e293b';
+              // フォントサイズを更新
+              const _cvs = document.getElementById('group-wb-canvas');
+              const _cH = _cvs?.height || 900;
+              let _fs;
+              if (td.fontSizePct) {
+                _fs = Math.max(8, Math.round(td.fontSizePct / 100 * _cH));
+              } else if (td.canvasH) {
+                _fs = Math.max(8, Math.round((td.fontSize || 16) / td.canvasH * _cH));
+              } else {
+                _fs = td.fontSize || 16;
+              }
+              span.style.fontSize = _fs + 'px';
+            }
           } else {
             _createPeerTextBox(container, key, td);
           }
@@ -2050,7 +2065,19 @@
       const ta = document.createElement('textarea');
       ta.className = 'txt-box-input'; ta.placeholder = 'テキスト入力';
       ta.style.color = td.color || gWbColor;
-      ta.style.fontSize = (td.fontSize || 16) + 'px';
+      // フォントサイズを現在のキャンバス高さにスケール
+      const canvas = document.getElementById('group-wb-canvas');
+      let fontSize;
+      if (td.fontSizePct && canvas) {
+        // fontSizePctがある場合は、現在のキャンバス高さに対する割合で計算
+        fontSize = Math.round(td.fontSizePct / 100 * canvas.height);
+      } else if (td.canvasH && canvas) {
+        // 旧形式: 元のcanvasHに対する割合を現在のキャンバスにスケール
+        fontSize = Math.round((td.fontSize || 16) / td.canvasH * canvas.height);
+      } else {
+        fontSize = td.fontSize || 16;
+      }
+      ta.style.fontSize = fontSize + 'px';
       ta.value = td.text || ''; ta.rows = 2;
       const delBtn = document.createElement('button'); delBtn.className = 'txt-del-btn'; delBtn.innerHTML = '✕';
       const resizeHandle = document.createElement('div'); resizeHandle.className = 'txt-resize-handle'; resizeHandle.innerHTML = '⤡';
@@ -2447,7 +2474,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v26 (キャンバスCSS歪み修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v27 (テキストフォントサイズスケール修正)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

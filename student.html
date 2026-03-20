@@ -1781,10 +1781,11 @@
           const xPct = (e.clientX - r2.left) / r2.width * 100;
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
-          const _canvas2 = document.getElementById('group-wb-canvas');
+          // 固定基準サイズ（800x600）に対するパーセンテージでフォントサイズを保存
+          const REF_H = 600;
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor,
-            fontSize: gWbFontSize, fontSizePct: gWbFontSize / (_canvas2?.height || 500) * 100,
-            canvasW: _canvas2?.width || 800, canvasH: _canvas2?.height || 500, ts: Date.now() };
+            fontSize: gWbFontSize, fontSizePct: gWbFontSize / REF_H * 100,
+            canvasW: 800, canvasH: REF_H, ts: Date.now() };
           if (gWbGroupId) {
             if (gWbIsSelectMode) {
               // 番号選択モード: 別パスに保存
@@ -1815,7 +1816,7 @@
           size: gWbTool === 'eraser' ? gWbSize * 5 : gWbSize,
           points: [[gWbLX, gWbLY]], ts: Date.now(),
           normalized: true,  // パーセント座標フラグ
-          canvasW: canvas.width, canvasH: canvas.height  // 元キャンバスサイズ（教員側でlineWidthスケール用）
+          canvasW: 800, canvasH: 600  // 固定基準サイズ
         };
       });
       canvas.addEventListener('pointermove', e => {
@@ -2114,11 +2115,11 @@
       if (!gWbGroupId) return;
       const _cvs = document.getElementById('group-wb-canvas');
       const _fs = parseInt(ta.style.fontSize) || gWbFontSize;
-      const _cH = _cvs?.height || 500;
+      const REF_H = 600;
       const textData = { uid: studentId, x: parseFloat(wrap.style.left)||0, y: parseFloat(wrap.style.top)||0,
         w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor,
-        fontSize: _fs, fontSizePct: _fs / _cH * 100,
-        canvasW: _cvs?.width || 800, canvasH: _cH, ts: Date.now() };
+        fontSize: _fs, fontSizePct: _fs / REF_H * 100,
+        canvasW: 800, canvasH: REF_H, ts: Date.now() };
       if (gWbIsSelectMode) {
         // 番号選択モード: 別パス
         if (gWbFromImg) {
@@ -2428,7 +2429,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v21 (メッセージリスナー修正)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v22 (WB座標・フォントサイズ固定基準)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

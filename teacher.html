@@ -2204,6 +2204,7 @@ function listenGroupPreview(gid) {
       if (imgEl) imgEl.style.display = 'none';
       if (placeholder) placeholder.style.display = 'none';
       canvas.style.display = 'block';
+      canvas.style.margin = 'auto';  // 中央配置
       if (badge) {
         if (wbActive) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
         else          { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
@@ -2393,6 +2394,7 @@ window.openGroupZoom = function(gid) {
       return;
     }
     nopreview.style.display = 'none'; imgEl.style.display = 'none'; canvas.style.display = 'block';
+    canvas.style.margin = 'auto';  // 中央配置
     requestAnimationFrame(() => {
       const container = document.getElementById('group-zoom-preview');
       const W = container.offsetWidth || 820;
@@ -3047,6 +3049,7 @@ function listenGroupSelectPreview(gid) {
       if (imgEl) imgEl.style.display = 'none';
       if (placeholder) placeholder.style.display = 'none';
       canvas.style.display = 'block';
+      canvas.style.margin = 'auto';  // 中央配置
       if (badge) {
         if (wbActive) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
         else          { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
@@ -3296,6 +3299,7 @@ window.openGroupSelectZoom = function(gid) {
       return;
     }
     nopreview.style.display = 'none'; imgEl.style.display = 'none'; canvas.style.display = 'block';
+    canvas.style.margin = 'auto';  // 中央配置
     requestAnimationFrame(() => {
       const container = document.getElementById('gs-zoom-preview');
       const W = container.offsetWidth || 820;
@@ -3329,7 +3333,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v26 (セッション終了後の離脱を除外)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v27 (キャンバス中央配置)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

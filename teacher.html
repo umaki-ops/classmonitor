@@ -2323,7 +2323,9 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+fs+i*lineH));
+    // textareaの内部パディングを考慮: 左8px、上8px + フォントサイズ
+    // textareaは top: y% の位置から開始し、内部に約8pxのパディング + ベースラインまでの距離
+    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+8+fs+i*lineH));
     ctx.restore();
   });
 }

@@ -2286,15 +2286,17 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
 function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
   const pW = canvas.width, pH = canvas.height;
+  const REF_H = 600; // 固定基準サイズ
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
-    // fontSizePct（生徒canvasH基準の%）があればcanvasHに対して再計算、なければ旧形式をcanvasH比でスケール
+    // fontSizePct は固定基準サイズ(600)に対する割合なので、現在のキャンバス高さにスケール
     let fs;
     if (td.fontSizePct) {
       fs = td.fontSizePct / 100 * pH;
     } else if (td.canvasH) {
+      // 旧形式: 元のcanvasHに対する割合を現在のpHに変換
       fs = (td.fontSize || 16) / td.canvasH * pH;
     } else {
       // 旧形式: 生徒canvasH≈500を仮定してスケール
@@ -2406,6 +2408,7 @@ function drawStrokeOnCanvas(canvas, stroke) {
     // 幾何平均スケール（√(scaleX*scaleY)）が視覚的に最も自然
     const srcW = stroke.canvasW || 800;
     const srcH = stroke.canvasH || 500;
+    console.log('[教員 ストローク描画] srcW:', srcW, 'srcH:', srcH, '描画先canvas:', W, 'x', H);
     const scaleX = W / srcW;
     const scaleY = H / srcH;
     const sizeScale = Math.sqrt(scaleX * scaleY);

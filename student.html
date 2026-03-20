@@ -1786,6 +1786,7 @@
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor,
             fontSize: gWbFontSize, fontSizePct: gWbFontSize / REF_H * 100,
             canvasW: 800, canvasH: REF_H, ts: Date.now() };
+          console.log('[テキスト作成] canvasW:', 800, 'canvasH:', REF_H, 'fontSizePct:', gWbFontSize / REF_H * 100, '実際のcanvas:', canvas.width, 'x', canvas.height);
           if (gWbGroupId) {
             if (gWbIsSelectMode) {
               // 番号選択モード: 別パスに保存
@@ -1818,6 +1819,7 @@
           normalized: true,  // パーセント座標フラグ
           canvasW: 800, canvasH: 600  // 固定基準サイズ
         };
+        console.log('[ストローク開始] canvasW:', 800, 'canvasH:', 600, '実際のcanvas:', canvas.width, 'x', canvas.height);
       });
       canvas.addEventListener('pointermove', e => {
         if (!gWbDrawing) return;
@@ -2429,7 +2431,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v22 (WB座標・フォントサイズ固定基準)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v23 (デバッグログ追加)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

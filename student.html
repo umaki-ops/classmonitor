@@ -423,10 +423,10 @@
       <button class="wbt" id="gwb-eraser-btn" onclick="gWbSetTool('eraser')" title="消しゴム">🩹</button>
       <button class="wbt" id="gwb-text-btn" onclick="gWbSetTool('text')" title="テキスト">T</button>
       <select id="gwb-font-size" onchange="gWbSetFontSize(this.value)" style="display:none;background:#334155;color:#fff;border:1px solid #475569;border-radius:6px;padding:2px 4px;font-size:12px;cursor:pointer;height:28px;" title="文字サイズ">
-        <option value="12">小</option>
-        <option value="16" selected>中</option>
-        <option value="22">大</option>
-        <option value="30">特大</option>
+        <option value="16">小</option>
+        <option value="30" selected>中</option>
+        <option value="45">大</option>
+        <option value="60">特大</option>
       </select>
       <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
       <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="gWbSetColor(this)"></div>
@@ -438,8 +438,8 @@
       <div class="wbc" data-color="#ffffff" style="background:#fff;border:1.5px solid #666;" onclick="gWbSetColor(this)"></div>
       <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
       <button class="wbt" id="gwb-thin-btn" onclick="gWbSetSize(3)" title="細">細</button>
-      <button class="wbt" id="gwb-mid-btn" onclick="gWbSetSize(8)" title="中">中</button>
-      <button class="wbt active" id="gwb-thick-btn" onclick="gWbSetSize(14)" title="太">太</button>
+      <button class="wbt active" id="gwb-mid-btn" onclick="gWbSetSize(8)" title="中">中</button>
+      <button class="wbt" id="gwb-thick-btn" onclick="gWbSetSize(14)" title="太">太</button>
       <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
       <button onclick="gWbClear()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">全消し</button>
       
@@ -492,10 +492,10 @@
     <button class="wbt" id="wbt-eraser" onclick="wbSetTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="wbt-text" onclick="wbSetTool('text')" title="テキスト">T</button>
     <select id="wb-font-size" onchange="wbSetFontSize(this.value)" style="display:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 6px;font-size:13px;font-family:inherit;cursor:pointer;" title="文字サイズ">
-      <option value="12">小</option>
-      <option value="16" selected>中</option>
-      <option value="22">大</option>
-      <option value="30">特大</option>
+      <option value="16">小</option>
+      <option value="30" selected>中</option>
+      <option value="45">大</option>
+      <option value="60">特大</option>
     </select>
     <div class="wb-sep"></div>
     <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="wbSetColor(this)"></div>
@@ -529,10 +529,10 @@
     <button class="wbt" id="imgt-eraser" onclick="setImgTool('eraser')" title="消しゴム">🩹</button>
     <button class="wbt" id="imgt-text" onclick="setImgTool('text')" title="テキスト">T</button>
     <select id="img-font-size" onchange="imgSetFontSize(this.value)" style="display:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 6px;font-size:13px;font-family:inherit;cursor:pointer;" title="文字サイズ">
-      <option value="12">小</option>
-      <option value="16" selected>中</option>
-      <option value="22">大</option>
-      <option value="30">特大</option>
+      <option value="16">小</option>
+      <option value="30" selected>中</option>
+      <option value="45">大</option>
+      <option value="60">特大</option>
     </select>
     <div class="wb-sep"></div>
     <div class="wbc active" data-color="#1e293b" style="background:#1e293b" onclick="imgSetColor(this)"></div>
@@ -1758,7 +1758,7 @@
 
     // ===== 班別WBエンジン =====
     let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
-    let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 3, gWbFontSize = 16;
+    let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 8, gWbFontSize = 30;
     let gWbGroupId = null, gWbResetTs = 0;
     let gWbFromImg = false; // distImg経由でWBを開いた場合true
     let gWbStrokeListenerUnsub = null;
@@ -2529,7 +2529,7 @@
     function listenGroupSelect() {
       const { ref, onValue, set, remove, get } = window.FB;
       
-      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v29 (テキスト保存時canvas基準に変換)');
+      console.log('[GroupSelect] リスナー開始 - VERSION: 2025-01-16-v30 (フォントサイズ・ペン太さデフォルト変更)');
       
       // 選択指示の監視
       onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), activeSnap => {

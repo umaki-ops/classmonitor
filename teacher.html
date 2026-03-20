@@ -2248,6 +2248,7 @@ function listenGroupPreview(gid) {
   });
 
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
+    console.log('[班プレビュー] distImgデータ:', gid, snap.exists(), snap.val());
     distImgData = (snap.exists() && snap.val()?.active === true) ? snap.val() : null;
     redraw();
   });
@@ -3333,7 +3334,7 @@ window.closeGroupSelectZoom = function() {
 
 // Firebaseリスナー
 function listenGroupSelectData() {
-  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v27 (キャンバス中央配置)');
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v28 (distImgデバッグログ追加)');
   const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
   
   onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {

@@ -2371,6 +2371,9 @@
     function gWbSetBgImage(dataUrl) {
       gWbBgImage = dataUrl;
       if (!gWbGroupId) return;
+      // タイトル更新
+      const titleEl = document.getElementById('group-wb-title');
+      if (titleEl) titleEl.textContent = gWbFromImg ? '🖼 班の画像' : '📋 班のホワイトボード';
       if (gWbIsSelectMode) {
         // 番号選択モード: 別パス
         if (gWbFromImg) {
@@ -2405,7 +2408,7 @@
       _lastStrokesSnapshot = null; // WBを開くときにスナップショットをリセット
       const overlay = document.getElementById('group-wb-overlay');
       overlay.style.display = 'flex';
-      document.getElementById('group-wb-title').textContent = '📋 班のホワイトボード';
+      document.getElementById('group-wb-title').textContent = gWbFromImg ? '🖼 班の画像' : '📋 班のホワイトボード';
       document.getElementById('group-wb-instruction').textContent = data.instruction || '';
       // _skipReset フラグがある場合 or 既に同じ班で開いている場合はキャンバスをリセットしない
       if (!data._skipReset && !alreadyOpen && data.resetTs && data.resetTs !== gWbResetTs) {

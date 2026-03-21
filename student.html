@@ -634,12 +634,13 @@
       iceServers: [
         {urls:'stun:stun.l.google.com:19302'},
         {urls:'stun:stun1.l.google.com:19302'},
-        {urls:'stun:stun2.l.google.com:19302'},
-        {urls:'stun:stun3.l.google.com:19302'},
-        // TURNサーバー（NATを越えられない環境のフォールバック）
+        {urls:'stun:stun.cloudflare.com:3478'},
+        // 複数のTURNサーバー（フォールバック）
         {urls:'turn:openrelay.metered.ca:80',  username:'openrelayproject', credential:'openrelayproject'},
         {urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject'},
         {urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject'},
+        {urls:'turn:numb.viagenie.ca', username:'webrtc@live.com', credential:'muazkh'},
+        {urls:'turn:relay.backups.cz', username:'webrtc', credential:'webrtc'},
       ],
       iceCandidatePoolSize: 20,
       bundlePolicy: 'max-bundle',
@@ -992,7 +993,9 @@
     }
     async function handleTeacherWatchOffer(sdp) {
       if (twPc) { try { twPc.close(); } catch(e) {} }
-      twPc = new RTCPeerConnection(ICE);
+      // tw接続はSTUNで失敗するためTURN中継を強制する
+      const TW_ICE = {...ICE, iceTransportPolicy: 'relay'};
+      twPc = new RTCPeerConnection(TW_ICE);
       const twIceQueue = [];
       let twRemoteSet = false;
 

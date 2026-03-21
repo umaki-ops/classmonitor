@@ -722,7 +722,17 @@ let currentView='monitor';
 let wbActive=false;
 let wbSubmissions={}, wbLbKeys=[], wbLbIdx=0;
 const LABELS=['A','B','C','D','E','F','G','H'];
-const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'},{urls:'stun:stun3.l.google.com:19302'},{urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},{urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},{urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}],iceCandidatePoolSize:20,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
+const ICE={iceServers:[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'stun:stun.cloudflare.com:3478'},
+  // 複数のTURNサーバー（フォールバック）
+  {urls:'turn:openrelay.metered.ca:80',  username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443', username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:numb.viagenie.ca',username:'webrtc@live.com',credential:'muazkh'},
+  {urls:'turn:relay.backups.cz',username:'webrtc',credential:'webrtc'},
+],iceCandidatePoolSize:20,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
 
 function gid(){
   // crypto.getRandomValues で安全なランダムID（16文字）
@@ -1622,11 +1632,20 @@ async function setupTWPc(sid){
   if(!teacherStream){console.warn('[TW] no teacherStream');return;}
   try{
     if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
-    const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
+    // tw接続はSTUNで失敗するためTURN中継を強制する
+    const TW_ICE = {...ICE, iceTransportPolicy: 'relay'};
+    const pc=new RTCPeerConnection(TW_ICE);twPcs[sid]=pc;
     const tracks=teacherStream.getTracks();
     console.log('[TW] adding tracks:', tracks.length, tracks.map(t=>t.kind));
     tracks.forEach(tr=>pc.addTrack(tr,teacherStream));
-    pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+    pc.onicecandidate=ev=>{
+      if(ev.candidate){
+        console.log('[TW] ICE candidate type:', ev.candidate.type, ev.candidate.protocol, ev.candidate.address);
+        sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});
+      } else {
+        console.log('[TW] ICE gathering complete');
+      }
+    };
     pc.onconnectionstatechange=()=>{
       console.log('[TW->'+sid+']',pc.connectionState);
       if(pc.connectionState==='connected') setHighBitrate(pc,8000);

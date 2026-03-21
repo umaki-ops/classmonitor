@@ -391,15 +391,12 @@
 
 <!-- 先生画面オーバーレイ -->
 <div id="teacher-overlay">
-  <video id="teacher-video" autoplay playsinline></video>
-  <button class="teacher-close" onclick="hideTeacher()">✕ 閉じる</button>
+  <video id="teacher-video" autoplay playsinline muted></video>
 </div>
 
 <!-- クラスメート画面視聴オーバーレイ -->
 <div id="watch-overlay">
-  <video id="watch-video" autoplay playsinline style="width:100%;height:100%;object-fit:contain;"></video>
-  <button style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;"
-    onclick="document.getElementById('watch-overlay').style.display='none';">✕ 閉じる</button>
+  <video id="watch-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:contain;"></video>
 </div>
 
 <!-- 班番号選択ポップアップ -->
@@ -967,7 +964,10 @@
       watchPc = new RTCPeerConnection(ICE);
       watchPc.ontrack = e => {
         const el = document.getElementById('watch-video');
-        if (el) el.srcObject = e.streams[0];
+        if (el) {
+          el.srcObject = e.streams[0];
+          el.play().catch(() => {});
+        }
       };
       watchPc.onicecandidate = e => {
         if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wi`), {

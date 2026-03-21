@@ -706,12 +706,12 @@
         console.log('[SIG-IN]', signal?.type, 'to:', signal?.to, 'myId:', studentId);
         if (!signal || signal.to !== studentId) return;
         console.log('[SIG-MATCH]', signal.type);
-        if (signal.type === 'offer') handleOffer(signal.sdp);
+        if (signal.type === 'offer') setTimeout(() => handleOffer(signal.sdp), 0);
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
-        else if (signal.type === 'watch-offer') handleWatchOffer(signal.from, signal.sdp, signal.sourceName);
+        else if (signal.type === 'watch-offer') setTimeout(() => handleWatchOffer(signal.from, signal.sdp, signal.sourceName), 0);
         else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
         else if (signal.type === 'stop-watch') hideWatch();
-        else if (signal.type === 'tw-offer') handleTeacherWatchOffer(signal.sdp);
+        else if (signal.type === 'tw-offer') setTimeout(() => handleTeacherWatchOffer(signal.sdp), 0);
         else if (signal.type === 'tw-ice-offer') handleTeacherWatchIce(signal.candidate);
       });
 
@@ -993,9 +993,7 @@
     }
     async function handleTeacherWatchOffer(sdp) {
       if (twPc) { try { twPc.close(); } catch(e) {} }
-      // tw接続はSTUNで失敗するためTURN中継を強制する
-      const TW_ICE = {...ICE, iceTransportPolicy: 'relay'};
-      twPc = new RTCPeerConnection(TW_ICE);
+      twPc = new RTCPeerConnection(ICE);
       const twIceQueue = [];
       let twRemoteSet = false;
 

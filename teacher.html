@@ -1632,9 +1632,8 @@ async function setupTWPc(sid){
   if(!teacherStream){console.warn('[TW] no teacherStream');return;}
   try{
     if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
-    // tw接続はSTUNで失敗するためTURN中継を強制する
-    const TW_ICE = {...ICE, iceTransportPolicy: 'relay'};
-    const pc=new RTCPeerConnection(TW_ICE);twPcs[sid]=pc;
+    // tw接続: 通常のICE設定（STUN+TURN）
+    const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
     const tracks=teacherStream.getTracks();
     console.log('[TW] adding tracks:', tracks.length, tracks.map(t=>t.kind));
     tracks.forEach(tr=>pc.addTrack(tr,teacherStream));

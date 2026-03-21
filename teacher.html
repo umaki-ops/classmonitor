@@ -1439,6 +1439,7 @@ function listenStudents(){
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
     else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
     else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
+    else if(sig.type==='tw-ice-restart')handleTWIceRestart(sig.from,sig.sdp);
     else if(sig.type==='watch-answer')handleWatchAnswer(sig.from,sig.sdp);
     else if(sig.type==='watch-answer-ice')handleWatchAnswerIce(sig.from,sig.candidate);
   });
@@ -1657,6 +1658,17 @@ async function handleTWIce(sid,c){
     return;
   }
   try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}
+}
+async function handleTWIceRestart(sid,sdp){
+  const pc=twPcs[sid];
+  if(!pc)return;
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const ans=await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+    sig(sid,{type:'tw-answer',from:'teacher',to:sid,sdp:{type:ans.type,sdp:ans.sdp}});
+    console.log('[TW] ICE restart answer sent to',sid);
+  }catch(e){console.error('[handleTWIceRestart]',e);}
 }
 
 // ===== Student screen broadcast =====

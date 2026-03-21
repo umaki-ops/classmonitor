@@ -1012,6 +1012,20 @@
       };
       twPc.oniceconnectionstatechange = () => {
         console.log('[TW-RECV] iceConnectionState:', twPc.iceConnectionState);
+        // disconnected になったら ICE restart を試みる
+        if (twPc.iceConnectionState === 'disconnected') {
+          setTimeout(async () => {
+            if (!twPc || twPc.iceConnectionState !== 'disconnected') return;
+            console.log('[TW-RECV] ICE restart試行');
+            try {
+              const offer = await twPc.createOffer({ iceRestart: true });
+              await twPc.setLocalDescription(offer);
+              set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twr`), {
+                type:'tw-ice-restart', from:studentId, to:'teacher', sdp:{type:offer.type, sdp:offer.sdp}
+              });
+            } catch(e) { console.warn('[TW-RECV] ICE restart失敗:', e); }
+          }, 2000);
+        }
       };
       twPc.onconnectionstatechange = () => {
         console.log('[TW-RECV] connectionState:', twPc.connectionState);
@@ -1034,7 +1048,7 @@
       const ans = await twPc.createAnswer();
       await twPc.setLocalDescription(ans);
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_twa`), {
-        type:'tw-answer', from:studentId, to:'teacher', sdp:{type:ans.type,sdp:ans.sdp}
+        type:'tw-answer', from:studentId, to:'teacher', sdp:{type:ans.type, sdp:ans.sdp}
       });
       // キューに溜まったICEを追加
       await window._twDrainIce();

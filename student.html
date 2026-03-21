@@ -979,10 +979,11 @@
     async function handleWatchOffer(fromId, sdp, sourceName) {
       watchPc = new RTCPeerConnection(ICE);
       watchPc.ontrack = e => {
+        console.log('[WATCH] ontrack fired, streams:', e.streams.length, 'kind:', e.track.kind);
         const el = document.getElementById('watch-video');
         if (el) {
-          el.srcObject = e.streams[0];
-          el.play().catch(() => {});
+          el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
+          el.play().catch(err => console.warn('[WATCH] play error:', err));
         }
       };
       watchPc.onicecandidate = e => {

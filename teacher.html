@@ -1753,14 +1753,34 @@ async function setupStudentBcastPc(sid,stream){
     };
     const offer=await pc.createOffer();
     await pc.setLocalDescription(offer);
-    sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+    sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp},sourceName:students[sourceSid]?.name||'生徒'});
     console.log('[Watch] offer sent to',sid);
   }catch(e){console.error('[setupStudentBcastPc]',e);toast('❌ 生徒画面配信エラー: '+e.message);}
 }
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){if(!currentBroadcastId)return;cmd('all','stopWatch',{});document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');currentBroadcastId=null;for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();studentBcastPcs={};}
-async function handleWatchAnswer(sid,sdp){const pc=studentBcastPcs[sid];if(!pc){console.warn('[Watch] no pc for',sid);return;}try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));console.log('[Watch] remoteDesc set for',sid);}catch(e){console.error('[handleWatchAnswer]',e);}}
-async function handleWatchAnswerIce(sid,c){const pc=studentBcastPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+const watchIceQueues={};
+async function handleWatchAnswer(sid,sdp){
+  const pc=studentBcastPcs[sid];
+  if(!pc){console.warn('[Watch] no pc for',sid);return;}
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    console.log('[Watch] remoteDesc set for',sid);
+    const q=watchIceQueues[sid]||[];
+    delete watchIceQueues[sid];
+    for(const c of q){try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+  }catch(e){console.error('[handleWatchAnswer]',e);}
+}
+async function handleWatchAnswerIce(sid,c){
+  const pc=studentBcastPcs[sid];
+  if(!pc)return;
+  if(!pc.remoteDescription){
+    if(!watchIceQueues[sid])watchIceQueues[sid]=[];
+    watchIceQueues[sid].push(c);
+    return;
+  }
+  try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}
+}
 
 // ===== Focus =====
 window.focusStudent=function(sid){if(!sid)return;cmd(sid,'focus');students[sid].focused=true;document.getElementById('card-'+sid)?.classList.add('focused');setBadge(sid,'focused');document.getElementById('fb-'+sid)?.classList.add('af');updateStats();toast('🎯 集中画面を表示しました');};

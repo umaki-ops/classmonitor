@@ -418,6 +418,7 @@
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
         <button class="btn btn-wb" id="dist-img-send-btn" onclick="distImgSend()" disabled style="opacity:0.4;">📤 全員に配布</button>
         <button class="btn btn-outline" id="dist-img-collect-btn" onclick="distImgCollect()">📥 回収</button>
+        <button class="btn btn-danger" onclick="distImgClearAllDrawings()">🗑️ 全消去</button>
         <button class="btn btn-danger" id="dist-img-clear-btn" onclick="distImgClearAll()">🗑️ 削除</button>
       </div>
     </div>
@@ -1130,6 +1131,28 @@ window.distImgCollect = async function() {
   toast('📥 画像を回収・削除しました');
 };
 
+window.distImgClearAllDrawings = async function() {
+  if (!db) return;
+  if (!confirm('全員の書き込みを消去しますか？（配布中の画像は残ります）')) return;
+  const {ref, remove} = window.FB;
+  // 全生徒にクリアコマンドを送信
+  Object.keys(students).forEach(sid => cmd(sid, 'dist-img-clear'));
+  // Firebase上のsnapshotsとsubmissionsを削除
+  await remove(ref(db, `sessions/${sessionId}/distImg/snapshots`));
+  await remove(ref(db, `sessions/${sessionId}/distImg/submissions`));
+  distImgSubmissions = {};
+  // 教員側のカードプレビューをリセット
+  Object.keys(students).forEach(sid => {
+    const img = document.getElementById('di-img-'+sid);
+    const ph  = document.getElementById('di-ph-'+sid);
+    const sub = document.getElementById('di-sub-'+sid);
+    if (img) { img.src=''; img.style.display='none'; }
+    if (ph)  ph.style.display='';
+    if (sub) sub.style.display='none';
+  });
+  toast('🗑️ 全員の書き込みを消去しました');
+};
+
 window.distImgClearAll = async function() {
   if (!confirm('配布中の画像を削除しますか？')) return;
   if (db) await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}/distImg`));
@@ -1206,7 +1229,7 @@ function renderDistImgGrid() {
   if (!grid) return;
   grid.innerHTML = '';
   const sids = Object.keys(students);
-  if (sids.length === 0) { grid.style.display = 'none'; return; }
+  if (sids.length === 0 || !distImgActive) { grid.style.display = 'none'; return; }
   grid.style.display = 'grid';
   sids.forEach(sid => {
     const d = students[sid];
@@ -1250,11 +1273,13 @@ window.sendWbCommand=async function(cmd){
     const instr=document.getElementById('wb-instruction').value.trim();
     if(instr) await set(ref(db,`sessions/${sessionId}/wb/instruction`),instr);
     await set(ref(db,`sessions/${sessionId}/wb/active`),true);
+    if(currentView==='wb') Object.keys(students).forEach(sid=>updateCardContent(sid));
     toast('📋 ホワイトボード配布しました');
   }
   else if(cmd==='collect'){
     await set(ref(db,`sessions/${sessionId}/wb/active`),false);
     wbActive=false;
+    if(currentView==='wb') Object.keys(students).forEach(sid=>updateCardContent(sid));
     toast('📥 ホワイトボードを回収しました');
   }
   else if(cmd==='clear'){
@@ -1389,6 +1414,14 @@ function listenStudents(){
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
+    // 再接続時など name が後から来た場合にカードの表示名を更新する
+    if(d.name){
+      const card=document.getElementById('card-'+sid);
+      if(card){
+        const nameSpan=card.querySelector('.sname span:first-child');
+        if(nameSpan)nameSpan.textContent=d.name;
+      }
+    }
     if(d.shareType)updateShareType(sid,d.shareType);
     // tabAway の変化を処理
     if(d.hasOwnProperty('tabAway'))updateTabAway(sid,d.tabAway);
@@ -1866,7 +1899,12 @@ function updateCardContent(sid){
       }
     }
   } else {
-    // Whiteboard view
+    // Whiteboard view: 配布中のときだけカードを表示
+    if(!wbActive){
+      contentEl.innerHTML='';
+      actionsEl.innerHTML='';
+      return;
+    }
     contentEl.innerHTML=`
       <div class="wb-area" onclick="openWbFullscreen('${sid}')">
         <img id="wb-img-${sid}" src="" alt="" class="wb-canvas-preview" style="display:none;"/>

@@ -1137,7 +1137,7 @@
       if (!imgCanvas || !imgBgCanvas) return;
       imgCtx = imgCanvas.getContext('2d');
       imgBgCtx = imgBgCanvas.getContext('2d');
-      imgResize();
+      imgResize(true);
       window.addEventListener('resize', imgResize);
       imgCanvas.addEventListener('pointerdown', e => {
         if (_selectedTxt) { deselectTxt(); return; }
@@ -1159,14 +1159,15 @@
       imgCanvas.addEventListener('pointerup', () => { imgDrawing = false; imgScheduleSnapshot(); deselectTxt(); });
       imgCanvas.addEventListener('pointerleave', () => { imgDrawing = false; });
     }
-    function imgResize() {
+    function imgResize(forceInit) {
       if (!imgCanvas) return;
       const wrap = imgCanvas.parentElement;
       const newW = wrap.offsetWidth;
       const newH = wrap.offsetHeight;
-      // サイズが0またはサイズが変わっていない場合はスキップ
+      // サイズが0の場合はスキップ
       if (!newW || !newH) return;
-      if (imgCanvas.width === newW && imgCanvas.height === newH) return;
+      // リサイズイベント由来（forceInitなし）でサイズ変化がない場合はスキップ
+      if (!forceInit && imgCanvas.width === newW && imgCanvas.height === newH) return;
       // リサイズ前に描画内容（ペン線）を退避
       let savedDrawing = null;
       if (imgCtx && imgCanvas.width > 0 && imgCanvas.height > 0) {

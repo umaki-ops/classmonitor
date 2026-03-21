@@ -678,7 +678,7 @@
         clearTimeout(timeout);
         sessionConfirmed = true;
         set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
-          name: user.displayName || user.email || user.uid,
+          name: user.displayName || user.email,
           email: user.email,
           photoURL: user.photoURL || '',
           joinedAt: Date.now(),
@@ -718,7 +718,7 @@
       window.FB = { ref, set, get, remove, onValue };
       window.wbDb = db;
       window.wbSid = studentId;
-      window.wbName = user.displayName || user.email || user.uid;
+      window.wbName = user.displayName || user.email || 'unknown';
       window.wbSessionId = sessionId;
       // ===== ホワイトボード監視 =====
       // instruction を常時監視（WB開閉に関わらず更新）
@@ -1162,9 +1162,29 @@
     function imgResize() {
       if (!imgCanvas) return;
       const wrap = imgCanvas.parentElement;
-      imgCanvas.width = wrap.offsetWidth;
-      imgCanvas.height = wrap.offsetHeight;
-      if (imgBgCanvas) { imgBgCanvas.width = wrap.offsetWidth; imgBgCanvas.height = wrap.offsetHeight; }
+      const newW = wrap.offsetWidth;
+      const newH = wrap.offsetHeight;
+      // サイズが変わっていない場合はスキップ（ソフトキーボード等の誤発火を防ぐ）
+      if (imgCanvas.width === newW && imgCanvas.height === newH) return;
+      // リサイズ前に描画内容を退避
+      const savedDrawing = (imgCanvas.width > 0 && imgCanvas.height > 0)
+        ? imgCtx?.getImageData(0, 0, imgCanvas.width, imgCanvas.height)
+        : null;
+      const prevW = imgCanvas.width;
+      const prevH = imgCanvas.height;
+      imgCanvas.width = newW;
+      imgCanvas.height = newH;
+      if (imgBgCanvas) { imgBgCanvas.width = newW; imgBgCanvas.height = newH; }
+      // 背景画像を再描画
+      if (_lastDistImgUrl) imgDrawBg(_lastDistImgUrl);
+      // 描画内容を拡縮して復元
+      if (savedDrawing && imgCtx && prevW > 0 && prevH > 0) {
+        const tmpCanvas = document.createElement('canvas');
+        tmpCanvas.width = prevW;
+        tmpCanvas.height = prevH;
+        tmpCanvas.getContext('2d').putImageData(savedDrawing, 0, 0);
+        imgCtx.drawImage(tmpCanvas, 0, 0, prevW, prevH, 0, 0, newW, newH);
+      }
     }
     function imgDrawBg(dataUrl) {
       if (!imgBgCtx || !dataUrl) return;

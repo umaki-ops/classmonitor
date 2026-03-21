@@ -928,6 +928,17 @@
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
+        // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
+        pc.ontrack = e => {
+          if (e.track.kind === 'video' && e.streams && e.streams[0]) {
+            const el = document.getElementById('teacher-video');
+            if (el) {
+              el.srcObject = e.streams[0];
+              el.play().catch(() => {});
+              showTeacher();
+            }
+          }
+        };
       }
       // localStream のトラックを追加（未追加の場合のみ）
       if (localStream) {

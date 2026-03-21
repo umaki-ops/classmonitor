@@ -1600,9 +1600,20 @@ function stopTS(){
   document.getElementById('tshare-btn').textContent='📺 画面を共有';
   document.getElementById('tshare-btn').style.background='';
   cmd('all','stopTeacherShare',{});
-  // フォールバック: teacherSharing ノードに false を書き込む
   const {ref,set}=window.FB;
   set(ref(db,`sessions/${sessionId}/teacherSharing`),false);
+  // モニタリング接続から教員streamトラックを削除してリネゴシエーション
+  for(const sid of Object.keys(peerConnections)){
+    const pc=peerConnections[sid];
+    if(!pc)continue;
+    const senders=pc.getSenders().filter(s=>s.track && s.track.kind==='video' && !s.track.label.includes('screen'));
+    // teacherStreamのsenderを特定して削除（localStreamのトラックは残す）
+    pc.getSenders().forEach(s=>{
+      if(s.track && !['microphone','camera'].some(k=>s.track.label.toLowerCase().includes(k))){
+        try{ pc.removeTrack(s); }catch(e){}
+      }
+    });
+  }
   for(const sid of Object.keys(twPcs))twPcs[sid]?.close();
   twPcs={};
   toast('⏹ 先生の画面共有を停止しました');
@@ -1631,28 +1642,33 @@ async function setupTWPc(sid){
   console.log('[TW] setupTWPc for', sid, 'stream:', !!teacherStream);
   if(!teacherStream){console.warn('[TW] no teacherStream');return;}
   try{
-    if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
-    // tw接続: 通常のICE設定（STUN+TURN）
-    const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
-    const tracks=teacherStream.getTracks();
-    console.log('[TW] adding tracks:', tracks.length, tracks.map(t=>t.kind));
-    tracks.forEach(tr=>pc.addTrack(tr,teacherStream));
-    pc.onicecandidate=ev=>{
-      if(ev.candidate){
-        console.log('[TW] ICE candidate type:', ev.candidate.type, ev.candidate.protocol, ev.candidate.address);
-        sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});
-      } else {
-        console.log('[TW] ICE gathering complete');
-      }
-    };
-    pc.onconnectionstatechange=()=>{
-      console.log('[TW->'+sid+']',pc.connectionState);
-      if(pc.connectionState==='connected') setHighBitrate(pc,8000);
-    };
-    const offer=await pc.createOffer();
+    // 既存のモニタリング接続を再利用して教員streamトラックを追加する
+    // → 新しいNAT越えが不要（モニタリングで既に繋がっている同じ接続を使う）
+    const pc = peerConnections[sid];
+    if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
+      console.warn('[TW] no active monitoring PC for', sid, '- falling back to new PC');
+      // モニタリング接続がない場合は旧来の別PCを使う
+      if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
+      const newPc=new RTCPeerConnection(ICE);twPcs[sid]=newPc;
+      const tracks=teacherStream.getTracks();
+      tracks.forEach(tr=>newPc.addTrack(tr,teacherStream));
+      newPc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+      newPc.onconnectionstatechange=()=>{console.log('[TW-fallback->'+sid+']',newPc.connectionState);};
+      const offer=await newPc.createOffer();
+      await newPc.setLocalDescription(offer);
+      sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+      return;
+    }
+    // 既存接続にteacherStreamのトラックを追加してリネゴシエーション
+    const existing = pc.getSenders().find(s=>s.track && teacherStream.getTracks().includes(s.track));
+    if(existing){console.log('[TW] track already added for', sid);return;}
+    teacherStream.getTracks().forEach(tr=>pc.addTrack(tr,teacherStream));
+    console.log('[TW] added teacher track to monitoring PC for', sid);
+    // リネゴシエーション用のofferを送信（tw-offerではなくofferを使う）
+    const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-    console.log('[TW] offer sent to',sid);
+    sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+    console.log('[TW] renegotiation offer sent to', sid);
   }catch(e){console.error('[setupTWPc]',e);toast('❌ 先生画面配信エラー: '+e.message);}
 }
 const twIceQueues={};

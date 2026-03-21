@@ -1378,6 +1378,14 @@ function listenStudents(){
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
+    // 再接続時など name が後から来た場合にカードの表示名を更新する
+    if(d.name){
+      const card=document.getElementById('card-'+sid);
+      if(card){
+        const nameSpan=card.querySelector('.sname span:first-child');
+        if(nameSpan)nameSpan.textContent=d.name;
+      }
+    }
     if(d.shareType)updateShareType(sid,d.shareType);
     // tabAway の変化を処理
     if(d.hasOwnProperty('tabAway'))updateTabAway(sid,d.tabAway);

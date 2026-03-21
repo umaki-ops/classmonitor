@@ -1738,10 +1738,10 @@ window.broadcastStudentScreen=function(sid){
 async function startStudentBroadcast(sourceSid,stream){
   for(const sid of Object.keys(students)){
     if(sid===sourceSid)continue;
-    await setupStudentBcastPc(sid,stream);
+    await setupStudentBcastPc(sid, stream, sourceSid);
   }
 }
-async function setupStudentBcastPc(sid,stream){
+async function setupStudentBcastPc(sid, stream, sourceSid){
   try{
     if(studentBcastPcs[sid]){try{studentBcastPcs[sid].close();}catch(e){}}
     const pc=new RTCPeerConnection(ICE);studentBcastPcs[sid]=pc;

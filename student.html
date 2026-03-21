@@ -553,7 +553,7 @@
 <script type="module">
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, update, onValue, onChildAdded, get, remove} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import { getDatabase, ref, set, update, onValue, onChildAdded, get, remove, onDisconnect} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   // ===== 状態管理 =====
@@ -678,12 +678,14 @@
         clearTimeout(timeout);
         sessionConfirmed = true;
         set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
-          name: user.displayName || user.email,
+          name: user.displayName || user.email || user.uid,
           email: user.email,
           photoURL: user.photoURL || '',
           joinedAt: Date.now(),
           status: 'waiting'
         });
+        // 接続が切れたら自動でstudentsノードを削除（グリッドから消える）
+        onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).remove();
         showState('connected');
       }, {onlyOnce:true});
 
@@ -845,6 +847,21 @@
           });
         }
       });
+
+      // タブ・ブラウザを閉じたとき即座にFirebaseからノードを削除
+      const _removeStudentNode = () => {
+        if (!studentId) return;
+        // Firebase REST API DELETE（sendBeacon + keepalive fetch で同期的に送信）
+        const restUrl = `${dbUrl.replace(/\/$/, '')}/sessions/${sessionId}/students/${studentId}.json`;
+        try {
+          // keepalive: ページアンロード後も送信を継続
+          fetch(restUrl, { method: 'DELETE', keepalive: true }).catch(() => {});
+        } catch(e) {}
+        // Firebase SDK でも念のため試みる（非同期）
+        try { remove(ref(db, `sessions/${sessionId}/students/${studentId}`)); } catch(e) {}
+      };
+      window.addEventListener('pagehide', _removeStudentNode);
+      window.addEventListener('beforeunload', _removeStudentNode);
 
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
@@ -1918,15 +1935,16 @@
         // 座標をパーセント正規化して保存（異なる画面サイズの生徒間で正確に共有するため）
         gWbLX = (e.clientX - r.left) / r.width * 100;
         gWbLY = (e.clientY - r.top) / r.height * 100;
+        const rawSize = gWbTool === 'eraser' ? gWbSize * 5 : gWbSize;
         gWbCurrentStroke = {
           uid: studentId, tool: gWbTool,
           color: gWbTool === 'eraser' ? null : gWbColor,
-          size: gWbTool === 'eraser' ? gWbSize * 5 : gWbSize,
+          size: rawSize,
+          sizePct: rawSize / 900 * 100,  // 固定基準高さ(900)に対する割合で保存（デバイス間で一貫した太さを保つ）
           points: [[gWbLX, gWbLY]], ts: Date.now(),
-          normalized: true,  // パーセント座標フラグ
-          canvasW: 1600, canvasH: 900  // 固定基準サイズ（16:9）
+          normalized: true,
+          canvasW: canvas.width, canvasH: canvas.height  // 実際のキャンバスサイズ
         };
-        console.log('[ストローク開始] canvasW:', 1600, 'canvasH:', 900, '実際のcanvas:', canvas.width, 'x', canvas.height);
       });
       canvas.addEventListener('pointermove', e => {
         if (!gWbDrawing) return;
@@ -1936,7 +1954,15 @@
         // 描画はキャンバスのピクセル座標に変換して実行
         gWbDrawSegment(gWbLX / 100 * canvas.width, gWbLY / 100 * canvas.height, x / 100 * canvas.width, y / 100 * canvas.height, gWbTool, gWbColor, gWbSize);
         gWbLX = x; gWbLY = y;
-        if (gWbCurrentStroke) gWbCurrentStroke.points.push([x, y]);
+        // 点の間引き: 直前の点から一定距離以上移動した場合のみ記録（データ量削減）
+        if (gWbCurrentStroke) {
+          const pts = gWbCurrentStroke.points;
+          const last = pts[pts.length - 1];
+          const dx = x - last[0], dy = y - last[1];
+          if (dx * dx + dy * dy >= 0.25) {  // 0.5%以上移動した場合のみ追加
+            pts.push([x, y]);
+          }
+        }
       });
       canvas.addEventListener('pointerup', async () => {
         if (!gWbDrawing) return;
@@ -1989,9 +2015,11 @@
         Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
           const pts = stroke.points;
           if (!pts || pts.length < 2) return;
-          // 線幅を送信元canvasサイズ→自分のcanvasサイズにスケール
+          // 線幅: sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
           let scaledSize = stroke.size;
-          if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
+          if (stroke.sizePct) {
+            scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
+          } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
             const scaleX = canvas.width  / stroke.canvasW;
             const scaleY = canvas.height / stroke.canvasH;
             scaledSize = Math.max(0.5, stroke.size * Math.sqrt(scaleX * scaleY));
@@ -2075,7 +2103,9 @@
               const pts = stroke.points;
               if (!pts || pts.length < 2) return;
               let scaledSize = stroke.size;
-              if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
+              if (stroke.sizePct) {
+                scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
+              } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
                 const scaleX = canvas.width  / stroke.canvasW;
                 const scaleY = canvas.height / stroke.canvasH;
                 scaledSize = Math.max(0.5, stroke.size * Math.sqrt(scaleX * scaleY));

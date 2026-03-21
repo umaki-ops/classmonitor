@@ -2567,16 +2567,18 @@ function drawStrokeOnCanvas(canvas, stroke) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const pts = stroke.points;
   if (stroke.normalized) {
-    // パーセント正規化座標（0〜100）→ canvasピクセルに変換
-    // 線幅は生徒canvas基準のpx値を、表示canvasサイズに合わせてスケール
-    // 幾何平均スケール（√(scaleX*scaleY)）が視覚的に最も自然
-    const srcW = stroke.canvasW || 800;
-    const srcH = stroke.canvasH || 500;
-    console.log('[教員 ストローク描画] srcW:', srcW, 'srcH:', srcH, '描画先canvas:', W, 'x', H);
-    const scaleX = W / srcW;
-    const scaleY = H / srcH;
-    const sizeScale = Math.sqrt(scaleX * scaleY);
-    ctx.lineWidth = Math.max(0.5, (stroke.size || 3) * sizeScale);
+    // sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
+    let lineWidth;
+    if (stroke.sizePct) {
+      lineWidth = Math.max(0.5, stroke.sizePct / 100 * 900);
+    } else {
+      const srcW = stroke.canvasW || 800;
+      const srcH = stroke.canvasH || 500;
+      const scaleX = W / srcW;
+      const scaleY = H / srcH;
+      lineWidth = Math.max(0.5, (stroke.size || 3) * Math.sqrt(scaleX * scaleY));
+    }
+    ctx.lineWidth = lineWidth;
     ctx.moveTo(pts[0][0] / 100 * W, pts[0][1] / 100 * H);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] / 100 * W, pts[i][1] / 100 * H);
   } else {

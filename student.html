@@ -770,7 +770,6 @@
       });
 
       // 配布画像の監視
-      let _lastDistImgUrl = null;
       onValue(ref(db, `sessions/${sessionId}/distImg/active`), snap => {
         if (!snap.exists() || !snap.val()) {
           _lastDistImgUrl = null;
@@ -1118,6 +1117,7 @@
     let imgTool = 'pen', imgColor = '#1e293b', imgSize = 8, imgFontSize = 16;
     let imgDrawing = false, imgLX = 0, imgLY = 0;
     let imgLabels = [];
+    let _lastDistImgUrl = null;
 
     function showDistImg(dataUrl) {
       const overlay = document.getElementById('img-overlay');

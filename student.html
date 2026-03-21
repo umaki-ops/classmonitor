@@ -1164,26 +1164,45 @@
       const wrap = imgCanvas.parentElement;
       const newW = wrap.offsetWidth;
       const newH = wrap.offsetHeight;
-      // サイズが変わっていない場合はスキップ（ソフトキーボード等の誤発火を防ぐ）
+      // サイズが0またはサイズが変わっていない場合はスキップ
+      if (!newW || !newH) return;
       if (imgCanvas.width === newW && imgCanvas.height === newH) return;
-      // リサイズ前に描画内容を退避
-      const savedDrawing = (imgCanvas.width > 0 && imgCanvas.height > 0)
-        ? imgCtx?.getImageData(0, 0, imgCanvas.width, imgCanvas.height)
-        : null;
+      // リサイズ前に描画内容（ペン線）を退避
+      let savedDrawing = null;
+      if (imgCtx && imgCanvas.width > 0 && imgCanvas.height > 0) {
+        try { savedDrawing = imgCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height); } catch(e) {}
+      }
       const prevW = imgCanvas.width;
       const prevH = imgCanvas.height;
       imgCanvas.width = newW;
       imgCanvas.height = newH;
       if (imgBgCanvas) { imgBgCanvas.width = newW; imgBgCanvas.height = newH; }
-      // 背景画像を再描画
-      if (_lastDistImgUrl) imgDrawBg(_lastDistImgUrl);
-      // 描画内容を拡縮して復元
-      if (savedDrawing && imgCtx && prevW > 0 && prevH > 0) {
-        const tmpCanvas = document.createElement('canvas');
-        tmpCanvas.width = prevW;
-        tmpCanvas.height = prevH;
-        tmpCanvas.getContext('2d').putImageData(savedDrawing, 0, 0);
-        imgCtx.drawImage(tmpCanvas, 0, 0, prevW, prevH, 0, 0, newW, newH);
+      // 背景画像を再描画し、完了後にペン線を復元
+      if (_lastDistImgUrl) {
+        const img = new Image();
+        img.onload = () => {
+          if (!imgBgCtx) return;
+          imgBgCtx.fillStyle = 'white';
+          imgBgCtx.fillRect(0, 0, newW, newH);
+          const scale = Math.min(newW / img.width, newH / img.height);
+          const x = (newW - img.width * scale) / 2;
+          const y = (newH - img.height * scale) / 2;
+          imgBgCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
+          // 背景描画完了後にペン線を復元
+          if (savedDrawing && imgCtx && prevW > 0 && prevH > 0) {
+            const tmp = document.createElement('canvas');
+            tmp.width = prevW; tmp.height = prevH;
+            tmp.getContext('2d').putImageData(savedDrawing, 0, 0);
+            imgCtx.drawImage(tmp, 0, 0, prevW, prevH, 0, 0, newW, newH);
+          }
+        };
+        img.src = _lastDistImgUrl;
+      } else if (savedDrawing && imgCtx && prevW > 0 && prevH > 0) {
+        // 背景なしの場合はペン線だけ復元
+        const tmp = document.createElement('canvas');
+        tmp.width = prevW; tmp.height = prevH;
+        tmp.getContext('2d').putImageData(savedDrawing, 0, 0);
+        imgCtx.drawImage(tmp, 0, 0, prevW, prevH, 0, 0, newW, newH);
       }
     }
     function imgDrawBg(dataUrl) {

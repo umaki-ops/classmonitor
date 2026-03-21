@@ -993,10 +993,11 @@
       let twRemoteSet = false;
 
       twPc.ontrack = e => {
+        console.log('[TW-RECV] ontrack fired, streams:', e.streams.length, 'track kind:', e.track.kind);
         const el = document.getElementById('teacher-video');
         if (el) {
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
-          el.play().catch(()=>{});
+          el.play().catch(err => console.warn('[TW-RECV] play error:', err));
           showTeacher();
         }
       };
@@ -1005,7 +1006,11 @@
           type:'tw-ice', from:studentId, to:'teacher', candidate:e.candidate.toJSON()
         });
       };
+      twPc.oniceconnectionstatechange = () => {
+        console.log('[TW-RECV] iceConnectionState:', twPc.iceConnectionState);
+      };
       twPc.onconnectionstatechange = () => {
+        console.log('[TW-RECV] connectionState:', twPc.connectionState);
         if (twPc.connectionState === 'failed') { try { twPc.close(); } catch(e) {} twPc = null; }
       };
 

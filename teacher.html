@@ -2148,12 +2148,17 @@ window.clearStudentDistImg = async function(sid) {
 window.clearGroupDrawings = async function(gid) {
   const gname = groupDefs[gid]?.name || '班';
   const state = groupState[gid] || {};
+  const {ref, remove} = window.FB;
   if (state.wbActive) {
     if (!confirm(`${gname} のホワイトボード書き込みを消去しますか？`)) return;
-    await window.clearGroupWb(gid);
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`));
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`));
+    toast(`🗑️ ${gname} のWBを消去しました`);
   } else if (state.hasImg) {
     if (!confirm(`${gname} の画像書き込みを消去しますか？`)) return;
-    await window.clearGroupDistImg(gid);
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`));
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`));
+    toast(`🗑️ ${gname} の画像書き込みを消去しました`);
   } else {
     toast('⚠️ 現在配布中のコンテンツがありません');
   }
@@ -3344,12 +3349,11 @@ window.collectGroupSelectImg = async function(gid) {
 window.clearGroupSelectDrawings = async function(gid) {
   const gname = groupSelectDefs[gid]?.name || '班';
   const state = groupSelectState[gid] || {};
-  const { ref, set, remove } = window.FB;
+  const {ref, remove} = window.FB;
   if (state.wbActive) {
     if (!confirm(`${gname} のホワイトボード書き込みを消去しますか？`)) return;
     await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/strokes`));
     await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/texts`));
-    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/resetTs`), Date.now());
     toast(`🗑️ ${gname} のWBを消去しました`);
   } else if (state.hasImg) {
     if (!confirm(`${gname} の画像書き込みを消去しますか？`)) return;

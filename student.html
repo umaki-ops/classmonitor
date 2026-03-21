@@ -1457,6 +1457,7 @@
         const i = labelsArr.indexOf(lblObj);
         if (i >= 0) labelsArr.splice(i, 1);
         if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
+        if (containerId === 'img-labels' && typeof imgScheduleSnapshot === 'function') imgScheduleSnapshot();
       });
 
       // ===== 完了ボタン =====
@@ -1466,11 +1467,14 @@
         wrap.classList.remove('edit-mode');
         wrap.classList.add('selected');
         ta.blur();
+        if (containerId === 'img-labels' && typeof imgScheduleSnapshot === 'function') imgScheduleSnapshot();
       });
 
       // ===== テキスト入力 =====
       ta.addEventListener('input', () => {
         if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
+        // 配布画像のテキストボックスの場合はimgSnapshotもスケジュール
+        if (containerId === 'img-labels' && typeof imgScheduleSnapshot === 'function') imgScheduleSnapshot();
       });
 
       // 初期状態: 移動モードで開始

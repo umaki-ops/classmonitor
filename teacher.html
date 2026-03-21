@@ -1060,6 +1060,7 @@ window.switchView=function(v){
   document.getElementById('tab-group-select').classList.toggle('active',v==='group-select');
   document.getElementById('wb-controls').style.display=v==='wb'?'block':'none';
   document.getElementById('img-controls').style.display=v==='img'?'block':'none';
+  document.getElementById('dist-img-grid').style.display=v==='img'?'':'none';
   document.getElementById('group-panel').style.display=v==='group'?'block':'none';
   document.getElementById('group-select-panel').style.display=v==='group-select'?'block':'none';
   document.getElementById('grid').style.display=(v==='img'||v==='group'||v==='group-select')?'none':'';

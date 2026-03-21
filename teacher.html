@@ -495,15 +495,7 @@
     <!-- ツールバー：列数 + 一括操作 -->
     <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:6px;margin-right:6px;">
-          <span style="font-size:12px;color:var(--muted);">列数</span>
-          <div style="display:flex;gap:3px;" id="col-switcher">
-            <button onclick="setGroupCols(2)" id="gcol-2" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:12px;cursor:pointer;">2</button>
-            <button onclick="setGroupCols(3)" id="gcol-3" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">3</button>
-            <button onclick="setGroupCols(4)" id="gcol-4" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">4</button>
-          </div>
-        </div>
-        <div style="width:1px;height:24px;background:var(--border);margin:0 2px;"></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupWb()">📋 全班WB配布</button>
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupWb()">📋 全班WB回収</button>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupImg()">🖼 全班画像配布</button>
@@ -545,15 +537,6 @@
     <!-- ツールバー：列数 + 一括操作 -->
     <div id="group-select-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:6px;margin-right:6px;">
-          <span style="font-size:12px;color:var(--muted);">列数</span>
-          <div style="display:flex;gap:3px;" id="col-switcher-select">
-            <button onclick="setGroupSelectCols(2)" id="gscol-2" class="gscol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:12px;cursor:pointer;">2</button>
-            <button onclick="setGroupSelectCols(3)" id="gscol-3" class="gscol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">3</button>
-            <button onclick="setGroupSelectCols(4)" id="gscol-4" class="gscol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">4</button>
-          </div>
-        </div>
-        <div style="width:1px;height:24px;background:var(--border);margin:0 2px;"></div>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupSelectWb()">📋 全班WB配布</button>
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupSelectWb()">📋 全班WB回収</button>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupSelectImg()">🖼 全班画像配布</button>
@@ -1069,6 +1052,7 @@ window.switchView=function(v){
   if(v==='img'){ distImgRefreshUI(); listenDistImgData(); renderDistImgGrid(); }
   if(v==='group') renderGroupPanel();
   if(v==='group-select') renderGroupSelectPanel();
+  updateGridSize();
 };
 
 // ===== WHITEBOARD =====
@@ -1981,7 +1965,17 @@ window.openFullscreen=function(sid){
 };
 window.closeFullscreen=function(){document.getElementById('fs-overlay').classList.remove('show');document.getElementById('fs-video').srcObject=null;window.currentFsId=null;};
 window.copyUrl=function(){navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(()=>{const b=document.getElementById('copy-btn');b.textContent='✓ コピー済';b.classList.add('copied');setTimeout(()=>{b.textContent='コピー';b.classList.remove('copied');},2000);});};
-window.updateGridSize=function(){document.getElementById('grid').style.gridTemplateColumns=`repeat(${document.getElementById('grid-size').value},1fr)`;};
+window.updateGridSize=function(){
+  const v=document.getElementById('grid-size').value;
+  document.getElementById('grid').style.gridTemplateColumns=`repeat(${v},1fr)`;
+  document.getElementById('dist-img-grid').style.gridTemplateColumns=`repeat(${v},1fr)`;
+  const gmg=document.getElementById('group-monitor-grid');
+  if(gmg)gmg.style.gridTemplateColumns=`repeat(${v},minmax(0,1fr))`;
+  const gsmg=document.getElementById('group-select-monitor-grid');
+  if(gsmg)gsmg.style.gridTemplateColumns=`repeat(${v},minmax(0,1fr))`;
+  _groupCols=parseInt(v);
+  _groupSelectCols=parseInt(v);
+};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeWbFullscreen();closeMsgModal();closeSurvey();closeResults();if(window.closeGroupMsgModal)window.closeGroupMsgModal();if(window.closeGroupZoom)window.closeGroupZoom();}if(e.key==='ArrowLeft')wbLbNav(-1);if(e.key==='ArrowRight')wbLbNav(1);});
 
 

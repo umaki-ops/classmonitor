@@ -2330,7 +2330,7 @@ function listenGroupPreview(gid) {
     if (!canvas) return;
 
     const wbActive = wbSnapshot?.active === true;
-    const hasImg   = distImgData !== null;
+    const hasImg   = !wbActive && distImgData !== null;
     groupState[gid] = { wbActive, hasImg };
 
     if (wbActive || hasImg) {

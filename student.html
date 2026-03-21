@@ -505,8 +505,8 @@
     <div class="wb-sep"></div>
     <select id="wb-size" onchange="wbSetSize(this.value)">
       <option value="2">細</option>
-      <option value="4">中</option>
-      <option value="8" selected>太</option>
+      <option value="4" selected>中</option>
+      <option value="8">太</option>
       <option value="16">極太</option>
     </select>
     <button class="wbt" onclick="wbClear()" title="全消し">🗑️</button>
@@ -542,8 +542,8 @@
     <div class="wb-sep"></div>
     <select id="img-size" onchange="imgSetSize(this.value)">
       <option value="2">細</option>
-      <option value="4">中</option>
-      <option value="8" selected>太</option>
+      <option value="4" selected>中</option>
+      <option value="8">太</option>
       <option value="16">極太</option>
     </select>
     <button class="wbt" onclick="distImgClear()" title="全消し">🗑️</button>
@@ -1118,7 +1118,7 @@
 
     // ===== 配布画像 =====
     let imgCanvas = null, imgBgCanvas = null, imgCtx = null, imgBgCtx = null;
-    let imgTool = 'pen', imgColor = '#1e293b', imgSize = 8, imgFontSize = 16;
+    let imgTool = 'pen', imgColor = '#1e293b', imgSize = 4, imgFontSize = 16;
     let imgDrawing = false, imgLX = 0, imgLY = 0;
     let imgLabels = [];
     let _lastDistImgUrl = null;
@@ -1535,7 +1535,7 @@
 
     // ===== ホワイトボード =====
     let wbCanvas = null, wbCtx = null;
-    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 8, wbFontSize = 16;
+    let wbTool = 'pen', wbColor = '#1e293b', wbSize = 4, wbFontSize = 16;
     let wbDrawing = false, wbLX = 0, wbLY = 0;
     let wbLabels = [];
 
@@ -2586,7 +2586,8 @@
                 gWbBgImage = imgData.dataUrl;
                 gWbOpen(_myGroupId, { instruction: '画像に書き込みましょう', _skipReset: true });
               } else {
-                // 既に開いている場合は背景更新＋ストローク再描画
+                // 既に開いている場合も gWbFromImg を true にしてタイトルを更新
+                gWbFromImg = true;
                 gWbSetBgImage(imgData.dataUrl);
               }
             } else if (!imgData.active) {

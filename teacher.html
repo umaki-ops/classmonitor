@@ -1636,8 +1636,28 @@ async function setupTWPc(sid){
     console.log('[TW] offer sent to',sid);
   }catch(e){console.error('[setupTWPc]',e);toast('❌ 先生画面配信エラー: '+e.message);}
 }
-async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc){console.warn('[TW] no pc for',sid);return;}try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));console.log('[TW] remoteDesc set for',sid);}catch(e){console.error('[handleTWAnswer]',e);}}
-async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+const twIceQueues={};
+async function handleTWAnswer(sid,sdp){
+  const pc=twPcs[sid];
+  if(!pc){console.warn('[TW] no pc for',sid);return;}
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    console.log('[TW] remoteDesc set for',sid);
+    const q=twIceQueues[sid]||[];
+    delete twIceQueues[sid];
+    for(const c of q){try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+  }catch(e){console.error('[handleTWAnswer]',e);}
+}
+async function handleTWIce(sid,c){
+  const pc=twPcs[sid];
+  if(!pc)return;
+  if(!pc.remoteDescription){
+    if(!twIceQueues[sid])twIceQueues[sid]=[];
+    twIceQueues[sid].push(c);
+    return;
+  }
+  try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}
+}
 
 // ===== Student screen broadcast =====
 let studentBcastPcs={};

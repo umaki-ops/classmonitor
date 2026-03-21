@@ -752,6 +752,10 @@
       onValue(ref(db, `sessions/${sessionId}/wb/resetTs`), snap => {
         if (snap.exists()) wbClear();
       });
+      // 個人向けWBリセット監視
+      onValue(ref(db, `sessions/${sessionId}/wb/resetTs_${studentId}`), snap => {
+        if (snap.exists()) wbClear();
+      });
 
       // 背景画像の監視
       onValue(ref(db, `sessions/${sessionId}/wb/bgImage`), snap => {
@@ -1294,11 +1298,23 @@
       alert('提出しました！');
     };
     window.distImgClear = function() {
-      if (imgCtx) imgCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+      if (imgCtx) {
+        imgCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+      }
       imgLabels = [];
       const wrap = document.getElementById('img-labels');
       if (wrap) wrap.innerHTML = '';
       _selectedTxt = null;
+      // クリア後すぐにスナップショットを送信して教員側に反映
+      if (imgCanvas && imgBgCanvas) {
+        const merged = document.createElement('canvas');
+        merged.width = imgCanvas.width; merged.height = imgCanvas.height;
+        const ctx = merged.getContext('2d');
+        ctx.drawImage(imgBgCanvas, 0, 0);
+        ctx.drawImage(imgCanvas, 0, 0);
+        const dataUrl = merged.toDataURL('image/jpeg', 0.7);
+        set(ref(db, `sessions/${sessionId}/distImg/snapshots/${studentId}`), dataUrl);
+      }
     };
 
 
@@ -1606,6 +1622,11 @@
       const wrap = document.getElementById('wb-labels');
       if (wrap) wrap.innerHTML = '';
       _selectedTxt = null;
+      // クリア後すぐにスナップショットを送信して教員側に反映
+      if (wbCanvas) {
+        const dataUrl = wbCanvas.toDataURL('image/jpeg', 0.7);
+        set(ref(db, `sessions/${sessionId}/wb/snapshots/${studentId}`), dataUrl);
+      }
     };
     window.wbSetTool = function(t) {
       if (t === 'text') {
@@ -1813,10 +1834,14 @@
         wbOpen();
       } else if (data.command === 'wb-close') {
         wbClose();
+      } else if (data.command === 'wb-clear') {
+        wbClear();
       } else if (data.command === 'dist-img') {
         if (data.dataUrl) showDistImg(data.dataUrl);
       } else if (data.command === 'dist-img-close') {
         window.hideDistImg && window.hideDistImg();
+      } else if (data.command === 'dist-img-clear') {
+        window.distImgClear && window.distImgClear();
       }
     }
 

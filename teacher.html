@@ -1709,23 +1709,22 @@ async function handleTWIceRestart(sid,sdp){
 let studentBcastPcs={};
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  const srcPc=peerConnections[sid];
-  // PCがない、またはliveなトラックがない場合: video要素のsrcObjectから試みる
+  // video要素の captureStream() を使う（RemoteTrackより確実にフレームが流れる）
   let stream=null;
-  if(srcPc){
-    const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
-    if(tracks.length>0) stream=new MediaStream(tracks);
+  const v=document.getElementById('v-'+sid);
+  if(v && v.srcObject && typeof v.captureStream === 'function'){
+    stream = v.captureStream(30); // 30fps でキャプチャ
   }
-  // フォールバック: video要素のsrcObjectを使う
+  // フォールバック: getReceivers() のトラックを使う
   if(!stream){
-    const v=document.getElementById('v-'+sid);
-    if(v&&v.srcObject){
-      const tracks=[...v.srcObject.getTracks()].filter(t=>t.readyState==='live');
+    const srcPc=peerConnections[sid];
+    if(srcPc){
+      const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
       if(tracks.length>0) stream=new MediaStream(tracks);
     }
   }
   if(!stream){
-    console.warn('[broadcastStudentScreen] no stream for',sid, 'pc:',srcPc?.connectionState);
+    console.warn('[broadcastStudentScreen] no stream for',sid);
     toast('この生徒の映像が取得できません（共有中か確認してください）');
     return;
   }

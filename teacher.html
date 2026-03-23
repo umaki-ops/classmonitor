@@ -1503,7 +1503,6 @@ async function setupPC(sid){
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
   pc.ontrack=ev=>{
-  pc.ontrack=ev=>{
     const v=document.getElementById('v-'+sid),ph=document.getElementById('ph-'+sid);
     if(v){
       if(ev.streams&&ev.streams[0]){v.srcObject=ev.streams[0];}

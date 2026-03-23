@@ -1510,6 +1510,15 @@ async function setupPC(sid){
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
     }
+    // 共有元生徒のPCが再接続されたとき、watchSenderのtrackを新しいものに差し替える
+    if(sid===currentBroadcastId&&ev.track.kind==='video'&&window._watchSenders){
+      console.log('[Watch] sourceSid reconnected, replacing watch tracks');
+      for(const sender of Object.values(window._watchSenders)){
+        if(sender&&typeof sender.replaceTrack==='function'){
+          sender.replaceTrack(ev.track).catch(e=>console.warn('[replaceTrack]',e));
+        }
+      }
+    }
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
 

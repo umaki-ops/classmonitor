@@ -1724,17 +1724,17 @@ async function handleTWIceRestart(sid,sdp){
 let studentBcastPcs={};
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  // video要素の captureStream() を使う（RemoteTrackより確実にフレームが流れる）
+  // getReceivers()のトラックを使う（captureStream()はChromeでSIGSEGVを起こす）
   let stream=null;
-  const v=document.getElementById('v-'+sid);
-  if(v && v.srcObject && typeof v.captureStream === 'function'){
-    stream = v.captureStream(30); // 30fps でキャプチャ
+  const srcPc=peerConnections[sid];
+  if(srcPc){
+    const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
+    if(tracks.length>0) stream=new MediaStream(tracks);
   }
-  // フォールバック: getReceivers() のトラックを使う
   if(!stream){
-    const srcPc=peerConnections[sid];
-    if(srcPc){
-      const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
+    const v=document.getElementById('v-'+sid);
+    if(v&&v.srcObject){
+      const tracks=[...v.srcObject.getTracks()].filter(t=>t.readyState==='live');
       if(tracks.length>0) stream=new MediaStream(tracks);
     }
   }

@@ -1738,41 +1738,35 @@ async function handleTWIceRestart(sid,sdp){
 // ===== Student screen broadcast =====
 let studentBcastPcs={};
 // Canvas経由でvideo要素からストリームを取得（SIGSEGVを避けつつ継続フレームを保証）
-let _bcastCanvas = null, _bcastCanvasCtx = null, _bcastInterval = null, _bcastStream = null;
-function startCanvasCapture(sid) {
+let _bcastStream = null;
+function startBcastCapture(sid) {
   stopCanvasCapture();
+  // fs-video（フルスクリーン・visible）があればそこから captureStream()
+  // visible な video 要素なので SIGSEGV が起きない
+  const fsv = document.getElementById('fs-video');
   const v = document.getElementById('v-'+sid);
-  if (!v) return null;
-  if (!_bcastCanvas) {
-    _bcastCanvas = document.createElement('canvas');
-    _bcastCanvas.width = 960; _bcastCanvas.height = 540;  // 解像度を下げてタイムラグ削減
-    _bcastCanvasCtx = _bcastCanvas.getContext('2d');
+  // 優先: fs-video（playing状態）、次に v-{sid}
+  let src = null;
+  if (fsv && fsv.srcObject && fsv.readyState >= 3 && !fsv.paused) src = fsv;
+  else if (v && v.srcObject && v.readyState >= 3 && !v.paused) src = v;
+  else if (v && v.srcObject && v.readyState >= 2) src = v;
+  if (!src) return null;
+  try {
+    _bcastStream = src.captureStream(30);
+    return _bcastStream;
+  } catch(e) {
+    console.error('[captureStream]', e);
+    return null;
   }
-  _bcastStream = _bcastCanvas.captureStream(30);
-  // setIntervalはバックグラウンドタブでも動き続ける（requestAnimationFrameは停止する）
-  _bcastInterval = setInterval(() => {
-    if (!_bcastCanvasCtx || !currentBroadcastId) return;
-    const v2 = document.getElementById('v-'+currentBroadcastId);
-    if (v2 && v2.readyState >= 2 && !v2.paused) {
-      _bcastCanvasCtx.drawImage(v2, 0, 0, _bcastCanvas.width, _bcastCanvas.height);
-    }
-  }, 1000 / 30);  // 30fps
-  return _bcastStream;
 }
 function stopCanvasCapture() {
-  if (_bcastInterval) { clearInterval(_bcastInterval); _bcastInterval = null; }
   if (_bcastStream) { _bcastStream.getTracks().forEach(t=>t.stop()); _bcastStream = null; }
 }
 
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  const v = document.getElementById('v-'+sid);
-  if(!v || !v.srcObject || v.readyState < 2){
-    toast('この生徒の映像が取得できません（共有中か確認してください）');
-    return;
-  }
-  const stream = startCanvasCapture(sid);
-  if(!stream){ toast('映像キャプチャに失敗しました'); return; }
+  const stream = startBcastCapture(sid);
+  if(!stream){ toast('この生徒の映像が取得できません（共有中か確認してください）'); return; }
   if(currentBroadcastId)stopBcast();
   currentBroadcastId=sid;
   document.getElementById('card-'+sid)?.classList.add('focused');
@@ -2131,6 +2125,20 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     // 表示に戻ったとき全videoを確実に再生
     document.querySelectorAll('video').forEach(v => { if (v.srcObject && v.paused) v.play().catch(()=>{}); });
+    // captureStream が停止していたら再取得してsenderのtrackを差し替える
+    if (currentBroadcastId && window._watchSenders && _bcastStream) {
+      const tracks = _bcastStream.getVideoTracks();
+      if (tracks.length === 0 || tracks[0].readyState === 'ended') {
+        // streamが死んでいたら再キャプチャして全senderにreplaceTrack
+        const newStream = startBcastCapture(currentBroadcastId);
+        if (newStream) {
+          const newTrack = newStream.getVideoTracks()[0];
+          for (const sender of Object.values(window._watchSenders)) {
+            if (sender && newTrack) sender.replaceTrack(newTrack).catch(()=>{});
+          }
+        }
+      }
+    }
   }
 });
 

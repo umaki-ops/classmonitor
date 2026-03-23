@@ -1638,38 +1638,53 @@ async function setHighBitrate(pc, kbps=8000){
   }
 }
 
+// ===== リネゴシエーションキュー（同一PCへの複数offer競合を防ぐ）=====
+const _negQueues = {};
+function negotiatePC(sid, trackSetupFn) {
+  if (!_negQueues[sid]) _negQueues[sid] = Promise.resolve();
+  _negQueues[sid] = _negQueues[sid].then(async () => {
+    const pc = peerConnections[sid];
+    if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') return;
+    if (pc.signalingState !== 'stable') {
+      await new Promise(r => {
+        const check = () => { if (pc.signalingState === 'stable') { pc.removeEventListener('signalingstatechange', check); r(); } };
+        pc.addEventListener('signalingstatechange', check);
+        setTimeout(r, 3000);
+      });
+    }
+    if (trackSetupFn) trackSetupFn(pc);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sig(sid, {type:'offer', from:'teacher', to:sid, sdp:{type:offer.type, sdp:offer.sdp}});
+      console.log('[neg] offer sent to', sid, '(senders:', pc.getSenders().length, ')');
+    } catch(e) { console.error('[negotiatePC]', sid, e); }
+  });
+  return _negQueues[sid];
+}
+
 async function setupTWPc(sid){
   console.log('[TW] setupTWPc for', sid, 'stream:', !!teacherStream);
   if(!teacherStream){console.warn('[TW] no teacherStream');return;}
-  try{
-    // 既存のモニタリング接続を再利用して教員streamトラックを追加する
-    // → 新しいNAT越えが不要（モニタリングで既に繋がっている同じ接続を使う）
-    const pc = peerConnections[sid];
-    if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
-      console.warn('[TW] no active monitoring PC for', sid, '- falling back to new PC');
-      // モニタリング接続がない場合は旧来の別PCを使う
-      if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
-      const newPc=new RTCPeerConnection(ICE);twPcs[sid]=newPc;
-      const tracks=teacherStream.getTracks();
-      tracks.forEach(tr=>newPc.addTrack(tr,teacherStream));
-      newPc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-      newPc.onconnectionstatechange=()=>{console.log('[TW-fallback->'+sid+']',newPc.connectionState);};
-      const offer=await newPc.createOffer();
-      await newPc.setLocalDescription(offer);
-      sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-      return;
-    }
-    // 既存接続にteacherStreamのトラックを追加してリネゴシエーション
-    const existing = pc.getSenders().find(s=>s.track && teacherStream.getTracks().includes(s.track));
-    if(existing){console.log('[TW] track already added for', sid);return;}
+  const pc = peerConnections[sid];
+  if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
+    console.warn('[TW] no active monitoring PC for', sid, '- falling back to new PC');
+    if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
+    const newPc=new RTCPeerConnection(ICE);twPcs[sid]=newPc;
+    teacherStream.getTracks().forEach(tr=>newPc.addTrack(tr,teacherStream));
+    newPc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+    newPc.onconnectionstatechange=()=>{console.log('[TW-fallback->'+sid+']',newPc.connectionState);};
+    const offer=await newPc.createOffer();
+    await newPc.setLocalDescription(offer);
+    sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+    return;
+  }
+  const existing = pc.getSenders().find(s=>s.track && teacherStream.getTracks().includes(s.track));
+  if(existing){console.log('[TW] track already added for', sid);return;}
+  negotiatePC(sid, pc => {
     teacherStream.getTracks().forEach(tr=>pc.addTrack(tr,teacherStream));
-    console.log('[TW] added teacher track to monitoring PC for', sid);
-    // リネゴシエーション用のofferを送信（tw-offerではなくofferを使う）
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-    console.log('[TW] renegotiation offer sent to', sid);
-  }catch(e){console.error('[setupTWPc]',e);toast('❌ 先生画面配信エラー: '+e.message);}
+    console.log('[TW] added teacher track via queue for', sid);
+  });
 }
 const twIceQueues={};
 async function handleTWAnswer(sid,sdp){
@@ -1741,31 +1756,22 @@ async function startStudentBroadcast(sourceSid,stream){
   }
 }
 async function setupStudentBcastPc(sid, stream, sourceSid){
-  try{
-    // 既存のモニタリング接続を再利用（tw接続と同様のアプローチ）
-    const pc = peerConnections[sid];
-    if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
-      console.warn('[Watch] no active monitoring PC for', sid, '- skipping');
-      toast(`⚠️ ${students[sid]?.name||sid} への配信をスキップ（未接続）`);
-      return;
-    }
-    // 既に追加済みのwatchトラックがあれば削除してから追加
-    const sourceName = students[sourceSid]?.name || '生徒';
-    // track.id でwatchトラックを管理
-    if(!window._watchSenders) window._watchSenders = {};
+  const pc = peerConnections[sid];
+  if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
+    console.warn('[Watch] no active monitoring PC for', sid, '- skipping');
+    return;
+  }
+  const sourceName = students[sourceSid]?.name || '生徒';
+  if(!window._watchSenders) window._watchSenders = {};
+  // watchStartコマンドを先に送っておく
+  cmd(sid, 'watchStart', {sourceName});
+  negotiatePC(sid, pc => {
     const prev = window._watchSenders[sid];
     if(prev){try{pc.removeTrack(prev);}catch(e){}}
     const sender = stream.getTracks().length > 0 ? pc.addTrack(stream.getTracks()[0], stream) : null;
     if(sender) window._watchSenders[sid] = sender;
-    console.log('[Watch] added track to monitoring PC for', sid);
-    // リネゴシエーション：watch-offer ではなく offer を使う
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    // sourceName を伝えるために cmd を使う
-    cmd(sid, 'watchStart', {sourceName});
-    sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-    console.log('[Watch] renegotiation offer sent to', sid);
-  }catch(e){console.error('[setupStudentBcastPc]',e);toast('❌ 生徒画面配信エラー: '+e.message);}
+    console.log('[Watch] added track via queue for', sid);
+  });
 }
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){

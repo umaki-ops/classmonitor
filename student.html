@@ -714,10 +714,10 @@
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
         else if (signal.type === 'watch-offer') setTimeout(() => handleWatchOffer(signal.from, signal.sdp, signal.sourceName), 0);
         else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
-        // P2P配信: 生徒AがanswerとICEを受け取る
+        // P2P配信: 受信側(生徒B)が送信側(生徒A)からのICE候補を受け取る → watchPcに追加
+        else if (signal.type === 'watch-offer-ice') handleWatchIce(signal.candidate);
+        // P2P配信: 送信側(生徒A)が受信側(生徒B)からのanswer/ICEを受け取る
         else if (signal.type === 'watch-answer') setTimeout(() => handleWatchAnswerFromPeer(signal.from, signal.sdp), 0);
-        else if (signal.type === 'watch-offer-ice') handleWatchAnswerIceFromPeer(signal.from, signal.candidate);
-        // 視聴側からのICE候補（送信側が受け取る）
         else if (signal.type === 'watch-answer-ice') handleWatchAnswerIceFromPeer(signal.from, signal.candidate);
         else if (signal.type === 'stop-watch') hideWatch();
         else if (signal.type === 'tw-offer') setTimeout(() => handleTeacherWatchOffer(signal.sdp), 0);

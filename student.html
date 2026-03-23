@@ -928,30 +928,32 @@
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
-        // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
-        // watchStartコマンドが来ていれば watch-video に表示
-        pc.ontrack = e => {
-          if (e.track.kind === 'video' && e.streams && e.streams[0]) {
-            if (window._watchSourceName) {
-              // 生徒画面共有モード
-              const el = document.getElementById('watch-video');
-              if (el) {
-                el.srcObject = e.streams[0];
-                el.play().catch(() => {});
-                showWatch(window._watchSourceName);
-              }
-            } else {
-              // 教員画面共有モード
-              const el = document.getElementById('teacher-video');
-              if (el) {
-                el.srcObject = e.streams[0];
-                el.play().catch(() => {});
-                showTeacher();
-              }
+      }
+      // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
+      // watchStartコマンドが来ていれば watch-video に表示
+      pc.ontrack = e => {
+        console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length, '_watchSourceName:', window._watchSourceName);
+        if (e.track.kind === 'video') {
+          const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
+          if (window._watchSourceName) {
+            // 生徒画面共有モード
+            const el = document.getElementById('watch-video');
+            if (el) {
+              el.srcObject = stream;
+              el.play().catch(() => {});
+              showWatch(window._watchSourceName);
+            }
+          } else {
+            // 教員画面共有モード
+            const el = document.getElementById('teacher-video');
+            if (el) {
+              el.srcObject = stream;
+              el.play().catch(() => {});
+              showTeacher();
             }
           }
-        };
-      }
+        }
+      };
       // localStream のトラックを追加（未追加の場合のみ）
       if (localStream) {
         const senders = pc.getSenders();

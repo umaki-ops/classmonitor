@@ -1459,6 +1459,9 @@ function listenStudents(){
     else if(sig.type==='tw-ice-restart')handleTWIceRestart(sig.from,sig.sdp);
     else if(sig.type==='watch-answer')handleWatchAnswer(sig.from,sig.sdp);
     else if(sig.type==='watch-answer-ice')handleWatchAnswerIce(sig.from,sig.candidate);
+    // 生徒AからのP2P watch-offer（教員も受信対象に含まれた場合）
+    else if(sig.type==='watch-offer')setTimeout(()=>handleTeacherWatchOfferFromStudent(sig.from,sig.sdp,sig.sourceName),0);
+    else if(sig.type==='watch-offer-ice')handleTeacherWatchIceFromStudent(sig.from,sig.candidate);
   });
   startListenAnswers();
 }
@@ -1842,7 +1845,9 @@ window.broadcastStudentScreen=function(sid){
   document.getElementById('card-'+sid)?.classList.add('focused');
   const targets=Object.keys(students).filter(s=>s!==sid);
   const sourceName=students[sid]?.name||'生徒';
-  cmd(sid,'startBcast',{targets,sourceName});
+  // 教員も含めてP2P配信（教員のIDを特別なターゲットとして追加）
+  const allTargets=[...targets,'teacher'];
+  cmd(sid,'startBcast',{targets:allTargets,sourceName});
   targets.forEach(tSid=>cmd(tSid,'watchStart',{sourceName}));
   toast(`📡 ${sourceName}の画面を全員に共有中`);
 };
@@ -1885,6 +1890,47 @@ async function handleWatchAnswerIce(sid,c){
     return;
   }
   try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}
+}
+
+// 生徒AからのP2P watch-offer を教員が直接受け取る
+let _teacherWatchPc = null, _teacherWatchIceQueue = [];
+async function handleTeacherWatchOfferFromStudent(fromSid, sdp, sourceName){
+  if(_teacherWatchPc){try{_teacherWatchPc.close();}catch(e){}}
+  _teacherWatchIceQueue=[];
+  _teacherWatchPc=new RTCPeerConnection(ICE);
+  _teacherWatchPc.ontrack=ev=>{
+    // 教員の v-{fromSid} を直接更新（P2P経由の高品質映像）
+    const v=document.getElementById('v-'+fromSid);
+    const ph=document.getElementById('ph-'+fromSid);
+    if(v){
+      if(ev.streams&&ev.streams[0]){v.srcObject=ev.streams[0];}
+      else{const ms=new MediaStream();ms.addTrack(ev.track);v.srcObject=ms;}
+      v.play().catch(()=>{});
+      v.style.display='block';if(ph)ph.style.display='none';
+    }
+    // fs-videoも更新
+    if(fromSid===window.currentFsId){
+      const fsv=document.getElementById('fs-video');
+      if(fsv&&v){fsv.srcObject=v.srcObject;fsv.play().catch(()=>{});}
+    }
+    console.log('[TeacherWatch] P2P track received from', fromSid);
+  };
+  _teacherWatchPc.onicecandidate=ev=>{
+    if(ev.candidate) sig(fromSid,{type:'watch-answer-ice',from:'teacher',to:fromSid,candidate:ev.candidate.toJSON()});
+  };
+  await _teacherWatchPc.setRemoteDescription(new RTCSessionDescription(sdp));
+  // キューに溜まったICE候補を処理
+  for(const c of _teacherWatchIceQueue){try{await _teacherWatchPc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+  _teacherWatchIceQueue=[];
+  const ans=await _teacherWatchPc.createAnswer();
+  await _teacherWatchPc.setLocalDescription(ans);
+  sig(fromSid,{type:'watch-answer',from:'teacher',to:fromSid,sdp:{type:ans.type,sdp:ans.sdp}});
+  console.log('[TeacherWatch] answer sent to', fromSid);
+}
+async function handleTeacherWatchIceFromStudent(fromSid, candidate){
+  if(!_teacherWatchPc||!candidate)return;
+  if(!_teacherWatchPc.remoteDescription){_teacherWatchIceQueue.push(candidate);return;}
+  try{await _teacherWatchPc.addIceCandidate(new RTCIceCandidate(candidate));}catch(e){}
 }
 
 // ===== Focus =====

@@ -1221,10 +1221,11 @@
         try {
           const pc = new RTCPeerConnection(ICE);
           _directBcastPcs[tSid] = pc;
-          // getDisplayMediaのtrackをそのまま送信（再エンコードなし）
+          // 同一trackを複数PCに addTrack するとSIGSEGV → clone()で各PC独立したtrack
           localStream.getTracks().forEach(track => {
-            track.contentHint = 'detail';
-            pc.addTrack(track, localStream);
+            const cloned = track.clone();
+            cloned.contentHint = 'detail';
+            pc.addTrack(cloned, localStream);
           });
           // 高ビットレート設定
           pc.onicecandidate = e => {

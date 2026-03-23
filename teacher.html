@@ -1536,6 +1536,16 @@ async function setupPC(sid){
     if(state==='connected'){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
+      // 受信バッファを最小化してcaptureStream経由の遅延を削減
+      try{
+        pc.getReceivers().forEach(r=>{
+          if(r.track&&r.track.kind==='video'){
+            // jitterBufferDelayHint: 0 で再生バッファを最小化
+            if('jitterBufferDelayHint' in r) r.jitterBufferDelayHint=0;
+            if('jitterBufferTarget' in r) r.jitterBufferTarget=0;
+          }
+        });
+      }catch(e){}
     }
     // failedのみ即再接続。disconnectedは一時的な場合が多いためICE再起動で様子見
     if(state==='failed'){

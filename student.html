@@ -551,7 +551,7 @@
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
   import { getDatabase, ref, set, update, onValue, onChildAdded, get, remove, onDisconnect} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
-  import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   // ===== 状態管理 =====
   function showState(name) {
@@ -575,7 +575,7 @@
         location.reload();
         return;
       }
-      await signInWithPopup(_auth, new GoogleAuthProvider());
+      await signInWithRedirect(_auth, new GoogleAuthProvider());
     } catch(e) {
       if (btn) {
         btn.disabled = false;
@@ -999,6 +999,15 @@
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           el.play().catch(err => console.warn('[WATCH] play error:', err));
         }
+        // 受信バッファを最小化して遅延削減
+        try {
+          watchPc.getReceivers().forEach(r => {
+            if (r.track && r.track.kind === 'video') {
+              if ('jitterBufferDelayHint' in r) r.jitterBufferDelayHint = 0;
+              if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0;
+            }
+          });
+        } catch(e) {}
       };
       watchPc.onicecandidate = e => {
         if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wi`), {

@@ -938,14 +938,15 @@ window.endSession = async function() {
     for (const [sid, dep] of Object.entries(depData)) {
       if (processedSids.has(sid)) continue; // 既に処理済み
       if (!dep || !dep.count) continue;
+      const depName = dep.name || students[sid]?.name || '不明';
       reportData.push({
-        name: dep.name || '不明',
+        name: depName,
         count: 0,
         logs: [],
         totalMs: 0,
         sid,
         sessionDepartures: dep.count,
-        isDeparted: true // 離脱したままのフラグ
+        isDeparted: true
       });
     }
   } catch (e) {
@@ -1468,15 +1469,22 @@ function listenStudents(){
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key;
     const d=snap.val()||{};
+    // nameを同期的に確実に取得（非同期処理前に取っておく）
+    const name = d.name || students[sid]?.name || '';
     // セッションが終了中でなければ離脱としてカウント（endSessionでremoveする場合は除外）
-    if(sessionId && !window._sessionEnding){
-      const name=d.name||students[sid]?.name||'不明';
+    if(sessionId && !window._sessionEnding && name){
       // increment()でサーバーサイドにてカウントを確実にインクリメント
-      const{ref:fbRef,set:fbSet}=window.FB;
-      window.FB.get(fbRef(db,`sessions/${sessionId}/departures/${sid}/count`)).then(snap=>{
-        const prev=(snap.exists()&&snap.val())||0;
-        fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{count:prev+1,name});
-      }).catch(()=>{});
+      const{ref:fbRef,set:fbSet,get:fbGet}=window.FB;
+      fbGet(fbRef(db,`sessions/${sessionId}/departures/${sid}`)).then(snap=>{
+        const prev=snap.exists()&&snap.val()||{};
+        fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{
+          count:(prev.count||0)+1,
+          name: prev.name||name  // 既存の名前を優先、なければ今回の名前
+        });
+      }).catch(()=>{
+        // getが失敗した場合は直接set（count=1から始める）
+        fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{count:1,name});
+      });
     }
     removeCard(sid);
   });

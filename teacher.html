@@ -698,9 +698,9 @@
 
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,increment}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,increment,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
@@ -828,6 +828,7 @@ let _tabAwayReportData = []; // CSVダウンロード用に保持
 
 window.endSession = async function() {
   if (!confirm('セッションを終了しますか？')) return;
+  window._sessionEnding = true; // 終了中フラグ（onChildRemovedの誤カウント防止）
 
   // セッション終了時刻を先に記録
   const sessionEndTime = Date.now();
@@ -1464,7 +1465,21 @@ function listenStudents(){
     // 班別表示も更新
     if(currentView==='group') renderGroupMonitorGrid();
   });
-  onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
+  onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>{
+    const sid=snap.key;
+    const d=snap.val()||{};
+    // セッションが終了中でなければ離脱としてカウント（endSessionでremoveする場合は除外）
+    if(sessionId && !window._sessionEnding){
+      const name=d.name||students[sid]?.name||'不明';
+      // increment()でサーバーサイドにてカウントを確実にインクリメント
+      const{ref:fbRef,set:fbSet}=window.FB;
+      window.FB.get(fbRef(db,`sessions/${sessionId}/departures/${sid}/count`)).then(snap=>{
+        const prev=(snap.exists()&&snap.val())||0;
+        fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{count:prev+1,name});
+      }).catch(()=>{});
+    }
+    removeCard(sid);
+  });
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{
     const sig=snap.val();
     if(!sig||sig.to!=='teacher')return;

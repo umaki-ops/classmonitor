@@ -1562,9 +1562,9 @@ async function setupPC(sid){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // disconnected: tabAway復帰トリガーがあるため長めに待つ（30秒）
-    // 通常の切断（ネットワーク問題等）はここで拾う
+    // disconnected: 共有中なら素早くICE restartして映像断絶を最小化
     if(iceState==='disconnected'){
+      const timeout = (sid === currentBroadcastId) ? 1500 : 30000;
       reconnectTimers[sid]=setTimeout(async()=>{
         if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
         if(pc.iceConnectionState!=='disconnected')return;
@@ -1573,7 +1573,7 @@ async function setupPC(sid){
           await pc.setLocalDescription(offer);
           sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
         }catch(e){if(students[sid])setupPC(sid);}
-      },30000);
+      },timeout);
     } else {
       clearTimeout(reconnectTimers[sid]);
     }
@@ -1776,17 +1776,24 @@ function startBcastCapture(sid) {
   }
   _bcastStream = _bcastCanvas.captureStream(0); // 0 = 手動フレーム制御
   // requestVideoFrameCallback: フレームが届いた瞬間だけ描画（遅延ゼロ）
+  let _keepaliveInterval = null;
   function drawFrame(now, metadata) {
     if (!_bcastCtx || _bcastSrc !== src) return;
     _bcastCtx.drawImage(src, 0, 0, _bcastCanvas.width, _bcastCanvas.height);
-    // captureStream(0) では requestFrame() で明示的にフレームを送る
     _bcastStream.getVideoTracks()[0]?.requestFrame?.();
     _bcastVFC = src.requestVideoFrameCallback(drawFrame);
   }
-  if (typeof src.requestVideoFrameCallback === "function") {
+  if (typeof src.requestVideoFrameCallback === 'function') {
     _bcastVFC = src.requestVideoFrameCallback(drawFrame);
+    // キープアライブ：フレームが止まっても最後の画像を保持（blackout防止）
+    _keepaliveInterval = setInterval(() => {
+      if (!_bcastStream || _bcastSrc !== src) { clearInterval(_keepaliveInterval); return; }
+      _bcastStream.getVideoTracks()[0]?.requestFrame?.();
+    }, 500);
+    // stopCanvasCapture時にクリアできるよう保持
+    _bcastStream._keepaliveInterval = _keepaliveInterval;
   } else {
-    // フォールバック: setInterval (requestVideoFrameCallbackが未サポートの場合)
+    // フォールバック: setInterval
     _bcastVFC = setInterval(() => {
       if (!_bcastCtx || _bcastSrc !== src) { clearInterval(_bcastVFC); return; }
       if (src.readyState >= 2) {
@@ -1799,11 +1806,15 @@ function startBcastCapture(sid) {
 }
 function stopCanvasCapture() {
   if (_bcastSrc && _bcastVFC != null) {
-    if (typeof _bcastSrc.cancelVideoFrameCallback === "function") _bcastSrc.cancelVideoFrameCallback(_bcastVFC);
+    if (typeof _bcastSrc.cancelVideoFrameCallback === 'function') _bcastSrc.cancelVideoFrameCallback(_bcastVFC);
     else clearInterval(_bcastVFC);
     _bcastVFC = null;
   }
-  if (_bcastStream) { _bcastStream.getTracks().forEach(t=>t.stop()); _bcastStream = null; }
+  if (_bcastStream) {
+    if (_bcastStream._keepaliveInterval) clearInterval(_bcastStream._keepaliveInterval);
+    _bcastStream.getTracks().forEach(t=>t.stop());
+    _bcastStream = null;
+  }
   _bcastSrc = null;
 }
 

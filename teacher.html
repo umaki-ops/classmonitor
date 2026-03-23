@@ -1738,30 +1738,29 @@ async function handleTWIceRestart(sid,sdp){
 // ===== Student screen broadcast =====
 let studentBcastPcs={};
 // Canvas経由でvideo要素からストリームを取得（SIGSEGVを避けつつ継続フレームを保証）
-let _bcastCanvas = null, _bcastCanvasCtx = null, _bcastAnimFrame = null, _bcastStream = null;
+let _bcastCanvas = null, _bcastCanvasCtx = null, _bcastInterval = null, _bcastStream = null;
 function startCanvasCapture(sid) {
   stopCanvasCapture();
   const v = document.getElementById('v-'+sid);
   if (!v) return null;
   if (!_bcastCanvas) {
     _bcastCanvas = document.createElement('canvas');
-    _bcastCanvas.width = 1280; _bcastCanvas.height = 720;
+    _bcastCanvas.width = 960; _bcastCanvas.height = 540;  // 解像度を下げてタイムラグ削減
     _bcastCanvasCtx = _bcastCanvas.getContext('2d');
   }
   _bcastStream = _bcastCanvas.captureStream(30);
-  const draw = () => {
+  // setIntervalはバックグラウンドタブでも動き続ける（requestAnimationFrameは停止する）
+  _bcastInterval = setInterval(() => {
     if (!_bcastCanvasCtx || !currentBroadcastId) return;
     const v2 = document.getElementById('v-'+currentBroadcastId);
-    if (v2 && v2.readyState >= 2) {
+    if (v2 && v2.readyState >= 2 && !v2.paused) {
       _bcastCanvasCtx.drawImage(v2, 0, 0, _bcastCanvas.width, _bcastCanvas.height);
     }
-    _bcastAnimFrame = requestAnimationFrame(draw);
-  };
-  _bcastAnimFrame = requestAnimationFrame(draw);
+  }, 1000 / 30);  // 30fps
   return _bcastStream;
 }
 function stopCanvasCapture() {
-  if (_bcastAnimFrame) { cancelAnimationFrame(_bcastAnimFrame); _bcastAnimFrame = null; }
+  if (_bcastInterval) { clearInterval(_bcastInterval); _bcastInterval = null; }
   if (_bcastStream) { _bcastStream.getTracks().forEach(t=>t.stop()); _bcastStream = null; }
 }
 
@@ -2127,6 +2126,13 @@ window.updateGridSize=function(){
   _groupSelectCols=parseInt(v);
 };
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeWbFullscreen();closeMsgModal();closeSurvey();closeResults();if(window.closeGroupMsgModal)window.closeGroupMsgModal();if(window.closeGroupZoom)window.closeGroupZoom();}if(e.key==='ArrowLeft')wbLbNav(-1);if(e.key==='ArrowRight')wbLbNav(1);});
+// バックグラウンドでもvideo再生を継続（共有中のフレーム断絶防止）
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    // 表示に戻ったとき全videoを確実に再生
+    document.querySelectorAll('video').forEach(v => { if (v.srcObject && v.paused) v.play().catch(()=>{}); });
+  }
+});
 
 
 // ===== 班別学習 =====

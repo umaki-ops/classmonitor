@@ -844,6 +844,9 @@ window.endSession = async function() {
   try {
     const { ref, get } = window.FB;
     const snap = await get(ref(db, `sessions/${sessionId}/students`));
+    // 別パスに保存した離脱データを取得
+    const depSnap = await get(ref(db, `sessions/${sessionId}/departures`));
+    const depData = depSnap.exists() ? depSnap.val() : {};
     
     if (snap.exists()) {
       snap.forEach(child => {
@@ -852,9 +855,9 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
-        const sessionDepartures = d.sessionDepartures || 0;
+        const sessionDepartures = (depData[sid] && depData[sid].count) || 0;
         
-        console.log(`[離脱データ確認] ${name}: count=${count}, tabAway=`, JSON.stringify(tabAway));
+        console.log(`[離脱データ確認] ${name}: count=${count}, sessionDepartures=${sessionDepartures}`);
         
         if (count < 1) return; // 離脱なしはスキップ
 
@@ -1828,71 +1831,35 @@ function stopCanvasCapture() {
   _bcastSrc = null;
 }
 
+// 生徒A→生徒B 直接P2P配信（教員は中継しない）
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  const stream = startBcastCapture(sid);
-  if(!stream){ toast('この生徒の映像が取得できません（共有中か確認してください）'); return; }
+  const v=document.getElementById('v-'+sid);
+  if(!v||!v.srcObject){toast('この生徒の映像が取得できません（共有中か確認してください）');return;}
   if(currentBroadcastId)stopBcast();
   currentBroadcastId=sid;
+  stopCanvasCapture();
   document.getElementById('card-'+sid)?.classList.add('focused');
-  startStudentBroadcast(sid,stream);
-  toast(`📡 ${students[sid]?.name||'生徒'}の画面を全員に共有中`);
+  const targets=Object.keys(students).filter(s=>s!==sid);
+  const sourceName=students[sid]?.name||'生徒';
+  cmd(sid,'startBcast',{targets,sourceName});
+  targets.forEach(tSid=>cmd(tSid,'watchStart',{sourceName}));
+  toast(`📡 ${sourceName}の画面を全員に共有中`);
 };
-async function startStudentBroadcast(sourceSid,stream){
-  for(const sid of Object.keys(students)){
-    if(sid===sourceSid)continue;
-    await setupStudentBcastPc(sid, stream, sourceSid);
-  }
-}
-async function setupStudentBcastPc(sid, stream, sourceSid){
-  const pc = peerConnections[sid];
-  if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
-    console.warn('[Watch] no active monitoring PC for', sid, '- skipping');
-    return;
-  }
-  const sourceName = students[sourceSid]?.name || '生徒';
-  if(!window._watchSenders) window._watchSenders = {};
-  // watchStartコマンドを先に送っておく
-  cmd(sid, 'watchStart', {sourceName});
-  negotiatePC(sid, pc => {
-    const prev = window._watchSenders[sid];
-    if(prev){try{pc.removeTrack(prev);}catch(e){}}
-    const track = stream.getTracks()[0];
-    if(!track) return;
-    track.contentHint = 'detail';
-    const sender = pc.addTrack(track, stream);
-    if(sender) window._watchSenders[sid] = sender;
-    // 高ビットレート設定
-    setTimeout(async()=>{
-      try{
-        const params=sender.getParameters();
-        if(!params.encodings||!params.encodings.length)params.encodings=[{}];
-        params.encodings[0].maxBitrate=8000000;
-        params.encodings[0].maxFramerate=30;
-        params.encodings[0].priority='high';
-        params.encodings[0].networkPriority='high';
-        await sender.setParameters(params);
-      }catch(e){}
-    },1000);
-    console.log('[Watch] added track via queue for', sid);
-  });
-}
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){
   if(!currentBroadcastId)return;
+  cmd(currentBroadcastId,'stopBcast',{});
   cmd('all','stopWatch',{});
   document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');
   currentBroadcastId=null;
   stopCanvasCapture();
-  // モニタリング接続からwatchトラックを削除
   if(window._watchSenders){
     for(const sid of Object.keys(window._watchSenders)){
-      const pc = peerConnections[sid];
-      if(pc && window._watchSenders[sid]){
-        try{ pc.removeTrack(window._watchSenders[sid]); }catch(e){}
-      }
+      const pc=peerConnections[sid];
+      if(pc&&window._watchSenders[sid]){try{pc.removeTrack(window._watchSenders[sid]);}catch(e){}}
     }
-    window._watchSenders = {};
+    window._watchSenders={};
   }
   for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();
   studentBcastPcs={};

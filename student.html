@@ -714,6 +714,9 @@
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
         else if (signal.type === 'watch-offer') setTimeout(() => handleWatchOffer(signal.from, signal.sdp, signal.sourceName), 0);
         else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
+        // P2P配信: 生徒AがanswerとICEを受け取る
+        else if (signal.type === 'watch-answer') setTimeout(() => handleWatchAnswerFromPeer(signal.from, signal.sdp), 0);
+        else if (signal.type === 'watch-offer-ice') handleWatchAnswerIceFromPeer(signal.from, signal.candidate);
         else if (signal.type === 'stop-watch') hideWatch();
         else if (signal.type === 'tw-offer') setTimeout(() => handleTeacherWatchOffer(signal.sdp), 0);
         else if (signal.type === 'tw-ice-offer') handleTeacherWatchIce(signal.candidate);
@@ -859,20 +862,23 @@
       const _removeStudentNode = () => {
         if (!studentId) return;
         _sessionDepartureCount++;
-        // 離脱回数をFirebaseに記録（keepalive fetchで同期送信）
-        const restBase = `${dbUrl.replace(/\/$/, '')}/sessions/${sessionId}/students/${studentId}`;
+        const restBase = `${dbUrl.replace(/\/$/, '')}`;
+        // 離脱回数をstudentsノードとは別パスに保存（DELETEで消えない）
         try {
-          // 離脱回数を更新
-          fetch(`${restBase}/sessionDepartures.json`, {
+          fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}.json`, {
             method: 'PUT',
-            body: JSON.stringify(_sessionDepartureCount),
+            body: JSON.stringify({
+              count: _sessionDepartureCount,
+              name: document.getElementById('user-name-display')?.textContent || ''
+            }),
             keepalive: true
           }).catch(() => {});
         } catch(e) {}
-        // Firebase REST API DELETE
-        const restUrl = `${restBase}.json`;
+        // Firebase REST API DELETE（studentsノード）
         try {
-          fetch(restUrl, { method: 'DELETE', keepalive: true }).catch(() => {});
+          fetch(`${restBase}/sessions/${sessionId}/students/${studentId}.json`, {
+            method: 'DELETE', keepalive: true
+          }).catch(() => {});
         } catch(e) {}
         try { remove(ref(db, `sessions/${sessionId}/students/${studentId}`)); } catch(e) {}
       };
@@ -1188,6 +1194,78 @@
 
     // ===== 視聴 =====
     let _watchPlayInterval = null;
+    // ===== 生徒A→生徒B 直接P2P配信 =====
+    let _directBcastPcs = {}; // targetSid → RTCPeerConnection
+
+    async function startDirectBcast(targets, sourceName) {
+      stopDirectBcast();
+      if (!localStream) { console.warn('[DirectBcast] no localStream'); return; }
+      console.log('[DirectBcast] starting for targets:', targets);
+      for (const tSid of targets) {
+        try {
+          const pc = new RTCPeerConnection(ICE);
+          _directBcastPcs[tSid] = pc;
+          // getDisplayMediaのtrackをそのまま送信（再エンコードなし）
+          localStream.getTracks().forEach(track => {
+            track.contentHint = 'detail';
+            pc.addTrack(track, localStream);
+          });
+          // 高ビットレート設定
+          pc.onicecandidate = e => {
+            if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
+              type: 'watch-offer-ice', from: studentId, to: tSid, candidate: e.candidate.toJSON()
+            });
+          };
+          pc.onconnectionstatechange = () => {
+            console.log('[DirectBcast→'+tSid+']', pc.connectionState);
+            if (pc.connectionState === 'connected') {
+              // 接続確立後にビットレートを最大化
+              pc.getSenders().forEach(async sender => {
+                if (!sender.track || sender.track.kind !== 'video') return;
+                try {
+                  const p = sender.getParameters();
+                  if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+                  p.encodings[0].maxBitrate = 15000000; // 15Mbps
+                  p.encodings[0].maxFramerate = 60;
+                  p.encodings[0].priority = 'high';
+                  p.encodings[0].networkPriority = 'high';
+                  await sender.setParameters(p);
+                } catch(e) {}
+              });
+            }
+          };
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wo_${Math.random().toString(36).slice(2)}`), {
+            type: 'watch-offer', from: studentId, to: tSid,
+            sdp: {type: offer.type, sdp: offer.sdp}, sourceName
+          });
+          console.log('[DirectBcast] offer sent to', tSid);
+        } catch(e) { console.error('[DirectBcast] error for', tSid, e); }
+      }
+    }
+
+    function stopDirectBcast() {
+      for (const pc of Object.values(_directBcastPcs)) { try { pc.close(); } catch(e) {} }
+      _directBcastPcs = {};
+      console.log('[DirectBcast] stopped');
+    }
+
+    // 受信側：watch-answerを受け取ってICEを設定
+    async function handleWatchAnswerFromPeer(fromId, sdp) {
+      const pc = _directBcastPcs[fromId];
+      if (!pc) return;
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        console.log('[DirectBcast] answer set for', fromId);
+      } catch(e) { console.error('[DirectBcast] setRemoteDesc error', e); }
+    }
+    async function handleWatchAnswerIceFromPeer(fromId, candidate) {
+      const pc = _directBcastPcs[fromId];
+      if (!pc) return;
+      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+    }
+
     function showWatch(name) {
       const el = document.getElementById('watch-overlay');
       if (el) el.classList.add('show');
@@ -1920,6 +1998,13 @@
       } else if (data.command === 'stopWatch') {
         hideWatch();
         window._watchSourceName = null;
+        // 自分がsource側なら配信も停止
+        stopDirectBcast();
+      } else if (data.command === 'startBcast') {
+        // 自分の画面を対象生徒に直接P2P送信する
+        startDirectBcast(data.targets || [], data.sourceName || '');
+      } else if (data.command === 'stopBcast') {
+        stopDirectBcast();
       } else if (data.command === 'watchStart') {
         window._watchSourceName = data.sourceName || '生徒';
         const tv = document.getElementById('teacher-video');

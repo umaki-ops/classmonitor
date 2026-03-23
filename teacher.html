@@ -991,8 +991,7 @@ function showTabAwayReport(data) {
     let rows = data.map((d, i) => {
       const rank = i + 1;
       const rankClass = rank <= 3 ? `rank-${rank}` : '';
-      const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
-      const totalStr = `${totalSec}秒`;
+      const totalStr = d.totalMs > 0 ? formatMs(d.totalMs) : '0秒';
       const timesHtml = d.logs.length > 0
         ? d.logs.map(log => `<span style="display:inline-block;white-space:nowrap;">${toTime(log.startTs)}</span>`).join('<br>')
         : '−';
@@ -1057,11 +1056,11 @@ window.downloadTabAwayCSV = function() {
 
   const rows = data.map((d, i) => {
     const rank = i + 1;
-    const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
+    const totalStr = d.totalMs > 0 ? formatMs(d.totalMs) : '0秒';
     const allTimes = d.logs.map(log => toDateTime(log.startTs)).join('\n');
     const dep = d.sessionDepartures || 0;
     const absentStr = dep > 0 && d.sessionAbsentMs > 0 ? formatMs(d.sessionAbsentMs) : '−';
-    return [rank, d.name, d.count, allTimes, `${totalSec}秒`, dep, absentStr]
+    return [rank, d.name, d.count, allTimes, totalStr, dep, absentStr]
       .map(v => `"${String(v).replace(/"/g, '""')}"`)
       .join(',');
   });

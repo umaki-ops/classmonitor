@@ -855,15 +855,25 @@
       });
 
       // タブ・ブラウザを閉じたとき即座にFirebaseからノードを削除
+      let _sessionDepartureCount = 0;
       const _removeStudentNode = () => {
         if (!studentId) return;
-        // Firebase REST API DELETE（sendBeacon + keepalive fetch で同期的に送信）
-        const restUrl = `${dbUrl.replace(/\/$/, '')}/sessions/${sessionId}/students/${studentId}.json`;
+        _sessionDepartureCount++;
+        // 離脱回数をFirebaseに記録（keepalive fetchで同期送信）
+        const restBase = `${dbUrl.replace(/\/$/, '')}/sessions/${sessionId}/students/${studentId}`;
         try {
-          // keepalive: ページアンロード後も送信を継続
+          // 離脱回数を更新
+          fetch(`${restBase}/sessionDepartures.json`, {
+            method: 'PUT',
+            body: JSON.stringify(_sessionDepartureCount),
+            keepalive: true
+          }).catch(() => {});
+        } catch(e) {}
+        // Firebase REST API DELETE
+        const restUrl = `${restBase}.json`;
+        try {
           fetch(restUrl, { method: 'DELETE', keepalive: true }).catch(() => {});
         } catch(e) {}
-        // Firebase SDK でも念のため試みる（非同期）
         try { remove(ref(db, `sessions/${sessionId}/students/${studentId}`)); } catch(e) {}
       };
       window.addEventListener('pagehide', _removeStudentNode);
@@ -934,27 +944,22 @@
         };
       }
       // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
+      // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
       // watchStartコマンドが来ていれば watch-video に表示
       pc.ontrack = e => {
         console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length, '_watchSourceName:', window._watchSourceName);
         if (e.track.kind === 'video') {
           const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           if (window._watchSourceName) {
-            // 生徒画面共有モード
+            // watchStart済み：直接watch-videoに表示
             const el = document.getElementById('watch-video');
-            if (el) {
-              el.srcObject = stream;
-              el.play().catch(() => {});
-              showWatch(window._watchSourceName);
-            }
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); showWatch(window._watchSourceName); }
           } else {
-            // 教員画面共有モード
+            // watchStart/teacherShare未着：teacher-videoに格納だけしてCMDを待つ
             const el = document.getElementById('teacher-video');
-            if (el) {
-              el.srcObject = stream;
-              el.play().catch(() => {});
-              showTeacher();
-            }
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); }
+            // teacherShare CMDが既に来ていれば表示
+            if (window._teacherShareActive) showTeacher();
           }
         }
       };
@@ -1182,15 +1187,23 @@
     }
 
     // ===== 視聴 =====
+    let _watchPlayInterval = null;
     function showWatch(name) {
       const el = document.getElementById('watch-overlay');
       if (el) el.classList.add('show');
       const lbl = document.getElementById('watch-label');
       if (lbl && name) lbl.textContent = name + ' の画面';
+      // watch-videoが止まったとき自動再生を再開するインターバル
+      if (_watchPlayInterval) clearInterval(_watchPlayInterval);
+      _watchPlayInterval = setInterval(() => {
+        const wv = document.getElementById('watch-video');
+        if (wv && wv.srcObject && wv.paused) wv.play().catch(() => {});
+      }, 1000);
     }
     function hideWatch() {
       const el = document.getElementById('watch-overlay');
       if (el) el.classList.remove('show');
+      if (_watchPlayInterval) { clearInterval(_watchPlayInterval); _watchPlayInterval = null; }
       if (watchPc) { watchPc.close(); watchPc = null; }
       const v = document.getElementById('watch-video');
       if (v) v.srcObject = null;
@@ -1909,10 +1922,29 @@
         window._watchSourceName = null;
       } else if (data.command === 'watchStart') {
         window._watchSourceName = data.sourceName || '生徒';
-        // handleOffer のリネゴシエーションでトラックが届いたら watch-overlay を表示
+        const tv = document.getElementById('teacher-video');
+        const wv = document.getElementById('watch-video');
+        if (tv && wv && tv.srcObject) {
+          // ontrackでteacher-videoに入ってしまっていた映像をwatch-videoへ移す
+          wv.srcObject = tv.srcObject;
+          wv.play().catch(() => {});
+          tv.srcObject = null;
+          // teacher-overlayを閉じてwatch-overlayを表示
+          document.getElementById('teacher-overlay')?.classList.remove('show');
+          showWatch(window._watchSourceName);
+        } else if (wv && wv.srcObject) {
+          if (wv.paused) wv.play().catch(() => {});
+          showWatch(window._watchSourceName);
+        }
       } else if (data.command === 'teacherShare') {
         console.log('[cmd] teacherShare received');
+        window._teacherShareActive = true;
+        window._watchSourceName = null; // watchモードをリセット
+        // ontrackで既にteacher-videoに映像が来ていれば表示
+        const tv = document.getElementById('teacher-video');
+        if (tv && tv.srcObject) showTeacher();
       } else if (data.command === 'stopTeacherShare') {
+        window._teacherShareActive = false;
         hideTeacher();
       } else if (data.command === 'wb-open') {
         wbOpen();

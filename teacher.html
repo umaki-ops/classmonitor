@@ -852,6 +852,7 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
+        const sessionDepartures = d.sessionDepartures || 0;
         
         console.log(`[離脱データ確認] ${name}: count=${count}, tabAway=`, JSON.stringify(tabAway));
         
@@ -925,7 +926,7 @@ window.endSession = async function() {
         }
         
         console.log(`[離脱計算 完了] ${name}: ${logs.length}回, 合計${totalMs}ms (${Math.floor(totalMs/1000)}秒)`);
-        reportData.push({ name, count, logs, totalMs, sid });
+        reportData.push({ name, count, logs, totalMs, sid, sessionDepartures });
       });
     }
   } catch (e) {
@@ -964,12 +965,14 @@ function showTabAwayReport(data) {
       const timesHtml = d.logs.length > 0
         ? d.logs.map(log => `<span style="display:inline-block;white-space:nowrap;">${toTime(log.startTs)}</span>`).join('<br>')
         : '−';
+      const depStr = d.sessionDepartures > 0 ? `${d.sessionDepartures}回` : '−';
       return `<tr>
         <td><span class="rank-badge ${rankClass}">${rank}</span></td>
         <td style="font-weight:600;">${esc(d.name)}</td>
         <td class="tabaway-count-cell">${d.count}回</td>
         <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8;">${timesHtml}</td>
         <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${totalStr}</td>
+        <td class="tabaway-count-cell" style="color:var(--red);">${depStr}</td>
       </tr>`;
     }).join('');
     content.innerHTML = `
@@ -978,9 +981,10 @@ function showTabAwayReport(data) {
           <tr>
             <th>順位</th>
             <th>氏名</th>
-            <th>離脱回数</th>
+            <th>タブ離脱回数</th>
             <th>離脱開始時刻（全回）</th>
             <th>合計離脱時間</th>
+            <th>セッション離脱</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -1013,14 +1017,14 @@ window.downloadTabAwayCSV = function() {
   const toDateTime = ts => new Date(ts).toLocaleString('ja-JP');
 
   // ヘッダー行
-  const header = ['順位', '氏名', '離脱回数', '離脱開始時刻（全回）', '合計離脱時間'];
+  const header = ['順位', '氏名', 'タブ離脱回数', '離脱開始時刻（全回）', '合計離脱時間', 'セッション離脱回数'];
 
-  // データ行：離脱開始時刻は改行区切りで1セルにまとめる
   const rows = data.map((d, i) => {
     const rank = i + 1;
     const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
     const allTimes = d.logs.map(log => toDateTime(log.startTs)).join('\n');
-    return [rank, d.name, d.count, allTimes, `${totalSec}秒`]
+    const dep = d.sessionDepartures || 0;
+    return [rank, d.name, d.count, allTimes, `${totalSec}秒`, dep]
       .map(v => `"${String(v).replace(/"/g, '""')}"`)
       .join(',');
   });
@@ -1562,9 +1566,9 @@ async function setupPC(sid){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // disconnected: 共有中なら素早くICE restartして映像断絶を最小化
+    // disconnected: 共有元なら即座にICE restart、それ以外は30秒
     if(iceState==='disconnected'){
-      const timeout = (sid === currentBroadcastId) ? 1500 : 30000;
+      const timeout = (sid === currentBroadcastId) ? 200 : 30000;
       reconnectTimers[sid]=setTimeout(async()=>{
         if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
         if(pc.iceConnectionState!=='disconnected')return;
@@ -1770,11 +1774,17 @@ function startBcastCapture(sid) {
   stopCanvasCapture();
   _bcastSrc = src;
   if (!_bcastCanvas) {
-    _bcastCanvas = document.createElement("canvas");
-    _bcastCanvas.width = 1920; _bcastCanvas.height = 1080;
-    _bcastCtx = _bcastCanvas.getContext("2d");
+    _bcastCanvas = document.createElement('canvas');
+    _bcastCtx = _bcastCanvas.getContext('2d');
   }
-  _bcastStream = _bcastCanvas.captureStream(0); // 0 = 手動フレーム制御
+  // ストリームの実解像度に合わせる（小さいvideo要素からの拡大を防ぐ）
+  const vw = src.videoWidth || 1920;
+  const vh = src.videoHeight || 1080;
+  if (_bcastCanvas.width !== vw || _bcastCanvas.height !== vh) {
+    _bcastCanvas.width = vw;
+    _bcastCanvas.height = vh;
+  }
+  _bcastStream = _bcastCanvas.captureStream(0);
   // requestVideoFrameCallback: フレームが届いた瞬間だけ描画（遅延ゼロ）
   let _keepaliveInterval = null;
   function drawFrame(now, metadata) {

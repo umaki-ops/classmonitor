@@ -1559,6 +1559,29 @@ async function setupPC(sid){
   const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
   await pc.setLocalDescription(offer);
   sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+  // PCが再作成された場合、tw/watchトラックをキューで再追加
+  const needsTW = teacherSharing && teacherStream;
+  const needsWatch = currentBroadcastId && window._watchSenders;
+  if (needsTW || needsWatch) {
+    negotiatePC(sid, pc => {
+      if (needsTW) {
+        const alreadyTW = pc.getSenders().find(s=>s.track && teacherStream.getTracks().includes(s.track));
+        if (!alreadyTW) teacherStream.getTracks().forEach(tr=>pc.addTrack(tr,teacherStream));
+      }
+      if (needsWatch && currentBroadcastId !== sid) {
+        const srcPc = peerConnections[currentBroadcastId];
+        if (srcPc) {
+          const tracks = srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
+          if (tracks.length > 0) {
+            const prev = window._watchSenders[sid];
+            if (prev) { try{pc.removeTrack(prev);}catch(e){} }
+            window._watchSenders[sid] = pc.addTrack(tracks[0], new MediaStream(tracks));
+            cmd(sid, 'watchStart', {sourceName: students[currentBroadcastId]?.name||'生徒'});
+          }
+        }
+      }
+    });
+  }
 }
 async function handleAnswer(sid,sdp){
   const pc=peerConnections[sid];if(!pc)return;

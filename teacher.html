@@ -960,6 +960,7 @@ window.endSession = async function() {
         isDeparted: true
       });
     }
+  } catch (e) {
     console.warn('tabAway data fetch error', e);
   }
 

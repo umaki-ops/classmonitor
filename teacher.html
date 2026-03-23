@@ -1737,27 +1737,43 @@ async function handleTWIceRestart(sid,sdp){
 
 // ===== Student screen broadcast =====
 let studentBcastPcs={};
+// Canvas経由でvideo要素からストリームを取得（SIGSEGVを避けつつ継続フレームを保証）
+let _bcastCanvas = null, _bcastCanvasCtx = null, _bcastAnimFrame = null, _bcastStream = null;
+function startCanvasCapture(sid) {
+  stopCanvasCapture();
+  const v = document.getElementById('v-'+sid);
+  if (!v) return null;
+  if (!_bcastCanvas) {
+    _bcastCanvas = document.createElement('canvas');
+    _bcastCanvas.width = 1280; _bcastCanvas.height = 720;
+    _bcastCanvasCtx = _bcastCanvas.getContext('2d');
+  }
+  _bcastStream = _bcastCanvas.captureStream(30);
+  const draw = () => {
+    if (!_bcastCanvasCtx || !currentBroadcastId) return;
+    const v2 = document.getElementById('v-'+currentBroadcastId);
+    if (v2 && v2.readyState >= 2) {
+      _bcastCanvasCtx.drawImage(v2, 0, 0, _bcastCanvas.width, _bcastCanvas.height);
+    }
+    _bcastAnimFrame = requestAnimationFrame(draw);
+  };
+  _bcastAnimFrame = requestAnimationFrame(draw);
+  return _bcastStream;
+}
+function stopCanvasCapture() {
+  if (_bcastAnimFrame) { cancelAnimationFrame(_bcastAnimFrame); _bcastAnimFrame = null; }
+  if (_bcastStream) { _bcastStream.getTracks().forEach(t=>t.stop()); _bcastStream = null; }
+}
+
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  // getReceivers()のトラックを使う（captureStream()はChromeでSIGSEGVを起こす）
-  let stream=null;
-  const srcPc=peerConnections[sid];
-  if(srcPc){
-    const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
-    if(tracks.length>0) stream=new MediaStream(tracks);
-  }
-  if(!stream){
-    const v=document.getElementById('v-'+sid);
-    if(v&&v.srcObject){
-      const tracks=[...v.srcObject.getTracks()].filter(t=>t.readyState==='live');
-      if(tracks.length>0) stream=new MediaStream(tracks);
-    }
-  }
-  if(!stream){
-    console.warn('[broadcastStudentScreen] no stream for',sid);
+  const v = document.getElementById('v-'+sid);
+  if(!v || !v.srcObject || v.readyState < 2){
     toast('この生徒の映像が取得できません（共有中か確認してください）');
     return;
   }
+  const stream = startCanvasCapture(sid);
+  if(!stream){ toast('映像キャプチャに失敗しました'); return; }
   if(currentBroadcastId)stopBcast();
   currentBroadcastId=sid;
   document.getElementById('card-'+sid)?.classList.add('focused');
@@ -1794,6 +1810,7 @@ function stopBcast(){
   cmd('all','stopWatch',{});
   document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');
   currentBroadcastId=null;
+  stopCanvasCapture();
   // モニタリング接続からwatchトラックを削除
   if(window._watchSenders){
     for(const sid of Object.keys(window._watchSenders)){

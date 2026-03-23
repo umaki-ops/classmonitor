@@ -1503,6 +1503,7 @@ async function setupPC(sid){
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
   pc.ontrack=ev=>{
+  pc.ontrack=ev=>{
     const v=document.getElementById('v-'+sid),ph=document.getElementById('ph-'+sid);
     if(v){
       if(ev.streams&&ev.streams[0]){v.srcObject=ev.streams[0];}
@@ -1510,14 +1511,22 @@ async function setupPC(sid){
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
     }
-    // 共有元生徒のPCが再接続されたとき、watchSenderのtrackを新しいものに差し替える
+    // fs-videoも更新（拡大表示中のフリーズ防止）
+    if(sid===window.currentFsId){
+      const fsv=document.getElementById('fs-video');
+      if(fsv&&v){fsv.srcObject=v.srcObject;fsv.play().catch(()=>{});}
+    }
+    // 共有元生徒のPCが再接続されたとき、captureStreamを再取得してwatchSenderを更新
     if(sid===currentBroadcastId&&ev.track.kind==='video'&&window._watchSenders){
-      console.log('[Watch] sourceSid reconnected, replacing watch tracks');
-      for(const sender of Object.values(window._watchSenders)){
-        if(sender&&typeof sender.replaceTrack==='function'){
-          sender.replaceTrack(ev.track).catch(e=>console.warn('[replaceTrack]',e));
+      console.log('[Watch] sourceSid reconnected, re-capturing stream');
+      setTimeout(()=>{
+        const newStream=startBcastCapture(sid);
+        if(!newStream)return;
+        const newTrack=newStream.getVideoTracks()[0];
+        for(const sender of Object.values(window._watchSenders)){
+          if(sender&&newTrack)sender.replaceTrack(newTrack).catch(()=>{});
         }
-      }
+      },500);
     }
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
@@ -1752,7 +1761,7 @@ function startBcastCapture(sid) {
   else if (v && v.srcObject && v.readyState >= 2) src = v;
   if (!src) return null;
   try {
-    _bcastStream = src.captureStream(30);
+    _bcastStream = src.captureStream(60);
     return _bcastStream;
   } catch(e) {
     console.error('[captureStream]', e);
@@ -1792,8 +1801,23 @@ async function setupStudentBcastPc(sid, stream, sourceSid){
   negotiatePC(sid, pc => {
     const prev = window._watchSenders[sid];
     if(prev){try{pc.removeTrack(prev);}catch(e){}}
-    const sender = stream.getTracks().length > 0 ? pc.addTrack(stream.getTracks()[0], stream) : null;
+    const track = stream.getTracks()[0];
+    if(!track) return;
+    track.contentHint = 'detail';
+    const sender = pc.addTrack(track, stream);
     if(sender) window._watchSenders[sid] = sender;
+    // 高ビットレート設定
+    setTimeout(async()=>{
+      try{
+        const params=sender.getParameters();
+        if(!params.encodings||!params.encodings.length)params.encodings=[{}];
+        params.encodings[0].maxBitrate=8000000;
+        params.encodings[0].maxFramerate=30;
+        params.encodings[0].priority='high';
+        params.encodings[0].networkPriority='high';
+        await sender.setParameters(params);
+      }catch(e){}
+    },1000);
     console.log('[Watch] added track via queue for', sid);
   });
 }

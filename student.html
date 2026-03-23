@@ -981,14 +981,13 @@
           }
         }
       };
-      // localStream のトラックを追加（未追加の場合のみ・clone()で多重使用を防ぐ）
+      // localStream のトラックを追加（未追加の場合のみ）
       if (localStream) {
         const senders = pc.getSenders();
         localStream.getTracks().forEach(track => {
-          if (senders.find(s => s.track && s.track.id === track.id)) return;
-          const cloned = track.clone();
-          cloned.contentHint = 'motion';
-          pc.addTrack(cloned, localStream);
+          // kindで確認（clone()はIDが変わるのでIDチェックは不可）
+          if (senders.find(s => s.track && s.track.kind === track.kind)) return;
+          pc.addTrack(track, localStream);
         });
         // 送信ビットレート・優先度を設定
         setTimeout(async () => {
@@ -1222,21 +1221,36 @@
     // ===== 視聴 =====
     let _watchPlayInterval = null;
     // ===== 生徒A→生徒B 直接P2P配信 =====
+    // P2P配信用のキャプチャストリームを取得（SIGSEGV回避）
+    let _directBcastCaptureStream = null;
+    function getDirectBcastStream() {
+      // preview-videoからcaptureStream()：localStreamのtrackを直接使わないのでSIGSEGV回避
+      const pv = document.getElementById('preview-video');
+      if (pv && pv.srcObject && pv.readyState >= 2) {
+        try {
+          _directBcastCaptureStream = pv.captureStream(60);
+          return _directBcastCaptureStream;
+        } catch(e) {}
+      }
+      // fallback: localStream
+      return localStream;
+    }
+
     let _directBcastPcs = {}; // targetSid → RTCPeerConnection
 
     async function startDirectBcast(targets, sourceName) {
       stopDirectBcast();
       if (!localStream) { console.warn('[DirectBcast] no localStream'); return; }
       console.log('[DirectBcast] starting for targets:', targets);
+      const bcastStream = getDirectBcastStream();
       for (const tSid of targets) {
         try {
           const pc = new RTCPeerConnection(ICE_RELAY || ICE);
           _directBcastPcs[tSid] = pc;
-          // 同一trackを複数PCに addTrack するとSIGSEGV → clone()で各PC独立したtrack
-          localStream.getTracks().forEach(track => {
-            const cloned = track.clone();
-            cloned.contentHint = 'detail';
-            pc.addTrack(cloned, localStream);
+          // captureStream由来のtrackは各PCで独立しているのでSIGSEGVしない
+          bcastStream.getTracks().forEach(track => {
+            track.contentHint = 'detail';
+            pc.addTrack(track, bcastStream);
           });
           pc.onicecandidate = e => {
             if (e.candidate) {

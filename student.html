@@ -1032,6 +1032,13 @@
         });
       };
       await watchPc.setRemoteDescription(new RTCSessionDescription(sdp));
+      // setRemoteDescription完了後にキューに溜まったICE候補を処理
+      if (watchPc._iceQueue) {
+        for (const c of watchPc._iceQueue) {
+          try { await watchPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+        }
+        watchPc._iceQueue = [];
+      }
       const ans = await watchPc.createAnswer();
       await watchPc.setLocalDescription(ans);
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wa`), {
@@ -1040,7 +1047,14 @@
       showWatch(sourceName);
     }
     async function handleWatchIce(candidate) {
-      if (!watchPc || !candidate) return;
+      if (!candidate) return;
+      if (!watchPc || watchPc.signalingState === 'closed') return;
+      // setRemoteDescription完了前にICEが来た場合はキューに溜める
+      if (!watchPc.remoteDescription) {
+        if (!watchPc._iceQueue) watchPc._iceQueue = [];
+        watchPc._iceQueue.push(candidate);
+        return;
+      }
       try { await watchPc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
     async function handleTeacherWatchOffer(sdp) {
@@ -1253,18 +1267,31 @@
       console.log('[DirectBcast] stopped');
     }
 
-    // 受信側：watch-answerを受け取ってICEを設定
+    // 送信側：受信側からのanswerとICEを受け取る
     async function handleWatchAnswerFromPeer(fromId, sdp) {
       const pc = _directBcastPcs[fromId];
       if (!pc) return;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         console.log('[DirectBcast] answer set for', fromId);
+        // setRemoteDescription完了後にキューに溜まったICE候補を処理
+        if (pc._iceQueue) {
+          for (const c of pc._iceQueue) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+          }
+          pc._iceQueue = [];
+        }
       } catch(e) { console.error('[DirectBcast] setRemoteDesc error', e); }
     }
     async function handleWatchAnswerIceFromPeer(fromId, candidate) {
       const pc = _directBcastPcs[fromId];
-      if (!pc) return;
+      if (!pc || !candidate) return;
+      // setRemoteDescription完了前はキューに溜める
+      if (!pc.remoteDescription) {
+        if (!pc._iceQueue) pc._iceQueue = [];
+        pc._iceQueue.push(candidate);
+        return;
+      }
       try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
 

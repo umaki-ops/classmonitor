@@ -981,14 +981,14 @@
           }
         }
       };
-      // localStream のトラックを追加（未追加の場合のみ）
+      // localStream のトラックを追加（未追加の場合のみ・clone()で多重使用を防ぐ）
       if (localStream) {
         const senders = pc.getSenders();
         localStream.getTracks().forEach(track => {
-        track.contentHint = 'motion'; // 画面変化への追従速度を優先
-          if (!senders.find(s => s.track === track)) {
-            pc.addTrack(track, localStream);
-          }
+          if (senders.find(s => s.track && s.track.id === track.id)) return;
+          const cloned = track.clone();
+          cloned.contentHint = 'motion';
+          pc.addTrack(cloned, localStream);
         });
         // 送信ビットレート・優先度を設定
         setTimeout(async () => {
@@ -1239,9 +1239,16 @@
             pc.addTrack(cloned, localStream);
           });
           pc.onicecandidate = e => {
-            if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
-              type: 'watch-offer-ice', from: studentId, to: tSid, candidate: e.candidate.toJSON()
-            });
+            if (e.candidate) {
+              // ICE候補の種類をログ（診断用）
+              const c = e.candidate;
+              console.log('[DirectBcast ICE候補→'+tSid+']', c.type, c.protocol, c.address?.replace(/\.\d+$/, '.xxx'));
+              set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
+                type: 'watch-offer-ice', from: studentId, to: tSid, candidate: c.toJSON()
+              });
+            } else {
+              console.log('[DirectBcast ICE収集完了→'+tSid+']');
+            }
           };
           // ICE接続失敗時に自動でICE restartを試みる
           let _iceRestartTimer = null;

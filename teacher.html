@@ -1834,7 +1834,7 @@ function stopCanvasCapture() {
   _bcastSrc = null;
 }
 
-// 生徒A→生徒B 直接P2P配信（教員は中継しない）
+// 生徒A→生徒B 直接P2P配信（失敗時は教員中継にフォールバック）
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
   const v=document.getElementById('v-'+sid);
@@ -1845,11 +1845,45 @@ window.broadcastStudentScreen=function(sid){
   document.getElementById('card-'+sid)?.classList.add('focused');
   const targets=Object.keys(students).filter(s=>s!==sid);
   const sourceName=students[sid]?.name||'生徒';
-  // 教員も含めてP2P配信（教員のIDを特別なターゲットとして追加）
-  const allTargets=[...targets,'teacher'];
-  cmd(sid,'startBcast',{targets:allTargets,sourceName});
+  // 教員は既存のモニタリング接続経由（P2Pターゲットに含めない → SIGSEGV回避）
+  cmd(sid,'startBcast',{targets,sourceName});
   targets.forEach(tSid=>cmd(tSid,'watchStart',{sourceName}));
+  // 教員向けはCanvas中継（監視接続のリネゴシエーション）
+  const stream=startBcastCapture(sid);
+  if(stream){
+    if(!window._watchSenders)window._watchSenders={};
+    negotiatePC(sid,pc=>{
+      const prev=window._watchSenders[sid+'_t'];
+      if(prev){try{pc.removeTrack(prev);}catch(e){}}
+      const track=stream.getTracks()[0];
+      if(track){const s=pc.addTrack(track,stream);if(s)window._watchSenders[sid+'_t']=s;}
+    });
+  }
   toast(`📡 ${sourceName}の画面を全員に共有中`);
+  // P2P接続追跡用セット
+  window._bcastP2pConnected = new Set();
+  // P2P接続失敗時のフォールバック（8秒後に watch-answer が来なかった生徒は教員中継）
+  if(window._bcastFallbackTimer) clearTimeout(window._bcastFallbackTimer);
+  window._bcastFallbackTimer = setTimeout(() => {
+    if(currentBroadcastId !== sid) return;
+    const stream = startBcastCapture(sid);
+    if(!stream) return;
+    targets.forEach(tSid => {
+      if(window._bcastP2pConnected?.has(tSid)) return; // P2P成功済み
+      console.log('[Fallback] P2P no answer from', tSid, '→ teacher relay');
+      cmd(tSid,'watchStart',{sourceName});
+      if(!window._watchSenders) window._watchSenders = {};
+      const pc = peerConnections[tSid];
+      if(pc && pc.connectionState === 'connected') {
+        negotiatePC(tSid, pc => {
+          const prev = window._watchSenders[tSid];
+          if(prev){try{pc.removeTrack(prev);}catch(e){}}
+          const track = stream.getTracks()[0];
+          if(track){ const sender=pc.addTrack(track,stream); if(sender) window._watchSenders[tSid]=sender; }
+        });
+      }
+    });
+  }, 8000);
 };
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
 function stopBcast(){
@@ -1871,6 +1905,8 @@ function stopBcast(){
 }
 const watchIceQueues={};
 async function handleWatchAnswer(sid,sdp){
+  // P2P成功を記録（フォールバック判定用）
+  if(window._bcastP2pConnected) window._bcastP2pConnected.add(sid);
   const pc=studentBcastPcs[sid];
   if(!pc){console.warn('[Watch] no pc for',sid);return;}
   try{

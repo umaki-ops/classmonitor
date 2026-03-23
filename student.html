@@ -639,13 +639,23 @@
         {urls:'stun:stun.l.google.com:19302'},
         {urls:'stun:stun1.l.google.com:19302'},
         {urls:'stun:stun.cloudflare.com:3478'},
-        // 複数のTURNサーバー（フォールバック）
-        {urls:'turn:openrelay.metered.ca:80',  username:'openrelayproject', credential:'openrelayproject'},
-        {urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject'},
+        {urls:'stun:freestun.net:3479'},
+        // TURN: TCP443優先（学校ネットワークで最も通りやすい）
         {urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject'},
-        {urls:'turn:numb.viagenie.ca', username:'webrtc@live.com', credential:'muazkh'},
-        {urls:'turn:relay.backups.cz', username:'webrtc', credential:'webrtc'},
+        {urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject'},
+        {urls:'turn:openrelay.metered.ca:80',  username:'openrelayproject', credential:'openrelayproject'},
+        {urls:'turn:freestun.net:3479', username:'free', credential:'free'},
+        {urls:'turn:freestun.net:5350', username:'free', credential:'free'},
+        {urls:'turns:freestun.net:5350', username:'free', credential:'free'},
       ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
+    };
+    // P2P配信専用ICE設定（TURNを強制使用してSymmetric NATを確実に回避）
+    const ICE_RELAY = {
+      iceServers: ICE.iceServers,
+      iceTransportPolicy: 'all', // relay強制だと遅くなるためallのまま
       iceCandidatePoolSize: 20,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
@@ -1008,7 +1018,8 @@
       try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
     }
     async function handleWatchOffer(fromId, sdp, sourceName) {
-      watchPc = new RTCPeerConnection(ICE);
+      if (watchPc) { try { watchPc.close(); } catch(e) {} }
+      watchPc = new RTCPeerConnection(ICE_RELAY || ICE);
       watchPc.ontrack = e => {
         console.log('[WATCH] ontrack fired, streams:', e.streams.length, 'kind:', e.track.kind);
         const el = document.getElementById('watch-video');
@@ -1219,7 +1230,7 @@
       console.log('[DirectBcast] starting for targets:', targets);
       for (const tSid of targets) {
         try {
-          const pc = new RTCPeerConnection(ICE);
+          const pc = new RTCPeerConnection(ICE_RELAY || ICE);
           _directBcastPcs[tSid] = pc;
           // 同一trackを複数PCに addTrack するとSIGSEGV → clone()で各PC独立したtrack
           localStream.getTracks().forEach(track => {
@@ -1227,22 +1238,36 @@
             cloned.contentHint = 'detail';
             pc.addTrack(cloned, localStream);
           });
-          // 高ビットレート設定
           pc.onicecandidate = e => {
             if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
               type: 'watch-offer-ice', from: studentId, to: tSid, candidate: e.candidate.toJSON()
             });
           };
+          // ICE接続失敗時に自動でICE restartを試みる
+          let _iceRestartTimer = null;
+          pc.oniceconnectionstatechange = () => {
+            console.log('[DirectBcast ICE->'+tSid+']', pc.iceConnectionState);
+            if (pc.iceConnectionState === 'failed') {
+              console.log('[DirectBcast] ICE failed for', tSid, '-> restarting ICE');
+              pc.restartIce();
+            }
+            if (pc.iceConnectionState === 'disconnected') {
+              _iceRestartTimer = setTimeout(() => {
+                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') pc.restartIce();
+              }, 2000);
+            } else {
+              clearTimeout(_iceRestartTimer);
+            }
+          };
           pc.onconnectionstatechange = () => {
-            console.log('[DirectBcast→'+tSid+']', pc.connectionState);
+            console.log('[DirectBcast->'+tSid+']', pc.connectionState);
             if (pc.connectionState === 'connected') {
-              // 接続確立後にビットレートを最大化
               pc.getSenders().forEach(async sender => {
                 if (!sender.track || sender.track.kind !== 'video') return;
                 try {
                   const p = sender.getParameters();
                   if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-                  p.encodings[0].maxBitrate = 15000000; // 15Mbps
+                  p.encodings[0].maxBitrate = 15000000;
                   p.encodings[0].maxFramerate = 60;
                   p.encodings[0].priority = 'high';
                   p.encodings[0].networkPriority = 'high';

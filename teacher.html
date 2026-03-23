@@ -1758,19 +1758,20 @@ let studentBcastPcs={};
 // Canvas経由でvideo要素からストリームを取得（SIGSEGVを避けつつ継続フレームを保証）
 let _bcastStream = null;
 function startBcastCapture(sid) {
-  stopCanvasCapture();
-  // fs-video（フルスクリーン・visible）があればそこから captureStream()
-  // visible な video 要素なので SIGSEGV が起きない
   const fsv = document.getElementById('fs-video');
   const v = document.getElementById('v-'+sid);
-  // 優先: fs-video（playing状態）、次に v-{sid}
   let src = null;
   if (fsv && fsv.srcObject && fsv.readyState >= 3 && !fsv.paused) src = fsv;
   else if (v && v.srcObject && v.readyState >= 3 && !v.paused) src = v;
   else if (v && v.srcObject && v.readyState >= 2) src = v;
   if (!src) return null;
   try {
+    const oldStream = _bcastStream;
     _bcastStream = src.captureStream(60);
+    // 古いstreamはreplaceTrack後に停止（先に停止すると受信側でblackout）
+    if (oldStream && oldStream !== _bcastStream) {
+      setTimeout(() => { oldStream.getTracks().forEach(t => t.stop()); }, 2000);
+    }
     return _bcastStream;
   } catch(e) {
     console.error('[captureStream]', e);

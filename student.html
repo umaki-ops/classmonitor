@@ -871,18 +871,28 @@
 
       // タブ・ブラウザを閉じたとき即座にFirebaseからノードを削除
       let _sessionDepartureCount = 0;
+      let _departureRecorded = false; // pagehide/beforeunload 二重発火防止
+      // 再ログイン時：既存の離脱回数を読み込んで累積カウントの初期値にセット
+      try {
+        const restBase = `${dbUrl.replace(/\/$/, '')}`;
+        const res = await fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}.json`);
+        if (res.ok) {
+          const existing = await res.json();
+          if (existing && existing.count) _sessionDepartureCount = existing.count;
+        }
+      } catch(e) {}
       const _removeStudentNode = () => {
         if (!studentId) return;
+        if (_departureRecorded) return; // 二重発火防止
+        _departureRecorded = true;
         _sessionDepartureCount++;
+        const userName = document.getElementById('user-name-display')?.textContent || '';
         const restBase = `${dbUrl.replace(/\/$/, '')}`;
         // 離脱回数をstudentsノードとは別パスに保存（DELETEで消えない）
         try {
           fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}.json`, {
             method: 'PUT',
-            body: JSON.stringify({
-              count: _sessionDepartureCount,
-              name: document.getElementById('user-name-display')?.textContent || ''
-            }),
+            body: JSON.stringify({ count: _sessionDepartureCount, name: userName }),
             keepalive: true
           }).catch(() => {});
         } catch(e) {}

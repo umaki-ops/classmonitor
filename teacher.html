@@ -848,18 +848,19 @@ window.endSession = async function() {
     const depSnap = await get(ref(db, `sessions/${sessionId}/departures`));
     const depData = depSnap.exists() ? depSnap.val() : {};
     
+    // studentsノードにいる生徒（セッション中）
+    const processedSids = new Set();
     if (snap.exists()) {
       snap.forEach(child => {
         const sid = child.key;
         const d = child.val();
+        processedSids.add(sid);
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
         const sessionDepartures = (depData[sid] && depData[sid].count) || 0;
         
-        console.log(`[離脱データ確認] ${name}: count=${count}, sessionDepartures=${sessionDepartures}`);
-        
-        if (count < 1) return; // 離脱なしはスキップ
+        if (count < 1 && sessionDepartures < 1) return; // どちらも離脱なしはスキップ
 
         // tabAwayLog から合計離脱時間・全離脱ログを計算
         const rawLog = d.tabAwayLog || {};
@@ -932,12 +933,26 @@ window.endSession = async function() {
         reportData.push({ name, count, logs, totalMs, sid, sessionDepartures });
       });
     }
+    // セッション離脱したまま（studentsにいないがdeparturesにいる生徒）も追加
+    for (const [sid, dep] of Object.entries(depData)) {
+      if (processedSids.has(sid)) continue; // 既に処理済み
+      if (!dep || !dep.count) continue;
+      reportData.push({
+        name: dep.name || '不明',
+        count: 0,
+        logs: [],
+        totalMs: 0,
+        sid,
+        sessionDepartures: dep.count,
+        isDeparted: true // 離脱したままのフラグ
+      });
+    }
   } catch (e) {
     console.warn('tabAway data fetch error', e);
   }
 
-  // 離脱回数の多い順にソート
-  reportData.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  // タブ離脱+セッション離脱の合計で降順ソート
+  reportData.sort((a, b) => (b.count + b.sessionDepartures) - (a.count + a.sessionDepartures) || a.name.localeCompare(b.name));
   _tabAwayReportData = reportData;
 
   // Firebase削除
@@ -969,9 +984,10 @@ function showTabAwayReport(data) {
         ? d.logs.map(log => `<span style="display:inline-block;white-space:nowrap;">${toTime(log.startTs)}</span>`).join('<br>')
         : '−';
       const depStr = d.sessionDepartures > 0 ? `${d.sessionDepartures}回` : '−';
-      return `<tr>
+      const departedBadge = d.isDeparted ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;">離脱中</span>` : '';
+      return `<tr${d.isDeparted ? ' style="opacity:0.8;"' : ''}>
         <td><span class="rank-badge ${rankClass}">${rank}</span></td>
-        <td style="font-weight:600;">${esc(d.name)}</td>
+        <td style="font-weight:600;">${esc(d.name)}${departedBadge}</td>
         <td class="tabaway-count-cell">${d.count}回</td>
         <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8;">${timesHtml}</td>
         <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${totalStr}</td>

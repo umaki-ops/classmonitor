@@ -1504,9 +1504,9 @@ let reconnectTimers={};
 
 async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // シグナルのクリアはawaitしない（ネットワーク往復待ちでofferが遅延するのを防ぐ）
+  // 自分宛のシグナルのみ削除（全削除すると他の生徒のシグナリングが破壊される）
+  // signals は onChildAdded でリアルタイム処理されるため削除不要
   const{ref,remove}=window.FB;
-  remove(ref(db,`sessions/${sessionId}/signals`)).catch(()=>{});
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
   pc.ontrack=ev=>{

@@ -1562,9 +1562,12 @@ async function setupPC(sid){
 }
 async function handleAnswer(sid,sdp){
   const pc=peerConnections[sid];if(!pc)return;
-  // signalingStateがhave-local-offerでないと失敗するが、iceRestartのケースも考慮
   if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
-  try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    // negotiatePCキューの次の処理を解除
+    if (_negResolvers[sid]) { _negResolvers[sid](); delete _negResolvers[sid]; }
+  }catch(e){console.error('[setRemoteDesc]',e);}
 }
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
@@ -1640,24 +1643,24 @@ async function setHighBitrate(pc, kbps=8000){
 
 // ===== リネゴシエーションキュー（同一PCへの複数offer競合を防ぐ）=====
 const _negQueues = {};
+const _negResolvers = {}; // sid → resolve関数（answerが来たら呼ぶ）
+
 function negotiatePC(sid, trackSetupFn) {
   if (!_negQueues[sid]) _negQueues[sid] = Promise.resolve();
   _negQueues[sid] = _negQueues[sid].then(async () => {
     const pc = peerConnections[sid];
     if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') return;
-    if (pc.signalingState !== 'stable') {
-      await new Promise(r => {
-        const check = () => { if (pc.signalingState === 'stable') { pc.removeEventListener('signalingstatechange', check); r(); } };
-        pc.addEventListener('signalingstatechange', check);
-        setTimeout(r, 3000);
-      });
-    }
     if (trackSetupFn) trackSetupFn(pc);
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       sig(sid, {type:'offer', from:'teacher', to:sid, sdp:{type:offer.type, sdp:offer.sdp}});
       console.log('[neg] offer sent to', sid, '(senders:', pc.getSenders().length, ')');
+      // answerが届くまで待つ（最大5秒）
+      await new Promise(r => {
+        _negResolvers[sid] = r;
+        setTimeout(() => { if (_negResolvers[sid] === r) { delete _negResolvers[sid]; r(); } }, 5000);
+      });
     } catch(e) { console.error('[negotiatePC]', sid, e); }
   });
   return _negQueues[sid];

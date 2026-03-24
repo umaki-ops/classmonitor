@@ -1255,68 +1255,6 @@ async function forceKeyframe(sid){
   }
 }
 
-// ===== フレーム停止検知 → 即時PLI連打（案2の置き換え） =====
-// tabAway経由のFirebase往復を待たず、教員側のvideo要素でフレームが
-// 止まったことをローカルで即検知してPLIを送る。
-const frameWatchers = {}; // sid → { rafId, lastTime, stalledAt, pliInterval }
-
-function startFrameWatcher(sid) {
-  stopFrameWatcher(sid);
-  const v = document.getElementById('v-' + sid);
-  if (!v) return;
-
-  const state = { lastTime: -1, stalledAt: null, pliInterval: null };
-
-  function onFrame(now, meta) {
-    // フレームが進んでいれば「正常」
-    const t = meta.mediaTime;
-    if (t !== state.lastTime) {
-      // フレーム再開 → PLI連打を止める
-      if (state.pliInterval) {
-        clearInterval(state.pliInterval);
-        state.pliInterval = null;
-        state.stalledAt = null;
-      }
-      state.lastTime = t;
-    } else {
-      // フレームが止まっている
-      if (!state.stalledAt) {
-        state.stalledAt = now;
-        // 即座にPLI開始（200ms間隔で連打）
-        state.pliInterval = setInterval(() => {
-          const pc = peerConnections[sid];
-          if (!pc || pc.signalingState === 'closed') return;
-          try {
-            const receivers = pc.getReceivers().filter(r => r.track?.kind === 'video');
-            for (const r of receivers) {
-              if (typeof r.requestKeyFrame === 'function') r.requestKeyFrame();
-            }
-          } catch(e) {}
-        }, 200);
-      }
-    }
-    // 次フレームも監視
-    state.rafId = v.requestVideoFrameCallback(onFrame);
-  }
-
-  state.rafId = v.requestVideoFrameCallback(onFrame);
-  frameWatchers[sid] = state;
-}
-
-function stopFrameWatcher(sid) {
-  const state = frameWatchers[sid];
-  if (!state) return;
-  const v = document.getElementById('v-' + sid);
-  if (v && state.rafId) v.cancelVideoFrameCallback(state.rafId);
-  if (state.pliInterval) clearInterval(state.pliInterval);
-  delete frameWatchers[sid];
-}
-
-// tabAway由来のループは不要になったが互換で残す（何もしない）
-const awayKeyframeTimers = {};
-function startAwayKeyframeLoop(sid) {}
-function stopAwayKeyframeLoop(sid) {}
-
 // ===== WebRTC Monitoring =====
 let reconnectTimers={};
 
@@ -1327,6 +1265,12 @@ async function setupPC(sid){
   remove(ref(db,`sessions/${sessionId}/signals`)).catch(()=>{});
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
+  // ChromeOS対策: 生徒側からのデータチャンネル（keepalive）を受け入れる
+  pc.ondatachannel = ev => {
+    const dc = ev.channel;
+    dc.onmessage = () => {}; // pingを受け取るだけ（何もしない）
+  };
+
   pc.ontrack=ev=>{
     const v=document.getElementById('v-'+sid),ph=document.getElementById('ph-'+sid);
     if(v){
@@ -1334,8 +1278,6 @@ async function setupPC(sid){
       else{const ms=new MediaStream();ms.addTrack(ev.track);v.srcObject=ms;}
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
-      // フレーム停止を常時監視してPLIを自動送信
-      startFrameWatcher(sid);
     }
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
@@ -1362,9 +1304,9 @@ async function setupPC(sid){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // disconnected: tabAway復帰トリガーがあるため長めに待つ（30秒）
-    // 通常の切断（ネットワーク問題等）はここで拾う
+    // ChromeOS対策: disconnectedを検知したら即ICE restart（30秒待ちをやめる）
     if(iceState==='disconnected'){
+      clearTimeout(reconnectTimers[sid]);
       reconnectTimers[sid]=setTimeout(async()=>{
         if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
         if(pc.iceConnectionState!=='disconnected')return;
@@ -1373,7 +1315,7 @@ async function setupPC(sid){
           await pc.setLocalDescription(offer);
           sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
         }catch(e){if(students[sid])setupPC(sid);}
-      },30000);
+      }, 300); // 30000ms → 300ms に短縮
     } else {
       clearTimeout(reconnectTimers[sid]);
     }
@@ -1746,8 +1688,6 @@ function removeCard(sid){
   peerConnections[sid]?.close();delete peerConnections[sid];
   twPcs[sid]?.close();delete twPcs[sid];
   studentBcastPcs[sid]?.close();delete studentBcastPcs[sid];
-  stopFrameWatcher(sid);       // フレーム監視を停止
-  stopAwayKeyframeLoop(sid);
   delete students[sid];
   if(currentBroadcastId===sid)stopBcast();
   updateStats();
@@ -1775,8 +1715,6 @@ function updateTabAway(sid, tabAway) {
       headerEl.appendChild(cntEl);
     }
     if (cntEl) cntEl.textContent = tabAway.count + '回目';
-    // 案2: 離脱中は1秒ごとにPLIを送り続ける
-    startAwayKeyframeLoop(sid);
   } else {
     card.classList.remove('tab-away');
     if (badge) badge.classList.remove('badge-tab-away');
@@ -1788,9 +1726,6 @@ function updateTabAway(sid, tabAway) {
       else if (stu.status === 'sharing') setBadge(sid, 'live');
       else setBadge(sid, 'waiting');
     }
-    // 案2: 復帰したらループ停止 → 直後に1回だけ即時PLI送信
-    stopAwayKeyframeLoop(sid);
-    forceKeyframe(sid);
   }
 }
 

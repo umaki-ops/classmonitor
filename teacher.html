@@ -55,7 +55,7 @@
   .stat-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
 
   /* View tabs */
-  .view-tabs{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);width:fit-content;}
+  .view-tabs{display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);width:fit-content;}
   .view-tab{padding:7px 16px;background:transparent;border:none;color:var(--muted);font-family:'Noto Sans JP',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;}
   .view-tab.active{background:var(--accent);color:white;}
 
@@ -239,6 +239,28 @@
     margin-left:3px;
   }
 
+  /* ===== モニタリングON/OFFスライダー ===== */
+  .monitoring-toggle-wrap {
+    display:flex; align-items:center; gap:8px;
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:8px; padding:7px 10px; white-space:nowrap;
+  }
+  .monitoring-toggle-label { font-size:11px; font-weight:600; color:var(--muted); }
+  .monitoring-toggle-label.on { color:var(--green); }
+  .toggle-switch { position:relative; width:36px; height:20px; flex-shrink:0; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-slider {
+    position:absolute; cursor:pointer; inset:0;
+    background:var(--border); border-radius:20px; transition:.25s;
+  }
+  .toggle-slider:before {
+    content:''; position:absolute;
+    width:14px; height:14px; left:3px; bottom:3px;
+    background:white; border-radius:50%; transition:.25s;
+  }
+  .toggle-switch input:checked + .toggle-slider { background:var(--green); }
+  .toggle-switch input:checked + .toggle-slider:before { transform:translateX(16px); }
+
   /* ===== 離脱レポートモーダル ===== */
   #tabaway-report-modal {
     display:none; position:fixed; inset:0; z-index:4000;
@@ -333,14 +355,23 @@
       <div class="stat"><div class="stat-value" id="stat-f">0</div><div class="stat-label">集中中</div></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <!-- モニタリングON/OFF -->
+      <div class="monitoring-toggle-wrap" id="monitoring-toggle-wrap">
+        <span class="monitoring-toggle-label" id="monitoring-toggle-label">👁 離脱検知: ON</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="monitoring-toggle" checked onchange="toggleMonitoring(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
       <!-- View tabs -->
       <div class="view-tabs">
         <button class="view-tab active" id="tab-monitor" onclick="switchView('monitor')">🖥 モニタリング</button>
         <button class="view-tab" id="tab-wb" onclick="switchView('wb')">📋 ホワイトボード</button>
         <button class="view-tab" id="tab-img" onclick="switchView('img')">🖼 画像</button>
-        <button class="view-tab" id="tab-group" onclick="switchView('group')">👥 班別学習</button>
+        <button class="view-tab" id="tab-group" onclick="switchView('group')">👥 班別学習(教員作成)</button>
+        <button class="view-tab" id="tab-group-select" onclick="switchView('group-select')">🙏 班別学習(番号選択)</button>
       </div>
-      <select id="grid-size" onchange="updateGridSize()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:7px;font-family:inherit;font-size:11px;outline:none;">
+      <select id="grid-size" onchange="updateGridSize()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:7px;font-family:inherit;font-size:11px;outline:none;">
         <option value="2">2列</option><option value="3">3列</option><option value="4" selected>4列</option><option value="5">5列</option>
       </select>
     </div>
@@ -387,6 +418,7 @@
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
         <button class="btn btn-wb" id="dist-img-send-btn" onclick="distImgSend()" disabled style="opacity:0.4;">📤 全員に配布</button>
         <button class="btn btn-outline" id="dist-img-collect-btn" onclick="distImgCollect()">📥 回収</button>
+        <button class="btn btn-danger" onclick="distImgClearAllDrawings()">🗑️ 全消去</button>
         <button class="btn btn-danger" id="dist-img-clear-btn" onclick="distImgClearAll()">🗑️ 削除</button>
       </div>
     </div>
@@ -463,15 +495,6 @@
     <!-- ツールバー：列数 + 一括操作 -->
     <div id="group-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:6px;margin-right:6px;">
-          <span style="font-size:12px;color:var(--muted);">列数</span>
-          <div style="display:flex;gap:3px;" id="col-switcher">
-            <button onclick="setGroupCols(2)" id="gcol-2" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:12px;cursor:pointer;">2</button>
-            <button onclick="setGroupCols(3)" id="gcol-3" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">3</button>
-            <button onclick="setGroupCols(4)" id="gcol-4" class="gcol-btn" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;">4</button>
-          </div>
-        </div>
-        <div style="width:1px;height:24px;background:var(--border);margin:0 2px;"></div>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupWb()">📋 全班WB配布</button>
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupWb()">📋 全班WB回収</button>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupImg()">🖼 全班画像配布</button>
@@ -480,6 +503,47 @@
     </div>
     <!-- 班カードグリッド -->
     <div id="group-monitor-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;"></div>
+  </div>
+</div>
+
+<!-- 班別学習(番号選択)パネル -->
+<div id="group-select-panel" style="display:none;padding:16px;">
+  <div style="background:var(--surface2);border-radius:12px;padding:16px;margin-bottom:16px;">
+    <h3 style="margin:0 0 12px;font-size:15px;">🙏 班の設定</h3>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+      <label style="font-size:13px;">班の数：</label>
+      <input type="text" id="group-select-count" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="例: 4"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'')"
+        style="width:60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;text-align:center;">
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="startGroupSelection()">班選択を指示</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#10b981;color:#fff;" onclick="approveAllGroups()">✅ 全班許可</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;" onclick="dissolveAllGroups()">❌ 全班解散</button>
+    </div>
+    
+    <!-- 生徒選択状況 -->
+    <div id="selection-status-area" style="display:none;margin-top:12px;">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">📊 選択状況</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;" id="group-select-columns"></div>
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">👤 未選択の生徒</div>
+        <div id="unselected-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:36px;background:var(--surface);border-radius:8px;padding:8px;border:1px dashed var(--border);"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 確定済み班のモニタリングエリア -->
+  <div id="group-select-content-area" style="display:none;">
+    <!-- ツールバー：列数 + 一括操作 -->
+    <div id="group-select-bulk-panel" style="display:none;background:var(--surface2);border-radius:12px;padding:12px 14px;margin-bottom:14px;border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="openAllGroupSelectWb()">📋 全班WB配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupSelectWb()">📋 全班WB回収</button>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupSelectImg()">🖼 全班画像配布</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupSelectImg()">🖼 全班画像回収</button>
+      </div>
+    </div>
+    <!-- 班カードグリッド -->
+    <div id="group-select-monitor-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;"></div>
   </div>
 </div>
 
@@ -514,7 +578,7 @@
     <div id="rcontent"></div>
     <div class="ractions">
       <div id="name-toggle-area" style="display:none;"><button class="btn btn-outline" id="ntbtn" onclick="toggleNames()">👤 名前を表示</button></div>
-      <div style="display:flex;gap:6px;"><button class="btn btn-outline" onclick="closeResults()">閉じる</button><button class="btn btn-danger" onclick="endSurvey()">🛑 終了</button></div>
+      <div style="display:flex;gap:6px;"><button class="btn btn-danger" onclick="endSurvey()">🛑 終了</button></div>
     </div>
   </div>
 </div>
@@ -587,6 +651,36 @@
     </div>
   </div>
 </div>
+
+<!-- 班別学習(番号選択) 拡大モーダル -->
+<div id="gs-zoom-modal" style="display:none;position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.8);align-items:flex-start;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;" onclick="closeGroupSelectZoom()">
+  <div style="background:var(--surface);border-radius:16px;width:100%;max-width:860px;margin:auto;" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <span id="gs-zoom-title" style="font-weight:700;font-size:16px;color:var(--text);"></span>
+      <button onclick="closeGroupSelectZoom()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;">&#x2715;</button>
+    </div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">ホワイトボード / 配布画像</div>
+      <div id="gs-zoom-preview" style="background:#fff;border-radius:10px;border:1px solid var(--border);width:100%;aspect-ratio:16/9;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;">
+        <canvas id="gs-zoom-canvas" style="width:100%;height:100%;display:none;"></canvas>
+        <img id="gs-zoom-img" style="width:100%;height:100%;object-fit:contain;display:none;" />
+        <div id="gs-zoom-nopreview" style="color:var(--muted);font-size:13px;opacity:0.5;">未配布</div>
+      </div>
+    </div>
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">メンバー</div>
+      <div id="gs-zoom-members" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
+    <div style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap;">
+      <div id="gs-zoom-gid" style="display:none;"></div>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="openGroupSelectWb(document.getElementById('gs-zoom-gid').dataset.gid)">&#x1F4CB; WB配布</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeGroupSelectWb(document.getElementById('gs-zoom-gid').dataset.gid)">&#x1F4CB; WB回収</button>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="sendGroupSelectImg(document.getElementById('gs-zoom-gid').dataset.gid)">&#x1F5BC; 画像配布</button>
+      <button class="btn" style="padding:6px 14px;font-size:13px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectGroupSelectImg(document.getElementById('gs-zoom-gid').dataset.gid)">&#x1F5BC; 画像回収</button>
+      <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;" onclick="sendGroupSelectMsg(document.getElementById('gs-zoom-gid').dataset.gid)">&#x1F4AC; メッセージ</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <!-- 離脱レポートモーダル -->
@@ -604,9 +698,9 @@
 
 <script type="module">
   import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import{getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,increment}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
+  window.FB={initializeApp,getDatabase,ref,set,get,onValue,remove,onChildAdded,onChildChanged,onChildRemoved,increment,getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut};
 
   // Firebase読み込み完了を通知
   window.dispatchEvent(new Event('fb-ready'));
@@ -628,7 +722,17 @@ let currentView='monitor';
 let wbActive=false;
 let wbSubmissions={}, wbLbKeys=[], wbLbIdx=0;
 const LABELS=['A','B','C','D','E','F','G','H'];
-const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'},{urls:'stun:stun3.l.google.com:19302'}],iceCandidatePoolSize:20,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
+const ICE={iceServers:[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'stun:stun.cloudflare.com:3478'},
+  // 複数のTURNサーバー（フォールバック）
+  {urls:'turn:openrelay.metered.ca:80',  username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443', username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:numb.viagenie.ca',username:'webrtc@live.com',credential:'muazkh'},
+  {urls:'turn:relay.backups.cz',username:'webrtc',credential:'webrtc'},
+],iceCandidatePoolSize:20,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
 
 function gid(){
   // crypto.getRandomValues で安全なランダムID（16文字）
@@ -702,7 +806,7 @@ window.startSession=async function(){
 
   sessionId=gid();
   const{ref,set}=window.FB;
-  await set(ref(db,`sessions/${sessionId}`),{className:document.getElementById('class-name').value||'クラス',createdAt:Date.now(),active:true});
+  await set(ref(db,`sessions/${sessionId}`),{className:document.getElementById('class-name').value||'クラス',createdAt:Date.now(),active:true,monitoringEnabled:true});
   const base=location.href.replace('teacher.html','student.html');
   const url=`${base}?session=${sessionId}&db=${encodeURIComponent(du)}&apiKey=${encodeURIComponent(ak)}&projectId=${encodeURIComponent(pi)}`;
   document.getElementById('setup-panel').style.display='none';
@@ -715,6 +819,7 @@ window.startSession=async function(){
   document.getElementById('cstatus').textContent=sessionId;
   listenStudents();
   listenGroups();
+  listenGroupSelectData();
   toast('✅ セッション開始！URLを生徒に送ってください');
 };
 
@@ -723,63 +828,151 @@ let _tabAwayReportData = []; // CSVダウンロード用に保持
 
 window.endSession = async function() {
   if (!confirm('セッションを終了しますか？')) return;
+  window._sessionEnding = true; // 終了中フラグ（onChildRemovedの誤カウント防止）
+
+  // セッション終了時刻を先に記録
+  const sessionEndTime = Date.now();
+  const endTimeStr = new Date(sessionEndTime).toLocaleString('ja-JP', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    fractionalSecondDigits: 3
+  });
+  console.log('[セッション終了] 終了時刻記録:', sessionEndTime, endTimeStr);
 
   // セッション終了前にtabAwayデータを収集
   let reportData = [];
   try {
     const { ref, get } = window.FB;
+    // セッション開始時刻を取得
+    const sessionSnap = await get(ref(db, `sessions/${sessionId}/createdAt`));
+    const sessionStartTime = sessionSnap.exists() ? sessionSnap.val() : sessionEndTime;
+    const sessionTotalMs = sessionEndTime - sessionStartTime;
+
     const snap = await get(ref(db, `sessions/${sessionId}/students`));
+    // 別パスに保存した離脱データを取得
+    const depSnap = await get(ref(db, `sessions/${sessionId}/departures`));
+    const depData = depSnap.exists() ? depSnap.val() : {};
+    
+    // studentsノードにいる生徒（セッション中）
+    const processedSids = new Set();
     if (snap.exists()) {
       snap.forEach(child => {
         const sid = child.key;
         const d = child.val();
+        processedSids.add(sid);
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
-        if (count < 1) return; // 離脱なしはスキップ
+        const sessionDepartures = (depData[sid] && depData[sid].count) || 0;
+        
+        if (count < 1 && sessionDepartures < 1) return; // どちらも離脱なしはスキップ
 
         // tabAwayLog から合計離脱時間・全離脱ログを計算
         const rawLog = d.tabAwayLog || {};
+        console.log(`[離脱ログ確認] ${name}: rawLog=`, JSON.stringify(rawLog));
+        
+        const now = sessionEndTime; // セッション終了時刻を使用
         const logs = Object.entries(rawLog)
           .filter(([k, v]) => v && v.startTs)
           .map(([k, v]) => v)
           .sort((a, b) => a.startTs - b.startTs);
-        const now = Date.now();
+        
         // 現在離脱中かどうか
-        const isCurrentlyAway = tabAway && tabAway.away;
-        // 最後の戻り時刻（away===false のとき tabAway.ts が戻り時刻）
-        const lastReturnTs = (!isCurrentlyAway && tabAway && tabAway.ts) ? tabAway.ts : null;
+        const isCurrentlyAway = tabAway && tabAway.away === true;
         let totalMs = 0;
-        logs.forEach(log => {
+        
+        console.log(`[離脱計算 開始] ${name}: ログ数=${logs.length}, 現在離脱中=${isCurrentlyAway}, tabAway.away=${tabAway?.away}`);
+        
+        logs.forEach((log, idx) => {
+          // セッション終了後に開始した離脱は無視
+          if (log.startTs > now) {
+            console.log(`[離脱計算] ログ${idx + 1}: startTs=${log.startTs} > now=${now} のためスキップ`);
+            return;
+          }
+          
+          const startTimeStr = new Date(log.startTs).toLocaleString('ja-JP', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            fractionalSecondDigits: 3
+          });
+          const endTimeStr = log.endTs ? new Date(log.endTs).toLocaleString('ja-JP', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            fractionalSecondDigits: 3
+          }) : 'なし';
+          
+          console.log(`[離脱計算] ログ${idx + 1}/${logs.length}:`);
+          console.log(`  startTs=${log.startTs} (${startTimeStr})`);
+          console.log(`  endTs=${log.endTs} (${endTimeStr})`);
+          console.log(`  now=${now} (${endTimeStr})`);
+          
           let end;
+          
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
-            end = log.endTs;
-          } else if (isCurrentlyAway) {
-            // まだ離脱中 → セッション終了時刻まで
-            end = now;
-          } else if (lastReturnTs && lastReturnTs > log.startTs) {
-            // endTs未記録だが戻ってきている → tabAway.tsを使用
-            end = lastReturnTs;
+            end = Math.min(log.endTs, now);
+          } else if (!log.endTs) {
+            // endTs未記録：
+            // 現在も離脱中 → セッション終了時刻まで
+            // 既に戻っているなら tabAway.ts（最後の状態変化時刻）を使う
+            if (isCurrentlyAway) {
+              end = now;
+            } else if (tabAway && tabAway.ts && tabAway.ts > log.startTs) {
+              end = Math.min(tabAway.ts, now);
+            } else {
+              end = now; // 最終フォールバック
+            }
           } else {
-            // それ以外は now で補完
-            end = now;
+            end = Math.min(log.endTs, now);
           }
-          totalMs += Math.max(0, end - log.startTs);
+          
+          const duration = Math.max(0, end - log.startTs);
+          totalMs += duration;
         });
-        // フォールバック: logsが空なのに count >= 1
-        if (logs.length === 0 && tabAway && tabAway.away && tabAway.ts) {
-          totalMs = Math.max(0, now - tabAway.ts);
+        
+        // フォールバック: logsが空なのに離脱回数がある場合
+        if (logs.length === 0 && count > 0) {
+          if (isCurrentlyAway && tabAway && tabAway.ts) {
+            // 現在離脱中
+            totalMs = Math.max(0, now - tabAway.ts);
+          }
+          // away=false で logs もない場合 → 時間が記録できていない → 0のまま
         }
-        reportData.push({ name, count, logs, totalMs, sid });
+        
+        console.log(`[離脱計算 完了] ${name}: ${logs.length}回, 合計${totalMs}ms`);
+        // セッション離脱時間 = セッション総時間 - 累積接続時間
+        const dep = depData[sid];
+        const totalConnectedMs = dep ? (dep.totalConnectedMs||0) : 0;
+        const joinedAt = d.joinedAt || 0;
+        const currentConnectedMs = joinedAt > 0 ? Math.max(0, sessionEndTime - joinedAt) : 0;
+        const connectedMs = totalConnectedMs + currentConnectedMs;
+        const sessionAbsentMs = sessionDepartures > 0 ? Math.max(0, sessionTotalMs - connectedMs) : 0;
+        reportData.push({ name, count, logs, totalMs, sid, sessionDepartures, sessionAbsentMs });
+      });
+    }
+    // セッション離脱したまま（studentsにいないがdeparturesにいる生徒）も追加
+    for (const [sid, dep] of Object.entries(depData)) {
+      if (processedSids.has(sid)) continue;
+      if (!dep || !dep.count) continue;
+      const depName = dep.name || students[sid]?.name || '不明';
+      const connectedMs2 = dep.totalConnectedMs || 0;
+      const sessionAbsentMs2 = Math.max(0, sessionTotalMs - connectedMs2);
+      reportData.push({
+        name: depName, count: 0, logs: [], totalMs: 0, sid,
+        sessionDepartures: dep.count,
+        sessionAbsentMs: sessionAbsentMs2,
+        isDeparted: true
       });
     }
   } catch (e) {
     console.warn('tabAway data fetch error', e);
   }
 
-  // 離脱回数の多い順にソート
-  reportData.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  // タブ離脱+セッション離脱の合計で降順ソート
+  reportData.sort((a, b) => (b.count + b.sessionDepartures) - (a.count + a.sessionDepartures) || a.name.localeCompare(b.name));
   _tabAwayReportData = reportData;
 
   // Firebase削除
@@ -805,17 +998,22 @@ function showTabAwayReport(data) {
     let rows = data.map((d, i) => {
       const rank = i + 1;
       const rankClass = rank <= 3 ? `rank-${rank}` : '';
-      const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
-      const totalStr = `${totalSec}秒`;
+      const totalStr = d.totalMs > 0 ? formatMs(d.totalMs) : '0秒';
       const timesHtml = d.logs.length > 0
         ? d.logs.map(log => `<span style="display:inline-block;white-space:nowrap;">${toTime(log.startTs)}</span>`).join('<br>')
         : '−';
-      return `<tr>
+      const depStr = d.sessionDepartures > 0 ? `${d.sessionDepartures}回` : '−';
+      const absentSec = d.sessionAbsentMs > 0 ? Math.floor(d.sessionAbsentMs / 1000) : 0;
+      const absentStr = d.sessionDepartures > 0 && absentSec > 0 ? formatMs(d.sessionAbsentMs) : '−';
+      const departedBadge = d.isDeparted ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;">離脱中</span>` : '';
+      return `<tr${d.isDeparted ? ' style="opacity:0.8;"' : ''}>
         <td><span class="rank-badge ${rankClass}">${rank}</span></td>
-        <td style="font-weight:600;">${esc(d.name)}</td>
+        <td style="font-weight:600;">${esc(d.name)}${departedBadge}</td>
         <td class="tabaway-count-cell">${d.count}回</td>
         <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8;">${timesHtml}</td>
         <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${totalStr}</td>
+        <td class="tabaway-count-cell" style="color:var(--red);">${depStr}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red);">${absentStr}</td>
       </tr>`;
     }).join('');
     content.innerHTML = `
@@ -824,9 +1022,11 @@ function showTabAwayReport(data) {
           <tr>
             <th>順位</th>
             <th>氏名</th>
-            <th>離脱回数</th>
+            <th>タブ離脱回数</th>
             <th>離脱開始時刻（全回）</th>
             <th>合計離脱時間</th>
+            <th>セッション離脱</th>
+            <th>セッション離脱時間</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -859,14 +1059,15 @@ window.downloadTabAwayCSV = function() {
   const toDateTime = ts => new Date(ts).toLocaleString('ja-JP');
 
   // ヘッダー行
-  const header = ['順位', '氏名', '離脱回数', '離脱開始時刻（全回）', '合計離脱時間'];
+  const header = ['順位', '氏名', 'タブ離脱回数', '離脱開始時刻（全回）', '合計離脱時間', 'セッション離脱回数', 'セッション離脱時間'];
 
-  // データ行：離脱開始時刻は改行区切りで1セルにまとめる
   const rows = data.map((d, i) => {
     const rank = i + 1;
-    const totalSec = d.totalMs > 0 ? Math.floor(d.totalMs / 1000) : 0;
+    const totalStr = d.totalMs > 0 ? formatMs(d.totalMs) : '0秒';
     const allTimes = d.logs.map(log => toDateTime(log.startTs)).join('\n');
-    return [rank, d.name, d.count, allTimes, `${totalSec}秒`]
+    const dep = d.sessionDepartures || 0;
+    const absentStr = dep > 0 && d.sessionAbsentMs > 0 ? formatMs(d.sessionAbsentMs) : '−';
+    return [rank, d.name, d.count, allTimes, totalStr, dep, absentStr]
       .map(v => `"${String(v).replace(/"/g, '""')}"`)
       .join(',');
   });
@@ -896,14 +1097,18 @@ window.switchView=function(v){
   document.getElementById('tab-wb').classList.toggle('active',v==='wb');
   document.getElementById('tab-img').classList.toggle('active',v==='img');
   document.getElementById('tab-group').classList.toggle('active',v==='group');
+  document.getElementById('tab-group-select').classList.toggle('active',v==='group-select');
   document.getElementById('wb-controls').style.display=v==='wb'?'block':'none';
   document.getElementById('img-controls').style.display=v==='img'?'block':'none';
   document.getElementById('group-panel').style.display=v==='group'?'block':'none';
-  document.getElementById('grid').style.display=(v==='img'||v==='group')?'none':'';
-  if(v!=='group') Object.keys(students).forEach(sid=>updateCardContent(sid));
+  document.getElementById('group-select-panel').style.display=v==='group-select'?'block':'none';
+  document.getElementById('grid').style.display=(v==='img'||v==='group'||v==='group-select'||(v==='wb'&&!wbActive))?'none':'';
+  if(v!=='group'&&v!=='group-select') Object.keys(students).forEach(sid=>updateCardContent(sid));
   if(v==='wb') listenWbData();
   if(v==='img'){ distImgRefreshUI(); listenDistImgData(); renderDistImgGrid(); }
   if(v==='group') renderGroupPanel();
+  if(v==='group-select') renderGroupSelectPanel();
+  updateGridSize();
 };
 
 // ===== WHITEBOARD =====
@@ -964,6 +1169,28 @@ window.distImgCollect = async function() {
   document.getElementById('dist-img-grid').style.display = 'none';
   document.getElementById('dist-img-grid').innerHTML = '';
   toast('📥 画像を回収・削除しました');
+};
+
+window.distImgClearAllDrawings = async function() {
+  if (!db) return;
+  if (!confirm('全員の書き込みを消去しますか？（配布中の画像は残ります）')) return;
+  const {ref, remove} = window.FB;
+  // 全生徒にクリアコマンドを送信
+  Object.keys(students).forEach(sid => cmd(sid, 'dist-img-clear'));
+  // Firebase上のsnapshotsとsubmissionsを削除
+  await remove(ref(db, `sessions/${sessionId}/distImg/snapshots`));
+  await remove(ref(db, `sessions/${sessionId}/distImg/submissions`));
+  distImgSubmissions = {};
+  // 教員側のカードプレビューをリセット
+  Object.keys(students).forEach(sid => {
+    const img = document.getElementById('di-img-'+sid);
+    const ph  = document.getElementById('di-ph-'+sid);
+    const sub = document.getElementById('di-sub-'+sid);
+    if (img) { img.src=''; img.style.display='none'; }
+    if (ph)  ph.style.display='';
+    if (sub) sub.style.display='none';
+  });
+  toast('🗑️ 全員の書き込みを消去しました');
 };
 
 window.distImgClearAll = async function() {
@@ -1042,7 +1269,7 @@ function renderDistImgGrid() {
   if (!grid) return;
   grid.innerHTML = '';
   const sids = Object.keys(students);
-  if (sids.length === 0) { grid.style.display = 'none'; return; }
+  if (sids.length === 0 || !distImgActive) { grid.style.display = 'none'; return; }
   grid.style.display = 'grid';
   sids.forEach(sid => {
     const d = students[sid];
@@ -1052,7 +1279,10 @@ function renderDistImgGrid() {
     card.innerHTML = `
       <div class="dist-card-header">
         <span class="dist-card-name">${d.name||'生徒'}</span>
-        <span class="dist-sub-badge" id="di-sub-${sid}" style="display:none;">提出済</span>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span class="dist-sub-badge" id="di-sub-${sid}" style="display:none;">提出済</span>
+          <button onclick="clearStudentDistImg('${sid}')" title="この生徒の書き込みを消去" style="background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;color:var(--muted);" onmouseenter="this.style.color='#ef4444'" onmouseleave="this.style.color='var(--muted)'">🗑️</button>
+        </div>
       </div>
       <div class="dist-card-body" onclick="openDistImgFullscreen('${sid}')">
         <img id="di-img-${sid}" src="" style="display:none;" class="dist-card-body img"/>
@@ -1083,18 +1313,34 @@ window.sendWbCommand=async function(cmd){
     const instr=document.getElementById('wb-instruction').value.trim();
     if(instr) await set(ref(db,`sessions/${sessionId}/wb/instruction`),instr);
     await set(ref(db,`sessions/${sessionId}/wb/active`),true);
+    if(currentView==='wb'){
+      document.getElementById('grid').style.display='';
+      Object.keys(students).forEach(sid=>updateCardContent(sid));
+    }
     toast('📋 ホワイトボード配布しました');
   }
   else if(cmd==='collect'){
     await set(ref(db,`sessions/${sessionId}/wb/active`),false);
     wbActive=false;
+    if(currentView==='wb'){
+      document.getElementById('grid').style.display='none';
+      Object.keys(students).forEach(sid=>updateCardContent(sid));
+    }
     toast('📥 ホワイトボードを回収しました');
   }
   else if(cmd==='clear'){
     if(!confirm('全員のホワイトボードを消去しますか？'))return;
     await set(ref(db,`sessions/${sessionId}/wb/resetTs`),Date.now());
     await window.FB.remove(ref(db,`sessions/${sessionId}/wb/submissions`));
-    wbSubmissions={};updateWbStats();toast('🗑️ 全員のホワイトボードを消去しました');
+    await window.FB.remove(ref(db,`sessions/${sessionId}/wb/snapshots`));
+    wbSubmissions={};
+    Object.keys(students).forEach(sid=>{
+      const img=document.getElementById('wb-img-'+sid);
+      const ph=document.getElementById('wb-ph-'+sid);
+      if(img){img.src='';img.style.display='none';}
+      if(ph)ph.style.display='';
+    });
+    updateWbStats();toast('🗑️ 全員のホワイトボードを消去しました');
   }
 };
 
@@ -1170,6 +1416,35 @@ window.wbLbNav=function(dir){
   document.getElementById('fs-wb-nav').textContent=`${wbLbIdx+1} / ${wbLbKeys.length}`;
 };
 
+// ===== モニタリングON/OFF =====
+window.toggleMonitoring = function(enabled) {
+  const { ref, set } = window.FB;
+  set(ref(db, `sessions/${sessionId}/monitoringEnabled`), enabled);
+  const label = document.getElementById('monitoring-toggle-label');
+  if (label) {
+    label.textContent = enabled ? '👁 離脱検知: ON' : '👁 離脱検知: OFF';
+    label.classList.toggle('on', enabled);
+  }
+  if (!enabled) {
+    // OFFにしたとき：全員のtabAway表示をリセット
+    Object.keys(students).forEach(sid => {
+      const card = document.getElementById('card-' + sid);
+      const badge = document.getElementById('badge-' + sid);
+      const cntEl = document.getElementById('tab-away-count-' + sid);
+      if (card) card.classList.remove('tab-away');
+      if (badge) badge.classList.remove('badge-tab-away');
+      if (cntEl) cntEl.textContent = '';
+      const stu = students[sid];
+      if (stu) {
+        if (stu.focused) setBadge(sid, 'focused');
+        else if (stu.status === 'sharing') setBadge(sid, 'live');
+        else setBadge(sid, 'waiting');
+      }
+    });
+  }
+  toast(enabled ? '👁 離脱検知をONにしました' : '🔕 離脱検知をOFFにしました');
+};
+
 // ===== LISTEN =====
 function listenStudents(){
   const{ref,onChildAdded,onChildChanged,onChildRemoved}=window.FB;
@@ -1185,6 +1460,14 @@ function listenStudents(){
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
     if(students[sid])students[sid]={...students[sid],...d};
+    // 再接続時など name が後から来た場合にカードの表示名を更新する
+    if(d.name){
+      const card=document.getElementById('card-'+sid);
+      if(card){
+        const nameSpan=card.querySelector('.sname span:first-child');
+        if(nameSpan)nameSpan.textContent=d.name;
+      }
+    }
     if(d.shareType)updateShareType(sid,d.shareType);
     // tabAway の変化を処理
     if(d.hasOwnProperty('tabAway'))updateTabAway(sid,d.tabAway);
@@ -1205,7 +1488,33 @@ function listenStudents(){
     // 班別表示も更新
     if(currentView==='group') renderGroupMonitorGrid();
   });
-  onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>removeCard(snap.key));
+  onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>{
+    const sid=snap.key;
+    const d=snap.val()||{};
+    // nameを同期的に確実に取得（非同期処理前に取っておく）
+    const name = d.name || students[sid]?.name || '';
+    const joinedAt = d.joinedAt || 0;
+    const nowTs = Date.now();
+    const sessionDuration = joinedAt > 0 ? (nowTs - joinedAt) : 0;
+    // セッションが終了中でなければ離脱としてカウント（endSessionでremoveする場合は除外）
+    if(sessionId && !window._sessionEnding && name){
+      const{ref:fbRef,set:fbSet,get:fbGet}=window.FB;
+      fbGet(fbRef(db,`sessions/${sessionId}/departures/${sid}`)).then(snap=>{
+        const prev=snap.exists()&&snap.val()||{};
+        fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{
+          count:(prev.count||0)+1,
+          name: prev.name||name,
+          totalConnectedMs: (prev.totalConnectedMs||0) + sessionDuration // 接続時間を累積
+        });
+      }).catch(()=>{
+        fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{
+          count:1, name,
+          totalConnectedMs: sessionDuration
+        });
+      });
+    }
+    removeCard(sid);
+  });
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{
     const sig=snap.val();
     if(!sig||sig.to!=='teacher')return;
@@ -1213,8 +1522,12 @@ function listenStudents(){
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
     else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
     else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
+    else if(sig.type==='tw-ice-restart')handleTWIceRestart(sig.from,sig.sdp);
     else if(sig.type==='watch-answer')handleWatchAnswer(sig.from,sig.sdp);
     else if(sig.type==='watch-answer-ice')handleWatchAnswerIce(sig.from,sig.candidate);
+    // 生徒AからのP2P watch-offer（教員も受信対象に含まれた場合）
+    else if(sig.type==='watch-offer')setTimeout(()=>handleTeacherWatchOfferFromStudent(sig.from,sig.sdp,sig.sourceName),0);
+    else if(sig.type==='watch-offer-ice')handleTeacherWatchIceFromStudent(sig.from,sig.candidate);
   });
   startListenAnswers();
 }
@@ -1260,16 +1573,10 @@ let reconnectTimers={};
 
 async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // シグナルのクリアはawaitしない（ネットワーク往復待ちでofferが遅延するのを防ぐ）
+  // 自分宛のシグナルのみ削除（全削除すると他の生徒のシグナリングが破壊される）
+  // signals は onChildAdded でリアルタイム処理されるため削除不要
   const{ref,remove}=window.FB;
-  remove(ref(db,`sessions/${sessionId}/signals`)).catch(()=>{});
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
-
-  // ChromeOS対策: 生徒側からのデータチャンネル（keepalive）を受け入れる
-  pc.ondatachannel = ev => {
-    const dc = ev.channel;
-    dc.onmessage = () => {}; // pingを受け取るだけ（何もしない）
-  };
 
   pc.ontrack=ev=>{
     const v=document.getElementById('v-'+sid),ph=document.getElementById('ph-'+sid);
@@ -1279,6 +1586,23 @@ async function setupPC(sid){
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
     }
+    // fs-videoも更新（拡大表示中のフリーズ防止）
+    if(sid===window.currentFsId){
+      const fsv=document.getElementById('fs-video');
+      if(fsv&&v){fsv.srcObject=v.srcObject;fsv.play().catch(()=>{});}
+    }
+    // 共有元生徒のPCが再接続されたとき、captureStreamを再取得してwatchSenderを更新
+    if(sid===currentBroadcastId&&ev.track.kind==='video'&&window._watchSenders){
+      console.log('[Watch] sourceSid reconnected, re-capturing stream');
+      setTimeout(()=>{
+        const newStream=startBcastCapture(sid);
+        if(!newStream)return;
+        const newTrack=newStream.getVideoTracks()[0];
+        for(const sender of Object.values(window._watchSenders)){
+          if(sender&&newTrack)sender.replaceTrack(newTrack).catch(()=>{});
+        }
+      },500);
+    }
   };
   pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
 
@@ -1287,6 +1611,16 @@ async function setupPC(sid){
     if(state==='connected'){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
+      // 受信バッファを最小化してcaptureStream経由の遅延を削減
+      try{
+        pc.getReceivers().forEach(r=>{
+          if(r.track&&r.track.kind==='video'){
+            // jitterBufferDelayHint: 0 で再生バッファを最小化
+            if('jitterBufferDelayHint' in r) r.jitterBufferDelayHint=0;
+            if('jitterBufferTarget' in r) r.jitterBufferTarget=0;
+          }
+        });
+      }catch(e){}
     }
     // failedのみ即再接続。disconnectedは一時的な場合が多いためICE再起動で様子見
     if(state==='failed'){
@@ -1304,9 +1638,9 @@ async function setupPC(sid){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // ChromeOS対策: disconnectedを検知したら即ICE restart（30秒待ちをやめる）
+    // disconnected: 共有元なら即座にICE restart、それ以外は30秒
     if(iceState==='disconnected'){
-      clearTimeout(reconnectTimers[sid]);
+      const timeout = (sid === currentBroadcastId) ? 200 : 30000;
       reconnectTimers[sid]=setTimeout(async()=>{
         if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
         if(pc.iceConnectionState!=='disconnected')return;
@@ -1315,7 +1649,7 @@ async function setupPC(sid){
           await pc.setLocalDescription(offer);
           sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
         }catch(e){if(students[sid])setupPC(sid);}
-      }, 300); // 30000ms → 300ms に短縮
+      },timeout);
     } else {
       clearTimeout(reconnectTimers[sid]);
     }
@@ -1327,13 +1661,19 @@ async function setupPC(sid){
 
   const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
   await pc.setLocalDescription(offer);
+  // setupPC自身のofferのanswerで negotiatePC キューを誤って進めないようクリア
+  delete _negResolvers[sid];
+  delete _negQueues[sid];
   sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
 }
 async function handleAnswer(sid,sdp){
   const pc=peerConnections[sid];if(!pc)return;
-  // signalingStateがhave-local-offerでないと失敗するが、iceRestartのケースも考慮
   if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
-  try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    // negotiatePCキューのanswerが来たら次の処理を解除
+    if (_negResolvers[sid]) { _negResolvers[sid](); delete _negResolvers[sid]; }
+  }catch(e){console.error('[setRemoteDesc]',e);}
 }
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 
@@ -1369,9 +1709,20 @@ function stopTS(){
   document.getElementById('tshare-btn').textContent='📺 画面を共有';
   document.getElementById('tshare-btn').style.background='';
   cmd('all','stopTeacherShare',{});
-  // フォールバック: teacherSharing ノードに false を書き込む
   const {ref,set}=window.FB;
   set(ref(db,`sessions/${sessionId}/teacherSharing`),false);
+  // モニタリング接続から教員streamトラックを削除してリネゴシエーション
+  for(const sid of Object.keys(peerConnections)){
+    const pc=peerConnections[sid];
+    if(!pc)continue;
+    const senders=pc.getSenders().filter(s=>s.track && s.track.kind==='video' && !s.track.label.includes('screen'));
+    // teacherStreamのsenderを特定して削除（localStreamのトラックは残す）
+    pc.getSenders().forEach(s=>{
+      if(s.track && !['microphone','camera'].some(k=>s.track.label.toLowerCase().includes(k))){
+        try{ pc.removeTrack(s); }catch(e){}
+      }
+    });
+  }
   for(const sid of Object.keys(twPcs))twPcs[sid]?.close();
   twPcs={};
   toast('⏹ 先生の画面共有を停止しました');
@@ -1396,85 +1747,293 @@ async function setHighBitrate(pc, kbps=8000){
   }
 }
 
+// ===== リネゴシエーションキュー（同一PCへの複数offer競合を防ぐ）=====
+const _negQueues = {};
+const _negResolvers = {}; // sid → resolve関数（answerが来たら呼ぶ）
+
+function negotiatePC(sid, trackSetupFn) {
+  if (!_negQueues[sid]) _negQueues[sid] = Promise.resolve();
+  _negQueues[sid] = _negQueues[sid].then(async () => {
+    const pc = peerConnections[sid];
+    if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') return;
+    if (trackSetupFn) trackSetupFn(pc);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sig(sid, {type:'offer', from:'teacher', to:sid, sdp:{type:offer.type, sdp:offer.sdp}});
+      console.log('[neg] offer sent to', sid, '(senders:', pc.getSenders().length, ')');
+      // answerが届くまで待つ（最大5秒）
+      await new Promise(r => {
+        _negResolvers[sid] = r;
+        setTimeout(() => { if (_negResolvers[sid] === r) { delete _negResolvers[sid]; r(); } }, 5000);
+      });
+    } catch(e) { console.error('[negotiatePC]', sid, e); }
+  });
+  return _negQueues[sid];
+}
+
 async function setupTWPc(sid){
   console.log('[TW] setupTWPc for', sid, 'stream:', !!teacherStream);
   if(!teacherStream){console.warn('[TW] no teacherStream');return;}
-  try{
+  const pc = peerConnections[sid];
+  if(!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed'){
+    console.warn('[TW] no active monitoring PC for', sid, '- falling back to new PC');
     if(twPcs[sid]){try{twPcs[sid].close();}catch(e){}}
-    const pc=new RTCPeerConnection(ICE);twPcs[sid]=pc;
-    const tracks=teacherStream.getTracks();
-    console.log('[TW] adding tracks:', tracks.length, tracks.map(t=>t.kind));
-    tracks.forEach(tr=>pc.addTrack(tr,teacherStream));
-    pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-    pc.onconnectionstatechange=()=>{
-      console.log('[TW->'+sid+']',pc.connectionState);
-      if(pc.connectionState==='connected') setHighBitrate(pc,8000);
-    };
-    const offer=await pc.createOffer();
-    await pc.setLocalDescription(offer);
+    const newPc=new RTCPeerConnection(ICE);twPcs[sid]=newPc;
+    teacherStream.getTracks().forEach(tr=>newPc.addTrack(tr,teacherStream));
+    newPc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'tw-ice-offer',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
+    newPc.onconnectionstatechange=()=>{console.log('[TW-fallback->'+sid+']',newPc.connectionState);};
+    const offer=await newPc.createOffer();
+    await newPc.setLocalDescription(offer);
     sig(sid,{type:'tw-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-    console.log('[TW] offer sent to',sid);
-  }catch(e){console.error('[setupTWPc]',e);toast('❌ 先生画面配信エラー: '+e.message);}
+    return;
+  }
+  const existing = pc.getSenders().find(s=>s.track && teacherStream.getTracks().includes(s.track));
+  if(existing){console.log('[TW] track already added for', sid);return;}
+  negotiatePC(sid, pc => {
+    teacherStream.getTracks().forEach(tr=>pc.addTrack(tr,teacherStream));
+    console.log('[TW] added teacher track via queue for', sid);
+  });
 }
-async function handleTWAnswer(sid,sdp){const pc=twPcs[sid];if(!pc){console.warn('[TW] no pc for',sid);return;}try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));console.log('[TW] remoteDesc set for',sid);}catch(e){console.error('[handleTWAnswer]',e);}}
-async function handleTWIce(sid,c){const pc=twPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+const twIceQueues={};
+async function handleTWAnswer(sid,sdp){
+  const pc=twPcs[sid];
+  if(!pc){console.warn('[TW] no pc for',sid);return;}
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    console.log('[TW] remoteDesc set for',sid);
+    const q=twIceQueues[sid]||[];
+    delete twIceQueues[sid];
+    for(const c of q){try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+  }catch(e){console.error('[handleTWAnswer]',e);}
+}
+async function handleTWIce(sid,c){
+  const pc=twPcs[sid];
+  if(!pc)return;
+  if(!pc.remoteDescription){
+    if(!twIceQueues[sid])twIceQueues[sid]=[];
+    twIceQueues[sid].push(c);
+    return;
+  }
+  try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}
+}
+async function handleTWIceRestart(sid,sdp){
+  const pc=twPcs[sid];
+  if(!pc)return;
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const ans=await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+    sig(sid,{type:'tw-answer',from:'teacher',to:sid,sdp:{type:ans.type,sdp:ans.sdp}});
+    console.log('[TW] ICE restart answer sent to',sid);
+  }catch(e){console.error('[handleTWIceRestart]',e);}
+}
 
 // ===== Student screen broadcast =====
 let studentBcastPcs={};
+// Canvas経由でvideo要素からストリームを取得（SIGSEGVを避けつつ継続フレームを保証）
+// requestVideoFrameCallback + Canvas でフレームを確実に転送
+let _bcastCanvas = null, _bcastCtx = null, _bcastStream = null, _bcastVFC = null, _bcastSrc = null;
+function startBcastCapture(sid) {
+  const fsv = document.getElementById('fs-video');
+  const v = document.getElementById('v-'+sid);
+  let src = null;
+  if (fsv && fsv.srcObject && fsv.readyState >= 2) src = fsv;
+  else if (v && v.srcObject && v.readyState >= 2) src = v;
+  if (!src) return null;
+  // 同じソースなら再利用
+  if (src === _bcastSrc && _bcastStream && _bcastStream.getVideoTracks()[0]?.readyState === "live") return _bcastStream;
+  stopCanvasCapture();
+  _bcastSrc = src;
+  if (!_bcastCanvas) {
+    _bcastCanvas = document.createElement('canvas');
+    _bcastCtx = _bcastCanvas.getContext('2d');
+  }
+  // ストリームの実解像度に合わせる（小さいvideo要素からの拡大を防ぐ）
+  const vw = src.videoWidth || 1920;
+  const vh = src.videoHeight || 1080;
+  if (_bcastCanvas.width !== vw || _bcastCanvas.height !== vh) {
+    _bcastCanvas.width = vw;
+    _bcastCanvas.height = vh;
+  }
+  _bcastStream = _bcastCanvas.captureStream(0);
+  // requestVideoFrameCallback: フレームが届いた瞬間だけ描画（遅延ゼロ）
+  let _keepaliveInterval = null;
+  function drawFrame(now, metadata) {
+    if (!_bcastCtx || _bcastSrc !== src) return;
+    _bcastCtx.drawImage(src, 0, 0, _bcastCanvas.width, _bcastCanvas.height);
+    _bcastStream.getVideoTracks()[0]?.requestFrame?.();
+    _bcastVFC = src.requestVideoFrameCallback(drawFrame);
+  }
+  if (typeof src.requestVideoFrameCallback === 'function') {
+    _bcastVFC = src.requestVideoFrameCallback(drawFrame);
+    // キープアライブ：フレームが止まっても最後の画像を保持（blackout防止）
+    _keepaliveInterval = setInterval(() => {
+      if (!_bcastStream || _bcastSrc !== src) { clearInterval(_keepaliveInterval); return; }
+      _bcastStream.getVideoTracks()[0]?.requestFrame?.();
+    }, 500);
+    // stopCanvasCapture時にクリアできるよう保持
+    _bcastStream._keepaliveInterval = _keepaliveInterval;
+  } else {
+    // フォールバック: setInterval
+    _bcastVFC = setInterval(() => {
+      if (!_bcastCtx || _bcastSrc !== src) { clearInterval(_bcastVFC); return; }
+      if (src.readyState >= 2) {
+        _bcastCtx.drawImage(src, 0, 0, _bcastCanvas.width, _bcastCanvas.height);
+        _bcastStream.getVideoTracks()[0]?.requestFrame?.();
+      }
+    }, 1000/60);
+  }
+  return _bcastStream;
+}
+function stopCanvasCapture() {
+  if (_bcastSrc && _bcastVFC != null) {
+    if (typeof _bcastSrc.cancelVideoFrameCallback === 'function') _bcastSrc.cancelVideoFrameCallback(_bcastVFC);
+    else clearInterval(_bcastVFC);
+    _bcastVFC = null;
+  }
+  if (_bcastStream) {
+    if (_bcastStream._keepaliveInterval) clearInterval(_bcastStream._keepaliveInterval);
+    _bcastStream.getTracks().forEach(t=>t.stop());
+    _bcastStream = null;
+  }
+  _bcastSrc = null;
+}
+
+// 生徒A→生徒B 直接P2P配信（失敗時は教員中継にフォールバック）
 window.broadcastStudentScreen=function(sid){
   if(!sid){toast('生徒を選択してください');return;}
-  const srcPc=peerConnections[sid];
-  // PCがない、またはliveなトラックがない場合: video要素のsrcObjectから試みる
-  let stream=null;
-  if(srcPc){
-    const tracks=srcPc.getReceivers().map(r=>r.track).filter(t=>t&&t.readyState==='live');
-    if(tracks.length>0) stream=new MediaStream(tracks);
-  }
-  // フォールバック: video要素のsrcObjectを使う
-  if(!stream){
-    const v=document.getElementById('v-'+sid);
-    if(v&&v.srcObject){
-      const tracks=[...v.srcObject.getTracks()].filter(t=>t.readyState==='live');
-      if(tracks.length>0) stream=new MediaStream(tracks);
-    }
-  }
-  if(!stream){
-    console.warn('[broadcastStudentScreen] no stream for',sid, 'pc:',srcPc?.connectionState);
-    toast('この生徒の映像が取得できません（共有中か確認してください）');
-    return;
-  }
+  const v=document.getElementById('v-'+sid);
+  if(!v||!v.srcObject){toast('この生徒の映像が取得できません（共有中か確認してください）');return;}
   if(currentBroadcastId)stopBcast();
   currentBroadcastId=sid;
+  stopCanvasCapture();
   document.getElementById('card-'+sid)?.classList.add('focused');
-  startStudentBroadcast(sid,stream);
-  toast(`📡 ${students[sid]?.name||'生徒'}の画面を全員に共有中`);
-};
-async function startStudentBroadcast(sourceSid,stream){
-  for(const sid of Object.keys(students)){
-    if(sid===sourceSid)continue;
-    await setupStudentBcastPc(sid,stream);
+  const targets=Object.keys(students).filter(s=>s!==sid);
+  const sourceName=students[sid]?.name||'生徒';
+  // 教員は既存のモニタリング接続経由（P2Pターゲットに含めない → SIGSEGV回避）
+  cmd(sid,'startBcast',{targets,sourceName});
+  targets.forEach(tSid=>cmd(tSid,'watchStart',{sourceName}));
+  // 教員向けはCanvas中継（監視接続のリネゴシエーション）
+  const stream=startBcastCapture(sid);
+  if(stream){
+    if(!window._watchSenders)window._watchSenders={};
+    negotiatePC(sid,pc=>{
+      const prev=window._watchSenders[sid+'_t'];
+      if(prev){try{pc.removeTrack(prev);}catch(e){}}
+      const track=stream.getTracks()[0];
+      if(track){const s=pc.addTrack(track,stream);if(s)window._watchSenders[sid+'_t']=s;}
+    });
   }
-}
-async function setupStudentBcastPc(sid,stream){
-  try{
-    if(studentBcastPcs[sid]){try{studentBcastPcs[sid].close();}catch(e){}}
-    const pc=new RTCPeerConnection(ICE);studentBcastPcs[sid]=pc;
-    stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-    pc.onicecandidate=ev=>{if(ev.candidate)sig(sid,{type:'watch-ice',from:'teacher',to:sid,candidate:ev.candidate.toJSON()});};
-    pc.onconnectionstatechange=()=>{
-      console.log('[Watch->'+sid+']',pc.connectionState);
-      if(pc.connectionState==='connected') setHighBitrate(pc,6000);
-    };
-    const offer=await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    sig(sid,{type:'watch-offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-    console.log('[Watch] offer sent to',sid);
-  }catch(e){console.error('[setupStudentBcastPc]',e);toast('❌ 生徒画面配信エラー: '+e.message);}
-}
+  toast(`📡 ${sourceName}の画面を全員に共有中`);
+  // P2P接続追跡用セット
+  window._bcastP2pConnected = new Set();
+  // P2P接続失敗時のフォールバック（8秒後に watch-answer が来なかった生徒は教員中継）
+  if(window._bcastFallbackTimer) clearTimeout(window._bcastFallbackTimer);
+  window._bcastFallbackTimer = setTimeout(() => {
+    if(currentBroadcastId !== sid) return;
+    const stream = startBcastCapture(sid);
+    if(!stream) return;
+    targets.forEach(tSid => {
+      if(window._bcastP2pConnected?.has(tSid)) return; // P2P成功済み
+      console.log('[Fallback] P2P no answer from', tSid, '→ teacher relay');
+      cmd(tSid,'watchStart',{sourceName});
+      if(!window._watchSenders) window._watchSenders = {};
+      const pc = peerConnections[tSid];
+      if(pc && pc.connectionState === 'connected') {
+        negotiatePC(tSid, pc => {
+          const prev = window._watchSenders[tSid];
+          if(prev){try{pc.removeTrack(prev);}catch(e){}}
+          const track = stream.getTracks()[0];
+          if(track){ const sender=pc.addTrack(track,stream); if(sender) window._watchSenders[tSid]=sender; }
+        });
+      }
+    });
+  }, 8000);
+};
 window.stopBroadcastScreen=function(){if(!currentBroadcastId){toast('共有中の画面はありません');return;}stopBcast();toast('⏹ 画面共有を停止しました');};
-function stopBcast(){if(!currentBroadcastId)return;cmd('all','stopWatch',{});document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');currentBroadcastId=null;for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();studentBcastPcs={};}
-async function handleWatchAnswer(sid,sdp){const pc=studentBcastPcs[sid];if(!pc){console.warn('[Watch] no pc for',sid);return;}try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));console.log('[Watch] remoteDesc set for',sid);}catch(e){console.error('[handleWatchAnswer]',e);}}
-async function handleWatchAnswerIce(sid,c){const pc=studentBcastPcs[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+function stopBcast(){
+  if(!currentBroadcastId)return;
+  cmd(currentBroadcastId,'stopBcast',{});
+  cmd('all','stopWatch',{});
+  document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');
+  currentBroadcastId=null;
+  stopCanvasCapture();
+  if(window._watchSenders){
+    for(const sid of Object.keys(window._watchSenders)){
+      const pc=peerConnections[sid];
+      if(pc&&window._watchSenders[sid]){try{pc.removeTrack(window._watchSenders[sid]);}catch(e){}}
+    }
+    window._watchSenders={};
+  }
+  for(const sid of Object.keys(studentBcastPcs))studentBcastPcs[sid]?.close();
+  studentBcastPcs={};
+}
+const watchIceQueues={};
+async function handleWatchAnswer(sid,sdp){
+  // P2P成功を記録（フォールバック判定用）
+  if(window._bcastP2pConnected) window._bcastP2pConnected.add(sid);
+  const pc=studentBcastPcs[sid];
+  if(!pc){console.warn('[Watch] no pc for',sid);return;}
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    console.log('[Watch] remoteDesc set for',sid);
+    const q=watchIceQueues[sid]||[];
+    delete watchIceQueues[sid];
+    for(const c of q){try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+  }catch(e){console.error('[handleWatchAnswer]',e);}
+}
+async function handleWatchAnswerIce(sid,c){
+  const pc=studentBcastPcs[sid];
+  if(!pc)return;
+  if(!pc.remoteDescription){
+    if(!watchIceQueues[sid])watchIceQueues[sid]=[];
+    watchIceQueues[sid].push(c);
+    return;
+  }
+  try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}
+}
+
+// 生徒AからのP2P watch-offer を教員が直接受け取る
+let _teacherWatchPc = null, _teacherWatchIceQueue = [];
+async function handleTeacherWatchOfferFromStudent(fromSid, sdp, sourceName){
+  if(_teacherWatchPc){try{_teacherWatchPc.close();}catch(e){}}
+  _teacherWatchIceQueue=[];
+  _teacherWatchPc=new RTCPeerConnection(ICE);
+  _teacherWatchPc.ontrack=ev=>{
+    // 教員の v-{fromSid} を直接更新（P2P経由の高品質映像）
+    const v=document.getElementById('v-'+fromSid);
+    const ph=document.getElementById('ph-'+fromSid);
+    if(v){
+      if(ev.streams&&ev.streams[0]){v.srcObject=ev.streams[0];}
+      else{const ms=new MediaStream();ms.addTrack(ev.track);v.srcObject=ms;}
+      v.play().catch(()=>{});
+      v.style.display='block';if(ph)ph.style.display='none';
+    }
+    // fs-videoも更新
+    if(fromSid===window.currentFsId){
+      const fsv=document.getElementById('fs-video');
+      if(fsv&&v){fsv.srcObject=v.srcObject;fsv.play().catch(()=>{});}
+    }
+    console.log('[TeacherWatch] P2P track received from', fromSid);
+  };
+  _teacherWatchPc.onicecandidate=ev=>{
+    if(ev.candidate) sig(fromSid,{type:'watch-answer-ice',from:'teacher',to:fromSid,candidate:ev.candidate.toJSON()});
+  };
+  await _teacherWatchPc.setRemoteDescription(new RTCSessionDescription(sdp));
+  // キューに溜まったICE候補を処理
+  for(const c of _teacherWatchIceQueue){try{await _teacherWatchPc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
+  _teacherWatchIceQueue=[];
+  const ans=await _teacherWatchPc.createAnswer();
+  await _teacherWatchPc.setLocalDescription(ans);
+  sig(fromSid,{type:'watch-answer',from:'teacher',to:fromSid,sdp:{type:ans.type,sdp:ans.sdp}});
+  console.log('[TeacherWatch] answer sent to', fromSid);
+}
+async function handleTeacherWatchIceFromStudent(fromSid, candidate){
+  if(!_teacherWatchPc||!candidate)return;
+  if(!_teacherWatchPc.remoteDescription){_teacherWatchIceQueue.push(candidate);return;}
+  try{await _teacherWatchPc.addIceCandidate(new RTCIceCandidate(candidate));}catch(e){}
+}
 
 // ===== Focus =====
 window.focusStudent=function(sid){if(!sid)return;cmd(sid,'focus');students[sid].focused=true;document.getElementById('card-'+sid)?.classList.add('focused');setBadge(sid,'focused');document.getElementById('fb-'+sid)?.classList.add('af');updateStats();toast('🎯 集中画面を表示しました');};
@@ -1668,7 +2227,12 @@ function updateCardContent(sid){
       }
     }
   } else {
-    // Whiteboard view
+    // Whiteboard view: 配布中のときだけカードを表示
+    if(!wbActive){
+      contentEl.innerHTML='';
+      actionsEl.innerHTML='';
+      return;
+    }
     contentEl.innerHTML=`
       <div class="wb-area" onclick="openWbFullscreen('${sid}')">
         <img id="wb-img-${sid}" src="" alt="" class="wb-canvas-preview" style="display:none;"/>
@@ -1678,6 +2242,7 @@ function updateCardContent(sid){
       </div>`;
     actionsEl.innerHTML=`
       <button class="icon-btn" onclick="openWbFullscreen('${sid}')">⛶ 拡大</button>
+      <button class="icon-btn" onclick="clearStudentWb('${sid}')" title="この生徒のWBを消去">🗑️</button>
       <button class="icon-btn" onclick="openMsgModal('${sid}')">💬</button>`;
   }
 }
@@ -1703,8 +2268,11 @@ function updateTabAway(sid, tabAway) {
   const badge = document.getElementById('badge-' + sid);
   if (!card) return;
 
-  if (tabAway && tabAway.away) {
-    card.classList.add('tab-away');
+  // モニタリングOFFのときは赤点滅・カウント表示をしない
+  const monitoringOn = document.getElementById('monitoring-toggle')?.checked !== false;
+  if (!monitoringOn) return;
+
+  if (tabAway && tabAway.away) {    card.classList.add('tab-away');
     if (badge) { badge.classList.add('badge-tab-away'); badge.textContent = '⚠ 離脱中'; }
     const headerEl = card.querySelector('.card-header');
     let cntEl = document.getElementById('tab-away-count-' + sid);
@@ -1735,13 +2303,45 @@ window.openFullscreen=function(sid){
 };
 window.closeFullscreen=function(){document.getElementById('fs-overlay').classList.remove('show');document.getElementById('fs-video').srcObject=null;window.currentFsId=null;};
 window.copyUrl=function(){navigator.clipboard.writeText(document.getElementById('share-url').textContent).then(()=>{const b=document.getElementById('copy-btn');b.textContent='✓ コピー済';b.classList.add('copied');setTimeout(()=>{b.textContent='コピー';b.classList.remove('copied');},2000);});};
-window.updateGridSize=function(){document.getElementById('grid').style.gridTemplateColumns=`repeat(${document.getElementById('grid-size').value},1fr)`;};
+window.updateGridSize=function(){
+  const v=document.getElementById('grid-size').value;
+  document.getElementById('grid').style.gridTemplateColumns=`repeat(${v},1fr)`;
+  document.getElementById('dist-img-grid').style.gridTemplateColumns=`repeat(${v},1fr)`;
+  const gmg=document.getElementById('group-monitor-grid');
+  if(gmg)gmg.style.gridTemplateColumns=`repeat(${v},minmax(0,1fr))`;
+  const gsmg=document.getElementById('group-select-monitor-grid');
+  if(gsmg)gsmg.style.gridTemplateColumns=`repeat(${v},minmax(0,1fr))`;
+  _groupCols=parseInt(v);
+  _groupSelectCols=parseInt(v);
+};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.closeFullscreen();closeWbFullscreen();closeMsgModal();closeSurvey();closeResults();if(window.closeGroupMsgModal)window.closeGroupMsgModal();if(window.closeGroupZoom)window.closeGroupZoom();}if(e.key==='ArrowLeft')wbLbNav(-1);if(e.key==='ArrowRight')wbLbNav(1);});
+// バックグラウンドでもvideo再生を継続（共有中のフレーム断絶防止）
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    // 表示に戻ったとき全videoを確実に再生
+    document.querySelectorAll('video').forEach(v => { if (v.srcObject && v.paused) v.play().catch(()=>{}); });
+    // captureStream が停止していたら再取得してsenderのtrackを差し替える
+    if (currentBroadcastId && window._watchSenders && _bcastStream) {
+      const tracks = _bcastStream.getVideoTracks();
+      if (tracks.length === 0 || tracks[0].readyState === 'ended') {
+        // streamが死んでいたら再キャプチャして全senderにreplaceTrack
+        const newStream = startBcastCapture(currentBroadcastId);
+        if (newStream) {
+          const newTrack = newStream.getVideoTracks()[0];
+          for (const sender of Object.values(window._watchSenders)) {
+            if (sender && newTrack) sender.replaceTrack(newTrack).catch(()=>{});
+          }
+        }
+      }
+    }
+  }
+});
 
 
 // ===== 班別学習 =====
 let groupDefs = {};      // {groupId: {name, members:{uid:true}}}
 let groupListeners = {}; // groupId → unsubscribe関数
+let groupState = {};     // {groupId: {wbActive, hasImg}} 消去ボタン判定用
 
 function renderGroupPanel() {
   const saved = Object.keys(groupDefs).length > 0;
@@ -1754,7 +2354,7 @@ function renderGroupPanel() {
 window.initGroups = function() {
   const raw = document.getElementById('group-count').value.trim();
   const n = Number(raw);
-  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10の整数で入力してください'); return; }
+  if (!raw || !Number.isInteger(n) || n < 2 || n > 25) { toast('⚠️ 班の数を2〜25の整数で入力してください'); return; }
   groupDefs = {};
   for (let i = 1; i <= n; i++) {
     const gid = 'g' + i;
@@ -1769,7 +2369,7 @@ window.initGroups = function() {
 window.autoAssignGroups = function() {
   const raw = document.getElementById('group-count').value.trim();
   const n = Number(raw);
-  if (!raw || !Number.isInteger(n) || n < 2 || n > 10) { toast('⚠️ 班の数を2〜10の整数で入力してください'); return; }
+  if (!raw || !Number.isInteger(n) || n < 2 || n > 25) { toast('⚠️ 班の数を2〜25の整数で入力してください'); return; }
   groupDefs = {};
   for (let i = 1; i <= n; i++) groupDefs['g'+i] = { name:`班${i}`, members:{} };
   const uids = Object.keys(students);
@@ -1862,6 +2462,80 @@ window.saveGroups = async function() {
 };
 
 // 班を解散
+// ===== 個人・班別消去 =====
+window.clearStudentWb = async function(sid) {
+  const name = students[sid]?.name || '生徒';
+  if (!confirm(`${name} のホワイトボードを消去しますか？`)) return;
+  const {ref, set, remove} = window.FB;
+  // 個人向けresetTsで生徒のキャンバスをクリア
+  await set(ref(db, `sessions/${sessionId}/wb/resetTs_${sid}`), Date.now());
+  await remove(ref(db, `sessions/${sessionId}/wb/snapshots/${sid}`));
+  await remove(ref(db, `sessions/${sessionId}/wb/submissions/${sid}`));
+  delete wbSubmissions[sid];
+  const img = document.getElementById('wb-img-'+sid);
+  const ph  = document.getElementById('wb-ph-'+sid);
+  if (img) { img.src=''; img.style.display='none'; }
+  if (ph)  ph.style.display='';
+  updateWbStats();
+  toast(`🗑️ ${name} のWBを消去しました`);
+};
+
+window.clearStudentDistImg = async function(sid) {
+  const name = students[sid]?.name || '生徒';
+  if (!confirm(`${name} の書き込みを消去しますか？`)) return;
+  const {ref, remove} = window.FB;
+  // コマンドで生徒のキャンバスをクリア
+  cmd(sid, 'dist-img-clear');
+  await remove(ref(db, `sessions/${sessionId}/distImg/snapshots/${sid}`));
+  await remove(ref(db, `sessions/${sessionId}/distImg/submissions/${sid}`));
+  delete distImgSubmissions[sid];
+  const img = document.getElementById('di-img-'+sid);
+  const ph  = document.getElementById('di-ph-'+sid);
+  const sub = document.getElementById('di-sub-'+sid);
+  if (img) { img.src=''; img.style.display='none'; }
+  if (ph)  ph.style.display='';
+  if (sub) sub.style.display='none';
+  toast(`🗑️ ${name} の書き込みを消去しました`);
+};
+
+window.clearGroupDrawings = async function(gid) {
+  const gname = groupDefs[gid]?.name || '班';
+  const state = groupState[gid] || {};
+  const {ref, remove} = window.FB;
+  if (state.wbActive) {
+    if (!confirm(`${gname} のホワイトボード書き込みを消去しますか？`)) return;
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`));
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`));
+    toast(`🗑️ ${gname} のWBを消去しました`);
+  } else if (state.hasImg) {
+    if (!confirm(`${gname} の画像書き込みを消去しますか？`)) return;
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`));
+    await remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`));
+    toast(`🗑️ ${gname} の画像書き込みを消去しました`);
+  } else {
+    toast('⚠️ 現在配布中のコンテンツがありません');
+  }
+};
+
+window.clearGroupWb = async function(gid) {
+  const gname = groupDefs[gid]?.name || '班';
+  if (!confirm(`${gname} のホワイトボードを消去しますか？`)) return;
+  const {ref, set, remove} = window.FB;
+  await remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`));
+  await remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`));
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/resetTs`), Date.now());
+  toast(`🗑️ ${gname} のWBを消去しました`);
+};
+
+window.clearGroupDistImg = async function(gid) {
+  const gname = groupDefs[gid]?.name || '班';
+  if (!confirm(`${gname} の画像書き込みを消去しますか？`)) return;
+  const {ref, remove} = window.FB;
+  await remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`));
+  await remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`));
+  toast(`🗑️ ${gname} の画像書き込みを消去しました`);
+};
+
 window.clearGroups = async function() {
   if (!confirm('班を解散します。よろしいですか？')) return;
   const { ref, set } = window.FB;
@@ -1959,12 +2633,13 @@ function renderGroupContentArea() {
 
     // --- 操作ボタン ---
     const actions = document.createElement('div');
-    actions.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-top:1px solid var(--border);';
+    actions.style.cssText = 'display:grid;grid-template-columns:repeat(6,1fr);gap:0;border-top:1px solid var(--border);';
     const btns = [
       { label:'WB配布', icon:'<path d="M3 3h18v18H3z" stroke-linejoin="round"/><path d="M8 12h8M12 8v8"/>', color:'#2563eb', action:`openGroupWb('${gid}')`, id:`gbtn-wb-open-${gid}` },
       { label:'WB回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`closeGroupWb('${gid}')`, id:`gbtn-wb-close-${gid}` },
       { label:'画像配布', icon:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-4 4-2-2-4 4"/>', color:'#2563eb', action:`sendGroupImg('${gid}')`, id:`gbtn-img-open-${gid}` },
       { label:'画像回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`collectGroupImg('${gid}')`, id:`gbtn-img-close-${gid}` },
+      { label:'書込消去', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#dc2626', action:`clearGroupDrawings('${gid}')`, id:'' },
       { label:'メッセージ', icon:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>', color:'#7c3aed', action:`sendGroupMsg('${gid}')`, id:'' },
     ];
     btns.forEach((b, i) => {
@@ -2008,20 +2683,35 @@ function listenGroupPreview(gid) {
     if (!canvas) return;
 
     const wbActive = wbSnapshot?.active === true;
-    const hasImg   = distImgData !== null;
+    const hasImg   = !wbActive && distImgData !== null;
+    groupState[gid] = { wbActive, hasImg };
 
     if (wbActive || hasImg) {
-      if (imgEl) imgEl.style.display = 'none';
       if (placeholder) placeholder.style.display = 'none';
       canvas.style.display = 'block';
+      canvas.style.margin = 'auto';  // 中央配置
       if (badge) {
         if (wbActive) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
         else          { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
       }
       requestAnimationFrame(() => {
         const parent = canvas.parentElement;
-        const W = Math.round(parent?.offsetWidth  || 280);
-        const H = Math.round(parent?.offsetHeight || 158);
+        const parentWidth = parent?.offsetWidth || 280;
+        const parentHeight = parent?.offsetHeight || 158;
+        const parentAspect = parentWidth / parentHeight;
+        const targetAspect = 16 / 9;
+        
+        let W, H;
+        if (parentAspect > targetAspect) {
+          // 親の方が横長 → 高さ基準
+          H = Math.round(parentHeight);
+          W = Math.round(parentHeight * targetAspect);
+        } else {
+          // 親の方が縦長 → 幅基準
+          W = Math.round(parentWidth);
+          H = Math.round(parentWidth / targetAspect);
+        }
+        
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
         const bgUrl = hasImg ? distImgData.dataUrl : null;
         // WB配布中はwbのstrokes/texts、画像配布中はdistImgのstrokes/textsを使う
@@ -2043,14 +2733,17 @@ function listenGroupPreview(gid) {
   });
 
   const unsubImg = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg`), snap => {
+    console.log('[班プレビュー] distImgデータ:', gid, snap.exists(), snap.val());
     distImgData = (snap.exists() && snap.val()?.active === true) ? snap.val() : null;
     redraw();
   });
-  // distImg/strokes と distImg/texts も監視してリアルタイム更新
+  // WB と distImg の strokes/texts も個別監視してリアルタイム更新
+  const unsubWbStrokes = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), () => redraw());
+  const unsubWbTexts   = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`),   () => redraw());
   const unsubImgStrokes = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`), () => redraw());
   const unsubImgTexts   = onValue(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`),   () => redraw());
 
-  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); unsubImgStrokes(); unsubImgTexts(); };
+  groupListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); unsubWbStrokes(); unsubWbTexts(); unsubImgStrokes(); unsubImgTexts(); };
 }
 
 // 背景画像＋ストローク＋テキストを正しい順序でcanvasに描画
@@ -2064,7 +2757,27 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
   };
   if (bgDataUrl) {
     const img = new Image();
-    img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); drawRest(); };
+    img.onload = () => {
+      // アスペクト比を保って描画
+      const imgAspect = img.width / img.height;
+      const canvasAspect = canvas.width / canvas.height;
+      let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
+      
+      if (imgAspect > canvasAspect) {
+        // 画像の方が横長 → 幅を基準
+        drawWidth = canvas.width;
+        drawHeight = canvas.width / imgAspect;
+        offsetY = (canvas.height - drawHeight) / 2;
+      } else {
+        // 画像の方が縦長 → 高さを基準
+        drawHeight = canvas.height;
+        drawWidth = canvas.height * imgAspect;
+        offsetX = (canvas.width - drawWidth) / 2;
+      }
+      
+      ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+      drawRest();
+    };
     img.onerror = () => drawRest();
     img.src = bgDataUrl;
   } else {
@@ -2076,15 +2789,20 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
 function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
   const pW = canvas.width, pH = canvas.height;
+  const REF_H = 900; // 固定基準サイズ（16:9, 1600x900）
+  console.log('[教員 テキスト描画] canvas:', pW, 'x', pH, 'テキスト数:', Object.keys(textsObj).length);
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
-    // fontSizePct（生徒canvasH基準の%）があればcanvasHに対して再計算、なければ旧形式をcanvasH比でスケール
+    console.log('[教員 テキスト描画] td.x:', td.x, 'td.y:', td.y, '→ ピクセル:', x.toFixed(1), y.toFixed(1));
+    console.log('[教員 テキスト描画] 実際の描画位置 - fillText(x+8, y+8+fs):', (x+8).toFixed(1), ',', 'y:', y.toFixed(1));
+    // fontSizePct は固定基準サイズ(900)に対する割合なので、現在のキャンバス高さにスケール
     let fs;
     if (td.fontSizePct) {
       fs = td.fontSizePct / 100 * pH;
     } else if (td.canvasH) {
+      // 旧形式: 元のcanvasHに対する割合を現在のpHに変換
       fs = (td.fontSize || 16) / td.canvasH * pH;
     } else {
       // 旧形式: 生徒canvasH≈500を仮定してスケール
@@ -2095,7 +2813,9 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+fs+i*lineH));
+    // textareaの内部パディングを考慮: 左8px、上8px + フォントサイズ
+    // textareaは top: y% の位置から開始し、内部に約8pxのパディング + ベースラインまでの距離
+    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+8+fs+i*lineH));
     ctx.restore();
   });
 }
@@ -2103,8 +2823,21 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
 // 後方互換ラッパー
 function drawStrokeOnPreview(canvas, stroke) { drawStrokeOnCanvas(canvas, stroke); }
 function initPreviewCanvas(canvas) {
-  const W = Math.round(canvas.parentElement?.offsetWidth || 280);
-  const H = Math.round(canvas.parentElement?.offsetHeight || 158);
+  const parent = canvas.parentElement;
+  const parentWidth = parent?.offsetWidth || 280;
+  const parentHeight = parent?.offsetHeight || 158;
+  const parentAspect = parentWidth / parentHeight;
+  const targetAspect = 16 / 9;
+  
+  let W, H;
+  if (parentAspect > targetAspect) {
+    H = Math.round(parentHeight);
+    W = Math.round(parentHeight * targetAspect);
+  } else {
+    W = Math.round(parentWidth);
+    H = Math.round(parentWidth / targetAspect);
+  }
+  
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
 }
@@ -2149,10 +2882,11 @@ window.openGroupZoom = function(gid) {
       return;
     }
     nopreview.style.display = 'none'; imgEl.style.display = 'none'; canvas.style.display = 'block';
+    canvas.style.margin = 'auto';  // 中央配置
     requestAnimationFrame(() => {
       const container = document.getElementById('group-zoom-preview');
       const W = container.offsetWidth || 820;
-      const H = Math.round(W * 9/16);
+      const H = Math.round(W * 9/16);  // 16:9のアスペクト比
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
       const bgUrl = hasImg ? _zoomImgData.dataUrl : null;
       const strokes = wbActive ? (_zoomWbSnap?.strokes || null) : (hasImg ? (_zoomImgData?.strokes || null) : null);
@@ -2169,7 +2903,9 @@ window.openGroupZoom = function(gid) {
     _zoomImgData = (imgSnap.exists() && imgSnap.val()?.active === true) ? imgSnap.val() : null;
     zoomRedraw();
   }));
-  // distImg内のstrokes/textsの変化も監視（画像配布中の書き込みをリアルタイム表示）
+  // WB と distImg の strokes/texts の変化も監視してリアルタイム更新
+  window._zoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), () => zoomRedraw()));
+  window._zoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/wb/texts`),   () => zoomRedraw()));
   window._zoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`), () => zoomRedraw()));
   window._zoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`),   () => zoomRedraw()));
 
@@ -2191,15 +2927,18 @@ function drawStrokeOnCanvas(canvas, stroke) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const pts = stroke.points;
   if (stroke.normalized) {
-    // パーセント正規化座標（0〜100）→ canvasピクセルに変換
-    // 線幅は生徒canvas基準のpx値を、表示canvasサイズに合わせてスケール
-    // 幾何平均スケール（√(scaleX*scaleY)）が視覚的に最も自然
-    const srcW = stroke.canvasW || 800;
-    const srcH = stroke.canvasH || 500;
-    const scaleX = W / srcW;
-    const scaleY = H / srcH;
-    const sizeScale = Math.sqrt(scaleX * scaleY);
-    ctx.lineWidth = Math.max(0.5, (stroke.size || 3) * sizeScale);
+    // sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
+    let lineWidth;
+    if (stroke.sizePct) {
+      lineWidth = Math.max(0.5, stroke.sizePct / 100 * 900);
+    } else {
+      const srcW = stroke.canvasW || 800;
+      const srcH = stroke.canvasH || 500;
+      const scaleX = W / srcW;
+      const scaleY = H / srcH;
+      lineWidth = Math.max(0.5, (stroke.size || 3) * Math.sqrt(scaleX * scaleY));
+    }
+    ctx.lineWidth = lineWidth;
     ctx.moveTo(pts[0][0] / 100 * W, pts[0][1] / 100 * H);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] / 100 * W, pts[i][1] / 100 * H);
   } else {
@@ -2226,6 +2965,7 @@ window.openGroupWb = async function(gid) {
 window.closeGroupWb = async function(gid) {
   const { ref, set } = window.FB;
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/active`), false);
+  await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`), null);
   await set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`), null);
   toast(`${groupDefs[gid]?.name} のWBを回収しました`);
 };
@@ -2319,6 +3059,7 @@ function updateGroupScreens() {
 }
 
 let _groupMsgGid = null;
+let currentGroupSelectId = null;
 window.sendGroupMsg = function(gid) {
   _groupMsgGid = gid;
   const name = groupDefs[gid]?.name || gid;
@@ -2332,6 +3073,7 @@ window.closeGroupMsgModal = function() {
   document.getElementById('group-msg-modal').style.display = 'none';
   // メッセージモードに戻す
   _groupMsgIsComment = false;
+  currentGroupSelectId = null;
   const title = document.getElementById('gm-modal-title');
   if (title) title.textContent = '💬 メッセージを送る';
   const qbtns = document.getElementById('gm-quick-btns');
@@ -2349,10 +3091,12 @@ window.setGQM = function(text) {
 };
 let _groupMsgIsComment = false; // コメントモード（空欄送信OK）
 
-window.openGroupCommentModal = function(gid, context) {
+window.openGroupCommentModal = function(gid, context, isSelectMode = false) {
   _groupMsgGid = gid;
   _groupMsgIsComment = true;
-  const name = gid === 'all' ? '全班' : (groupDefs[gid]?.name || gid);
+  currentGroupSelectId = isSelectMode ? gid : null; // groupsSelectモードを設定
+  const targetDefs = isSelectMode ? groupSelectDefs : groupDefs;
+  const name = gid === 'all' ? '全班' : (targetDefs[gid]?.name || gid);
   document.getElementById('gm-modal-title').textContent = '💬 コメントを追加（任意）';
   document.getElementById('gmtarget').textContent = `${context} — ${name}`;
   document.getElementById('gminput').value = '';
@@ -2368,18 +3112,28 @@ window.sendGroupMessage = function() {
   const text = document.getElementById('gminput').value.trim();
   if (!_groupMsgIsComment && !text) { toast('⚠️ メッセージを入力してください'); return; }
   const { ref, set } = window.FB;
+  
+  // groupsSelectモードかどうかを判定
+  const isSelectMode = currentGroupSelectId !== null;
+  const basePath = isSelectMode ? 'groupsSelect' : 'groups';
+  const targetDefs = isSelectMode ? groupSelectDefs : groupDefs;
+  const targetGid = isSelectMode ? currentGroupSelectId : _groupMsgGid;
+  
   if (text) {
     // テキストがある場合のみメッセージを送信
-    if (_groupMsgGid === 'all') {
-      for (const gid of Object.keys(groupDefs)) {
-        set(ref(db, `sessions/${sessionId}/groups/${gid}/message`), { text, ts: Date.now() });
+    if (targetGid === 'all') {
+      for (const gid of Object.keys(targetDefs)) {
+        set(ref(db, `sessions/${sessionId}/${basePath}/${gid}/message`), { text, ts: Date.now() });
       }
       if (!_groupMsgIsComment) toast('💬 全班にメッセージを送りました');
     } else {
-      set(ref(db, `sessions/${sessionId}/groups/${_groupMsgGid}/message`), { text, ts: Date.now() });
-      if (!_groupMsgIsComment) toast(`💬 ${groupDefs[_groupMsgGid]?.name || _groupMsgGid} にメッセージを送りました`);
+      set(ref(db, `sessions/${sessionId}/${basePath}/${targetGid}/message`), { text, ts: Date.now() });
+      if (!_groupMsgIsComment) toast(`💬 ${targetDefs[targetGid]?.name || targetGid} にメッセージを送りました`);
     }
   }
+  
+  // モードをリセット
+  currentGroupSelectId = null;
   window.closeGroupMsgModal();
 };
 
@@ -2424,6 +3178,732 @@ function listenGroups() {
     if (currentView === 'group') renderGroupPanel();
   });
 }
+
+// ===== 班別学習(番号選択) =====
+let groupSelectDefs = {};      // {groupId: {name, members:{uid:status}}} status: 'pending'/'approved'
+let groupSelectListeners = {}; // groupId → unsubscribe関数
+let groupSelectState = {};     // {groupId: {wbActive, hasImg}} 消去ボタン判定用
+let groupSelectActive = false; // 選択指示が有効かどうか
+
+function renderGroupSelectPanel() {
+  const saved = Object.keys(groupSelectDefs).filter(gid => {
+    const g = groupSelectDefs[gid];
+    return Object.values(g.members || {}).some(s => s === 'approved');
+  }).length > 0;
+  
+  document.getElementById('selection-status-area').style.display = groupSelectActive ? 'block' : 'none';
+  document.getElementById('group-select-content-area').style.display = saved ? 'block' : 'none';
+  
+  if (groupSelectActive) renderSelectionStatus();
+  if (saved) renderGroupSelectContentArea();
+}
+
+// 班選択を指示
+window.startGroupSelection = async function() {
+  const raw = document.getElementById('group-select-count').value.trim();
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n) || n < 2 || n > 25) { 
+    toast('⚠️ 班の数を2〜25の整数で入力してください'); 
+    return; 
+  }
+  
+  const { ref, set, remove } = window.FB;
+  
+  // 既存の選択データをリセット
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect`));
+  
+  groupSelectDefs = {};
+  for (let i = 1; i <= n; i++) {
+    const gid = 'gs' + i;
+    groupSelectDefs[gid] = { name: `${i}班`, members: {} };
+  }
+  
+  // Firebaseに班構造を保存
+  for (const [gid, g] of Object.entries(groupSelectDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}`), {
+      name: g.name,
+      members: g.members || {},
+      createdAt: Date.now()
+    });
+  }
+  
+  // 選択指示を有効化
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/active`), true);
+  groupSelectActive = true;
+  
+  toast('✅ 生徒に班選択を指示しました');
+  renderGroupSelectPanel();
+};
+
+// 選択状況を表示
+function renderSelectionStatus() {
+  const cols = document.getElementById('group-select-columns');
+  const unselected = document.getElementById('unselected-list');
+  cols.innerHTML = '';
+  unselected.innerHTML = '';
+  
+  // 班ごとの列を作成
+  Object.entries(groupSelectDefs).sort((a,b) => {
+    const na = parseInt(a[0].replace('gs',''));
+    const nb = parseInt(b[0].replace('gs',''));
+    return na - nb;
+  }).forEach(([gid, g]) => {
+    const col = document.createElement('div');
+    col.style.cssText = 'background:var(--surface);border-radius:8px;padding:10px;border:1px solid var(--border);';
+    
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+    header.innerHTML = `<span style="font-size:13px;font-weight:700;color:var(--accent);">${g.name}</span>`;
+    
+    // 班ごとの許可/解散ボタン
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;gap:4px;';
+    
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'btn';
+    approveBtn.style.cssText = 'padding:3px 8px;font-size:10px;background:#10b981;color:#fff;';
+    approveBtn.textContent = '✅ 許可';
+    approveBtn.onclick = () => approveGroup(gid);
+    
+    const dissolveBtn = document.createElement('button');
+    dissolveBtn.className = 'btn';
+    dissolveBtn.style.cssText = 'padding:3px 8px;font-size:10px;background:#ef4444;color:#fff;';
+    dissolveBtn.textContent = '❌ 解散';
+    dissolveBtn.onclick = () => dissolveGroup(gid);
+    
+    btnWrap.appendChild(approveBtn);
+    btnWrap.appendChild(dissolveBtn);
+    header.appendChild(btnWrap);
+    col.appendChild(header);
+    
+    // メンバー表示
+    const memberList = document.createElement('div');
+    memberList.style.cssText = 'display:flex;flex-direction:column;gap:4px;min-height:40px;';
+    
+    Object.entries(g.members || {}).forEach(([uid, status]) => {
+      if (students[uid]) {
+        const chip = document.createElement('div');
+        chip.style.cssText = 'display:flex;align-items:center;gap:6px;background:var(--surface2);border-radius:6px;padding:4px 8px;font-size:11px;border:1px solid var(--border);';
+        
+        const statusBadge = status === 'approved' 
+          ? '<span style="background:#10b981;color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;">確定</span>'
+          : '<span style="background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;">待機</span>';
+        
+        chip.innerHTML = `<img src="${students[uid].photoURL||''}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'"> ${students[uid].name||students[uid].email||uid} ${statusBadge}`;
+        memberList.appendChild(chip);
+      }
+    });
+    
+    col.appendChild(memberList);
+    cols.appendChild(col);
+  });
+  
+  // 未選択生徒
+  const selectedUids = new Set();
+  Object.values(groupSelectDefs).forEach(g => {
+    Object.keys(g.members || {}).forEach(uid => selectedUids.add(uid));
+  });
+  
+  Object.keys(students).forEach(uid => {
+    if (!selectedUids.has(uid)) {
+      const chip = document.createElement('div');
+      chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border-radius:6px;padding:4px 8px;font-size:11px;border:1px solid var(--border);';
+      chip.innerHTML = `<img src="${students[uid].photoURL||''}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'"> ${students[uid].name||students[uid].email||uid}`;
+      unselected.appendChild(chip);
+    }
+  });
+}
+
+// 班を許可
+window.approveGroup = async function(gid) {
+  const { ref, set } = window.FB;
+  const g = groupSelectDefs[gid];
+  if (!g || !g.members) return;
+  
+  const promises = Object.keys(g.members).map(uid => {
+    groupSelectDefs[gid].members[uid] = 'approved';
+    return set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`), 'approved');
+  });
+  
+  await Promise.all(promises);
+  toast(`✅ ${g.name}を許可しました`);
+  renderGroupSelectPanel();
+};
+
+// 班を解散
+window.dissolveGroup = async function(gid) {
+  const { ref, remove } = window.FB;
+  const g = groupSelectDefs[gid];
+  if (!g) return;
+  
+  if (!confirm(`${g.name}を解散しますか？`)) return;
+  
+  // WBと画像を回収
+  await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
+  await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`));
+  
+  // メンバーを削除するが、active状態は維持（他の班が選択中の場合があるため）
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members`));
+  groupSelectDefs[gid].members = {};
+  
+  toast(`${g.name}を解散しました`);
+  renderGroupSelectPanel();
+};
+
+// 全班許可
+window.approveAllGroups = async function() {
+  const { ref, set } = window.FB;
+  const promises = [];
+  
+  Object.entries(groupSelectDefs).forEach(([gid, g]) => {
+    Object.keys(g.members || {}).forEach(uid => {
+      groupSelectDefs[gid].members[uid] = 'approved';
+      promises.push(set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}/members/${uid}`), 'approved'));
+    });
+  });
+  
+  await Promise.all(promises);
+  toast('✅ 全ての班を許可しました');
+  renderGroupSelectPanel();
+};
+
+// 全班解散
+window.dissolveAllGroups = async function() {
+  if (!confirm('全ての班を解散しますか？')) return;
+  
+  const { ref, remove, set } = window.FB;
+  
+  Object.keys(groupSelectDefs).forEach(gid => {
+    groupSelectDefs[gid].members = {};
+  });
+  
+  // 全班のWBと画像を回収
+  await remove(ref(db, `sessions/${sessionId}/groupSelectWB`));
+  await remove(ref(db, `sessions/${sessionId}/groupSelectImg`));
+  
+  await remove(ref(db, `sessions/${sessionId}/groupsSelect`));
+  
+  // 班構造だけ再作成
+  for (const [gid, g] of Object.entries(groupSelectDefs)) {
+    await set(ref(db, `sessions/${sessionId}/groupsSelect/${gid}`), {
+      name: g.name,
+      members: {},
+      createdAt: Date.now()
+    });
+  }
+  await set(ref(db, `sessions/${sessionId}/groupsSelect/active`), true);
+  
+  toast('全ての班を解散しました');
+  renderGroupSelectPanel();
+};
+
+// ===== 班別モニタリングUI (番号選択) =====
+let _groupSelectCols = 2;
+
+window.setGroupSelectCols = function(n) {
+  _groupSelectCols = n;
+  const grid = document.getElementById('group-select-monitor-grid');
+  if (grid) grid.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`;
+  [2,3,4].forEach(i => {
+    const btn = document.getElementById('gscol-' + i);
+    if (!btn) return;
+    if (i === n) {
+      btn.style.background = 'var(--accent)'; btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--accent)';
+    } else {
+      btn.style.background = 'var(--surface)'; btn.style.color = 'var(--text)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  });
+};
+
+function renderGroupSelectContentArea() {
+  const grid = document.getElementById('group-select-monitor-grid');
+  const bulkPanel = document.getElementById('group-select-bulk-panel');
+  
+  const approvedGroups = Object.entries(groupSelectDefs).filter(([gid, g]) => {
+    return Object.values(g.members || {}).some(s => s === 'approved');
+  });
+  
+  if (approvedGroups.length === 0) {
+    if (grid) grid.innerHTML = '<p style="color:var(--muted);font-size:13px;">確定済みの班がありません</p>';
+    if (bulkPanel) bulkPanel.style.display = 'none';
+    return;
+  }
+  
+  // 既存のプレビューリスナーをすべて解除
+  Object.keys(groupSelectListeners).forEach(key => {
+    if (key.endsWith('_prev') && typeof groupSelectListeners[key] === 'function') {
+      groupSelectListeners[key]();
+      delete groupSelectListeners[key];
+    }
+  });
+  
+  if (bulkPanel) bulkPanel.style.display = 'block';
+  grid.style.gridTemplateColumns = `repeat(${_groupSelectCols},minmax(0,1fr))`;
+  grid.innerHTML = '';
+  
+  approvedGroups.sort((a,b) => {
+    const na = parseInt(a[0].replace('gs',''));
+    const nb = parseInt(b[0].replace('gs',''));
+    return na - nb;
+  }).forEach(([gid, g]) => {
+    const approvedMembers = Object.entries(g.members || {}).filter(([uid, status]) => status === 'approved').map(([uid]) => uid);
+    
+    const card = document.createElement('div');
+    card.id = 'gscard-' + gid;
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;';
+    
+    // ヘッダー
+    const header = document.createElement('div');
+    header.style.cssText = 'background:var(--surface2);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;';
+    const titleWrap = document.createElement('div');
+    titleWrap.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    const gname = document.createElement('span');
+    gname.style.cssText = 'font-weight:700;font-size:14px;color:var(--text);';
+    gname.textContent = g.name;
+    titleWrap.appendChild(gname);
+    approvedMembers.forEach(uid => {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:1px 8px;';
+      chip.textContent = students[uid]?.name || uid.slice(0,6);
+      titleWrap.appendChild(chip);
+    });
+    header.appendChild(titleWrap);
+    
+    const statusBadge = document.createElement('span');
+    statusBadge.id = 'gsstatus-' + gid;
+    statusBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:99px;background:var(--surface);border:1px solid var(--border);color:var(--muted);';
+    statusBadge.textContent = '未配布';
+    header.appendChild(statusBadge);
+    card.appendChild(header);
+    
+    // プレビュー
+    const preview = document.createElement('div');
+    preview.id = 'gsprev-' + gid;
+    preview.style.cssText = 'flex:1;min-height:120px;background:#fff;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;border-bottom:1px solid var(--border);overflow:hidden;';
+    preview.innerHTML = `<div id="gsprev-placeholder-${gid}" style="display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0.35;">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/></svg>
+      <span style="font-size:11px;color:var(--muted);">未配布</span>
+    </div>
+    <canvas id="gsprev-canvas-${gid}" style="display:none;width:100%;height:100%;object-fit:contain;"></canvas>
+    <img id="gsprev-img-${gid}" style="display:none;width:100%;height:100%;object-fit:contain;" />`;
+    preview.onclick = () => openGroupSelectZoom(gid);
+    card.appendChild(preview);
+    
+    // 操作ボタン
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:grid;grid-template-columns:repeat(6,1fr);gap:0;border-top:1px solid var(--border);';
+    const btns = [
+      { label:'WB配布', icon:'<path d="M3 3h18v18H3z" stroke-linejoin="round"/><path d="M8 12h8M12 8v8"/>', color:'#2563eb', action:`openGroupSelectWb('${gid}')`, id:`gsbtn-wb-open-${gid}` },
+      { label:'WB回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`closeGroupSelectWb('${gid}')`, id:`gsbtn-wb-close-${gid}` },
+      { label:'画像配布', icon:'<rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-4 4-2-2-4 4"/>', color:'#2563eb', action:`sendGroupSelectImg('${gid}')`, id:`gsbtn-img-open-${gid}` },
+      { label:'画像回収', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#ef4444', action:`collectGroupSelectImg('${gid}')`, id:`gsbtn-img-close-${gid}` },
+      { label:'書込消去', icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', color:'#dc2626', action:`clearGroupSelectDrawings('${gid}')`, id:'' },
+      { label:'メッセージ', icon:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>', color:'#7c3aed', action:`sendGroupSelectMsg('${gid}')`, id:'' },
+    ];
+    btns.forEach((b, i) => {
+      const btn = document.createElement('button');
+      if (b.id) btn.id = b.id;
+      btn.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 2px;font-size:10px;background:var(--surface);border:none;border-right:${i<5?'1px solid var(--border)':'none'};cursor:pointer;color:var(--muted);transition:.1s;`;
+      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${b.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${b.icon}</svg>${b.label}`;
+      btn.onmouseenter = () => btn.style.background = 'var(--surface2)';
+      btn.onmouseleave = () => btn.style.background = 'var(--surface)';
+      btn.onclick = () => eval(b.action);
+      actions.appendChild(btn);
+    });
+    card.appendChild(actions);
+    grid.appendChild(card);
+    
+    listenGroupSelectPreview(gid);
+  });
+}
+
+// プレビュー監視
+function listenGroupSelectPreview(gid) {
+  if (groupSelectListeners[gid + '_prev']) {
+    groupSelectListeners[gid + '_prev']();
+    delete groupSelectListeners[gid + '_prev'];
+  }
+  const { ref, onValue } = window.FB;
+  
+  let wbSnapshot  = null;
+  let distImgData = null;
+  
+  function redraw() {
+    const badge       = document.getElementById('gsstatus-' + gid);
+    const placeholder = document.getElementById('gsprev-placeholder-' + gid);
+    const canvas      = document.getElementById('gsprev-canvas-' + gid);
+    const imgEl       = document.getElementById('gsprev-img-' + gid);
+    if (!canvas) return;
+    
+    const wbActive = wbSnapshot?.active === true;
+    const hasImg   = distImgData !== null;
+    groupSelectState[gid] = { wbActive, hasImg };
+    
+    if (wbActive || hasImg) {
+      if (imgEl) imgEl.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'none';
+      canvas.style.display = 'block';
+      canvas.style.margin = 'auto';  // 中央配置
+      if (badge) {
+        if (wbActive) { badge.textContent = 'WB配布中'; badge.style.background='#dbeafe'; badge.style.color='#1d4ed8'; badge.style.borderColor='#93c5fd'; }
+        else          { badge.textContent = '画像配布中'; badge.style.background='#dcfce7'; badge.style.color='#15803d'; badge.style.borderColor='#86efac'; }
+      }
+      requestAnimationFrame(() => {
+        const parent = canvas.parentElement;
+        const parentWidth = parent?.offsetWidth || 280;
+        const parentHeight = parent?.offsetHeight || 158;
+        const parentAspect = parentWidth / parentHeight;
+        const targetAspect = 16 / 9;
+        
+        let W, H;
+        if (parentAspect > targetAspect) {
+          H = Math.round(parentHeight);
+          W = Math.round(parentHeight * targetAspect);
+        } else {
+          W = Math.round(parentWidth);
+          H = Math.round(parentWidth / targetAspect);
+        }
+        
+        if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+        const bgUrl = hasImg ? distImgData.dataUrl : null;
+        const strokes = wbActive ? (wbSnapshot?.strokes || null) : (hasImg ? (distImgData?.strokes || null) : null);
+        const texts   = wbActive ? (wbSnapshot?.texts   || null) : (hasImg ? (distImgData?.texts   || null) : null);
+        replayWithBg(canvas, strokes, bgUrl, texts);
+      });
+    } else {
+      canvas.style.display = 'none';
+      if (imgEl) imgEl.style.display = 'none';
+      if (badge) { badge.textContent = '未配布'; badge.style.background='var(--surface)'; badge.style.color='var(--muted)'; badge.style.borderColor='var(--border)'; }
+      if (placeholder) placeholder.style.display = 'flex';
+    }
+  }
+  
+  const unsubWb = onValue(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`), snap => {
+    wbSnapshot = snap.exists() ? snap.val() : null;
+    redraw();
+  });
+  
+  const unsubImg = onValue(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`), snap => {
+    distImgData = snap.exists() ? snap.val() : null;
+    redraw();
+  });
+  
+  // WB と Img の strokes/texts も個別監視してリアルタイム更新
+  const unsubWbStrokes = onValue(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/strokes`), () => redraw());
+  const unsubWbTexts   = onValue(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/texts`),   () => redraw());
+  const unsubImgStrokes = onValue(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}/strokes`), () => redraw());
+  const unsubImgTexts   = onValue(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}/texts`),   () => redraw());
+  
+  groupSelectListeners[gid + '_prev'] = () => { unsubWb(); unsubImg(); unsubWbStrokes(); unsubWbTexts(); unsubImgStrokes(); unsubImgTexts(); };
+}
+
+// WB配布
+window.openGroupSelectWb = async function(gid) {
+  // ダブルクリック防止
+  if (window._wbOpenPending) {
+    console.log('[Teacher] WB配布処理中のため、リクエストを無視');
+    return;
+  }
+  window._wbOpenPending = true;
+  
+  try {
+    console.log('[Teacher] openGroupSelectWb呼び出し - gid:', gid);
+    const { ref, set, get } = window.FB;
+    const wbPath = `sessions/${sessionId}/groupSelectWB/${gid}`;
+    console.log('[Teacher] WBパス:', wbPath);
+    
+    // 既存のWBデータを確認
+    const wbSnap = await get(ref(db, wbPath));
+    
+    if (!wbSnap.exists()) {
+      // 初回作成：完全なオブジェクトを作成
+      console.log('[Teacher] 初回WB作成');
+      await set(ref(db, wbPath), {
+        active: true,
+        strokes: {},
+        texts: {}
+      });
+    } else {
+      // 既に存在する場合：activeフラグだけ更新
+      const activePath = `${wbPath}/active`;
+      console.log('[Teacher] activeフラグ更新:', activePath);
+      await set(ref(db, activePath), true);
+    }
+    
+    console.log('[Teacher] WB配布完了');
+    toast(`✅ ${groupSelectDefs[gid]?.name || gid} にWBを配布しました`);
+  } finally {
+    window._wbOpenPending = false;
+  }
+};
+
+window.closeGroupSelectWb = async function(gid) {
+  const { ref, remove } = window.FB;
+  await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
+  toast(`🗑 ${groupSelectDefs[gid]?.name || gid} のWBを回収しました`);
+};
+
+window.openAllGroupSelectWb = async function() {
+  const { ref, set } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    // activeフラグのパスだけに書き込む
+    await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/active`), true);
+  }
+  toast('✅ 全班にWBを配布しました');
+  // コメントモーダルを表示（任意入力）
+  openGroupCommentModal('all', 'WB配布', true); // 第3引数でgroupsSelectモードを示す
+};
+
+window.closeAllGroupSelectWb = async function() {
+  const { ref, remove } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}`));
+  }
+  toast('🗑 全班のWBを回収しました');
+};
+
+// 画像配布（教員作成版と同じ即座選択方式）
+window.sendGroupSelectImg = async function(gid) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const { ref, set } = window.FB;
+      await set(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`), {
+        dataUrl: e.target.result,
+        active: true,
+        strokes: null,
+        texts: null,
+        ts: Date.now()
+      });
+      toast(`✅ ${groupSelectDefs[gid]?.name || gid} に画像を配布しました`);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+};
+
+window.collectGroupSelectImg = async function(gid) {
+  const { ref, remove } = window.FB;
+  await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`));
+  toast(`🗑 ${groupSelectDefs[gid]?.name || gid} の画像を回収しました`);
+};
+
+window.clearGroupSelectDrawings = async function(gid) {
+  const gname = groupSelectDefs[gid]?.name || '班';
+  const state = groupSelectState[gid] || {};
+  const {ref, remove} = window.FB;
+  if (state.wbActive) {
+    if (!confirm(`${gname} のホワイトボード書き込みを消去しますか？`)) return;
+    await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/strokes`));
+    await remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/texts`));
+    toast(`🗑️ ${gname} のWBを消去しました`);
+  } else if (state.hasImg) {
+    if (!confirm(`${gname} の画像書き込みを消去しますか？`)) return;
+    await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}/strokes`));
+    await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}/texts`));
+    toast(`🗑️ ${gname} の画像書き込みを消去しました`);
+  } else {
+    toast('⚠️ 現在配布中のコンテンツがありません');
+  }
+};
+
+window.sendAllGroupSelectImg = async function() {
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  if (approved.length === 0) {
+    toast('⚠️ 確定済みの班がありません');
+    return;
+  }
+  
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      const { ref, set } = window.FB;
+      await Promise.all(approved.map(([gid]) =>
+        set(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`), {
+          dataUrl: dataUrl,
+          active: true,
+          strokes: null,
+          texts: null,
+          ts: Date.now()
+        })
+      ));
+      toast('✅ 全班に画像を配布しました');
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+};
+
+window.collectAllGroupSelectImg = async function() {
+  const { ref, remove } = window.FB;
+  const approved = Object.entries(groupSelectDefs).filter(([gid, g]) => 
+    Object.values(g.members || {}).some(s => s === 'approved')
+  );
+  for (const [gid] of approved) {
+    await remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}`));
+  }
+  toast('🗑 全班の画像を回収しました');
+};
+
+// メッセージ送信
+window.sendGroupSelectMsg = function(gid) {
+  const g = groupSelectDefs[gid];
+  if (!g) return;
+  currentGroupSelectId = gid;
+  document.getElementById('gm-modal-title').textContent = `💬 ${g.name}にメッセージ`;
+  document.getElementById('gmtarget').textContent = `送信先: ${g.name}の全員`;
+  document.getElementById('gminput').value = '';
+  document.getElementById('group-msg-modal').style.display = 'flex';
+};
+
+// 拡大表示
+window.openGroupSelectZoom = function(gid) {
+  const g = groupSelectDefs[gid];
+  if (!g) return;
+
+  const approvedMembers = Object.entries(g.members || {})
+    .filter(([, status]) => status === 'approved')
+    .map(([uid]) => uid);
+
+  document.getElementById('gs-zoom-gid').dataset.gid = gid;
+  document.getElementById('gs-zoom-title').textContent = `${g.name}（${approvedMembers.length}名）`;
+
+  const membersEl = document.getElementById('gs-zoom-members');
+  membersEl.innerHTML = '';
+  approvedMembers.forEach(uid => {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'font-size:13px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:3px 12px;';
+    chip.textContent = students[uid]?.name || uid.slice(0, 6);
+    membersEl.appendChild(chip);
+  });
+
+  const canvas    = document.getElementById('gs-zoom-canvas');
+  const imgEl     = document.getElementById('gs-zoom-img');
+  const nopreview = document.getElementById('gs-zoom-nopreview');
+  canvas.style.display    = 'none';
+  imgEl.style.display     = 'none';
+  nopreview.style.display = 'block';
+
+  if (window._gsZoomUnsubs) window._gsZoomUnsubs.forEach(f => f());
+  window._gsZoomUnsubs = [];
+  const { ref: fbRef, onValue: fbOnValue } = window.FB;
+
+  let _zoomWbSnap  = null;
+  let _zoomImgData = null;
+
+  function gsZoomRedraw() {
+    const wbActive = _zoomWbSnap?.active === true;
+    const hasImg   = _zoomImgData !== null;
+    if (!wbActive && !hasImg) {
+      canvas.style.display = 'none'; imgEl.style.display = 'none'; nopreview.style.display = 'block';
+      return;
+    }
+    nopreview.style.display = 'none'; imgEl.style.display = 'none'; canvas.style.display = 'block';
+    canvas.style.margin = 'auto';  // 中央配置
+    requestAnimationFrame(() => {
+      const container = document.getElementById('gs-zoom-preview');
+      const W = container.offsetWidth || 820;
+      const H = Math.round(W * 9 / 16);  // 16:9のアスペクト比
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+      const bgUrl   = hasImg ? _zoomImgData.dataUrl : null;
+      const strokes = wbActive ? (_zoomWbSnap?.strokes || null) : (hasImg ? (_zoomImgData?.strokes || null) : null);
+      const texts   = wbActive ? (_zoomWbSnap?.texts   || null) : (hasImg ? (_zoomImgData?.texts   || null) : null);
+      replayWithBg(canvas, strokes, bgUrl, texts);
+    });
+  }
+
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectWB/${gid}`), wbSnap => {
+    _zoomWbSnap = wbSnap.exists() ? wbSnap.val() : null;
+    gsZoomRedraw();
+  }));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectImg/${gid}`), imgSnap => {
+    _zoomImgData = (imgSnap.exists() && imgSnap.val()?.active === true) ? imgSnap.val() : null;
+    gsZoomRedraw();
+  }));
+  // WB と Img の strokes/texts の変化も監視してリアルタイム更新
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectWB/${gid}/strokes`), () => gsZoomRedraw()));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectWB/${gid}/texts`),   () => gsZoomRedraw()));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectImg/${gid}/strokes`), () => gsZoomRedraw()));
+  window._gsZoomUnsubs.push(fbOnValue(fbRef(db, `sessions/${sessionId}/groupSelectImg/${gid}/texts`),   () => gsZoomRedraw()));
+
+  document.getElementById('gs-zoom-modal').style.display = 'flex';
+};
+
+window.closeGroupSelectZoom = function() {
+  document.getElementById('gs-zoom-modal').style.display = 'none';
+  if (window._gsZoomUnsubs) { window._gsZoomUnsubs.forEach(f => f()); window._gsZoomUnsubs = []; }
+};
+
+// Firebaseリスナー
+function listenGroupSelectData() {
+  console.log('[Teacher GroupSelect] listenGroupSelectData開始 - VERSION: 2025-01-16-v30 (strokes/texts個別監視追加)');
+  const { ref, onValue, onChildAdded, onChildRemoved, onChildChanged } = window.FB;
+  
+  onValue(ref(db, `sessions/${sessionId}/groupsSelect/active`), snap => {
+    groupSelectActive = snap.exists() ? snap.val() : false;
+    if (currentView === 'group-select') renderGroupSelectPanel();
+  });
+  
+  // child_added/removed/changedを使うことで、必要最小限の更新のみを検知
+  const groupsRef = ref(db, `sessions/${sessionId}/groupsSelect`);
+  
+  onChildAdded(groupsRef, snap => {
+    if (snap.key === 'active') return;
+    console.log('[Teacher GroupSelect] 班追加:', snap.key);
+    const g = snap.val();
+    groupSelectDefs[snap.key] = {
+      name: g.name,
+      members: g.members || {},
+      createdAt: g.createdAt
+    };
+    if (currentView === 'group-select') renderGroupSelectPanel();
+  });
+  
+  onChildRemoved(groupsRef, snap => {
+    if (snap.key === 'active') return;
+    console.log('[Teacher GroupSelect] 班削除:', snap.key);
+    delete groupSelectDefs[snap.key];
+    if (currentView === 'group-select') renderGroupSelectPanel();
+  });
+  
+  onChildChanged(groupsRef, snap => {
+    if (snap.key === 'active') return;
+    console.log('[Teacher GroupSelect] 班変更:', snap.key);
+    const g = snap.val();
+    groupSelectDefs[snap.key] = {
+      name: g.name,
+      members: g.members || {},
+      createdAt: g.createdAt
+    };
+    // デバウンスを使って過剰なrenderを防ぐ
+    clearTimeout(window._gsRenderDebounce);
+    window._gsRenderDebounce = setTimeout(() => {
+      if (currentView === 'group-select') renderGroupSelectPanel();
+    }, 500);  // 500ms待ってから1回だけrender
+  });
+}
+
 
 </script>
 </body>

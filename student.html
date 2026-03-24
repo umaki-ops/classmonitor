@@ -816,123 +816,53 @@
       let _tabIsAway = false;
       let _tabAwayStartTs = null;
 
-      // ===== ChromeOS対策: タブ非表示中のキャンバス代替フレーム送信 =====
-      // ChromeOSではタブ共有中にタブが非表示になるとレンダリングが止まり黒画面になる。
-      // 非表示中はキャンバスで生成したフレームをRTCトラックに差し込んで送信を維持し、
-      // 復帰時に元のストリームのトラックに戻す。
-      let _keepAliveCanvas = null;
-      let _keepAliveCtx = null;
-      let _keepAliveStream = null;
-      let _keepAliveRafId = null;
-      let _originalTrack = null; // 復帰時に戻すための元トラック
+      // ===== デバッグ: タブ切り替え時のWebRTC状態を調べる =====
+      const _dbgEl = document.createElement('div');
+      _dbgEl.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,.85);color:#0f0;font:11px monospace;padding:6px;z-index:99999;max-height:180px;overflow-y:auto;white-space:pre-wrap;';
+      document.body.appendChild(_dbgEl);
+      function _dbg(msg) {
+        const t = new Date().toISOString().slice(11,23);
+        _dbgEl.textContent = `[${t}] ${msg}\n` + _dbgEl.textContent;
+      }
 
-      function _startKeepAlive() {
-        if (!pc || !localStream) return;
-        const videoTrack = localStream.getVideoTracks()[0];
-        if (!videoTrack) return;
-
-        // キャンバスを一度だけ生成
-        if (!_keepAliveCanvas) {
-          _keepAliveCanvas = document.createElement('canvas');
-          _keepAliveCanvas.width = 1280;
-          _keepAliveCanvas.height = 720;
-          _keepAliveCtx = _keepAliveCanvas.getContext('2d');
-        }
-
-        // キャンバスに「離席中」表示を描画し続ける
-        let _frame = 0;
-        function _drawFrame() {
-          if (!_keepAliveCtx) return;
-          _frame++;
-          // 背景
-          _keepAliveCtx.fillStyle = '#1e293b';
-          _keepAliveCtx.fillRect(0, 0, 1280, 720);
-          // テキスト（フレームカウンタを変化させてエンコーダーを生かし続ける）
-          _keepAliveCtx.fillStyle = '#94a3b8';
-          _keepAliveCtx.font = 'bold 32px sans-serif';
-          _keepAliveCtx.textAlign = 'center';
-          _keepAliveCtx.fillText('画面共有中', 640, 340);
-          // 1px変化させてエンコーダーがフレームをスキップしないようにする
-          _keepAliveCtx.fillStyle = `rgba(255,255,255,${(_frame % 2) * 0.004})`;
-          _keepAliveCtx.fillRect(0, 0, 1, 1);
-          _keepAliveRafId = requestAnimationFrame(_drawFrame);
-        }
-        _drawFrame();
-
-        // キャンバスストリームを取得してトラックを差し替え
-        _keepAliveStream = _keepAliveCanvas.captureStream(30);
-        const canvasTrack = _keepAliveStream.getVideoTracks()[0];
-        if (!canvasTrack) return;
-
-        // 元のトラックを保存してからsenderのトラックをキャンバスに切り替え
-        _originalTrack = videoTrack;
-        const senders = pc.getSenders();
-        for (const sender of senders) {
-          if (sender.track && sender.track.kind === 'video') {
-            sender.replaceTrack(canvasTrack).catch(() => {});
-            break;
-          }
+      async function _dumpSenderStats() {
+        if (!pc) { _dbg('pc: null'); return; }
+        _dbg(`pc.connectionState: ${pc.connectionState} / iceState: ${pc.iceConnectionState}`);
+        for (const sender of pc.getSenders()) {
+          if (!sender.track) { _dbg('sender: no track'); continue; }
+          const t = sender.track;
+          _dbg(`track: kind=${t.kind} enabled=${t.enabled} readyState=${t.readyState} muted=${t.muted}`);
+          try {
+            const stats = await pc.getStats(sender.track);
+            stats.forEach(s => {
+              if (s.type === 'outbound-rtp' && s.kind === 'video') {
+                _dbg(`outbound: fps=${s.framesPerSecond ?? '?'} framesSent=${s.framesSent} bytesSent=${s.bytesSent} active=${s.active}`);
+              }
+            });
+          } catch(e) { _dbg('getStats error: '+e.message); }
         }
       }
 
-      function _stopKeepAlive() {
-        // rAFを止める
-        if (_keepAliveRafId) { cancelAnimationFrame(_keepAliveRafId); _keepAliveRafId = null; }
+      document.addEventListener('visibilitychange', async () => {
+        _dbg(`visibility → ${document.hidden ? 'HIDDEN' : 'VISIBLE'}`);
+        await _dumpSenderStats();
 
-        // 元のトラックに戻す
-        if (pc && _originalTrack) {
-          const senders = pc.getSenders();
-          for (const sender of senders) {
-            if (sender.track && sender.track.kind === 'video') {
-              sender.replaceTrack(_originalTrack).catch(() => {});
-              break;
-            }
-          }
-        }
-        _originalTrack = null;
-
-        // キャンバスストリームのトラックを停止
-        if (_keepAliveStream) {
-          _keepAliveStream.getTracks().forEach(t => t.stop());
-          _keepAliveStream = null;
-        }
-      }
-
-      document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
-
         if (document.hidden) {
-          // タブが非表示 → キャンバス代替フレームで送信を維持
-          _startKeepAlive();
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
-
           if (!_tabIsAway) {
-            _tabIsAway = true;
-            _tabAwayCount++;
-            _tabAwayStartTs = Date.now();
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
-              away: true, count: _tabAwayCount, ts: _tabAwayStartTs
-            });
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
-              startTs: _tabAwayStartTs
-            });
+            _tabIsAway = true; _tabAwayCount++; _tabAwayStartTs = Date.now();
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), { away: true, count: _tabAwayCount, ts: _tabAwayStartTs });
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), { startTs: _tabAwayStartTs });
           }
+          // 3秒後に再度stats確認
+          setTimeout(async () => { _dbg('--- 3s after hidden ---'); await _dumpSenderStats(); }, 3000);
         } else {
-          // タブに戻った → 元のトラックに復帰
-          _stopKeepAlive();
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
-
           if (_tabIsAway) {
-            _tabIsAway = false;
-            const endTs = Date.now();
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
-              away: false, count: _tabAwayCount, ts: endTs
-            });
-            if (_tabAwayStartTs) {
-              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
-                startTs: _tabAwayStartTs, endTs: endTs
-              });
-            }
+            _tabIsAway = false; const endTs = Date.now();
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), { away: false, count: _tabAwayCount, ts: endTs });
+            if (_tabAwayStartTs) set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), { startTs: _tabAwayStartTs, endTs });
             _tabAwayStartTs = null;
           }
         }
@@ -1125,7 +1055,6 @@
     };
     window.stopShare = function() {
       window._shareActive = false;
-      _stopKeepAlive(); // キャンバス代替フレームを停止してから
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
       if (pc) { pc.close(); pc = null; }
       showState('connected');

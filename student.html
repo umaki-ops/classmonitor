@@ -816,48 +816,95 @@
       let _tabIsAway = false;
       let _tabAwayStartTs = null;
 
-      // ===== 案1: タブ非表示中の定期キーフレーム強制送信 =====
-      let _keyframeInterval = null;
+      // ===== ChromeOS対策: タブ非表示中のキャンバス代替フレーム送信 =====
+      // ChromeOSではタブ共有中にタブが非表示になるとレンダリングが止まり黒画面になる。
+      // 非表示中はキャンバスで生成したフレームをRTCトラックに差し込んで送信を維持し、
+      // 復帰時に元のストリームのトラックに戻す。
+      let _keepAliveCanvas = null;
+      let _keepAliveCtx = null;
+      let _keepAliveStream = null;
+      let _keepAliveRafId = null;
+      let _originalTrack = null; // 復帰時に戻すための元トラック
 
-      function _forceSenderKeyframe() {
-        if (!pc) return;
-        for (const sender of pc.getSenders()) {
-          if (!sender.track || sender.track.kind !== 'video') continue;
-          try {
-            // Chrome 114+: generateKeyFrame() で即座にIフレームを生成
-            if (typeof sender.generateKeyFrame === 'function') {
-              sender.generateKeyFrame().catch(() => {});
-              continue;
-            }
-            // フォールバック: degradationPreference を一瞬変更してエンコーダーを刺激
-            const p = sender.getParameters();
-            if (p.encodings && p.encodings.length > 0) {
-              const prev = p.encodings[0].degradationPreference;
-              p.encodings[0].degradationPreference = 'maintain-framerate';
-              sender.setParameters(p).catch(() => {});
-            }
-          } catch(e) {}
+      function _startKeepAlive() {
+        if (!pc || !localStream) return;
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (!videoTrack) return;
+
+        // キャンバスを一度だけ生成
+        if (!_keepAliveCanvas) {
+          _keepAliveCanvas = document.createElement('canvas');
+          _keepAliveCanvas.width = 1280;
+          _keepAliveCanvas.height = 720;
+          _keepAliveCtx = _keepAliveCanvas.getContext('2d');
+        }
+
+        // キャンバスに「離席中」表示を描画し続ける
+        let _frame = 0;
+        function _drawFrame() {
+          if (!_keepAliveCtx) return;
+          _frame++;
+          // 背景
+          _keepAliveCtx.fillStyle = '#1e293b';
+          _keepAliveCtx.fillRect(0, 0, 1280, 720);
+          // テキスト（フレームカウンタを変化させてエンコーダーを生かし続ける）
+          _keepAliveCtx.fillStyle = '#94a3b8';
+          _keepAliveCtx.font = 'bold 32px sans-serif';
+          _keepAliveCtx.textAlign = 'center';
+          _keepAliveCtx.fillText('画面共有中', 640, 340);
+          // 1px変化させてエンコーダーがフレームをスキップしないようにする
+          _keepAliveCtx.fillStyle = `rgba(255,255,255,${(_frame % 2) * 0.004})`;
+          _keepAliveCtx.fillRect(0, 0, 1, 1);
+          _keepAliveRafId = requestAnimationFrame(_drawFrame);
+        }
+        _drawFrame();
+
+        // キャンバスストリームを取得してトラックを差し替え
+        _keepAliveStream = _keepAliveCanvas.captureStream(30);
+        const canvasTrack = _keepAliveStream.getVideoTracks()[0];
+        if (!canvasTrack) return;
+
+        // 元のトラックを保存してからsenderのトラックをキャンバスに切り替え
+        _originalTrack = videoTrack;
+        const senders = pc.getSenders();
+        for (const sender of senders) {
+          if (sender.track && sender.track.kind === 'video') {
+            sender.replaceTrack(canvasTrack).catch(() => {});
+            break;
+          }
         }
       }
 
-      function _startKeyframeInterval() {
-        _stopKeyframeInterval();
-        // 非表示中に1.5秒ごとキーフレームを強制送信
-        _keyframeInterval = setInterval(_forceSenderKeyframe, 1500);
-      }
+      function _stopKeepAlive() {
+        // rAFを止める
+        if (_keepAliveRafId) { cancelAnimationFrame(_keepAliveRafId); _keepAliveRafId = null; }
 
-      function _stopKeyframeInterval() {
-        if (_keyframeInterval) { clearInterval(_keyframeInterval); _keyframeInterval = null; }
+        // 元のトラックに戻す
+        if (pc && _originalTrack) {
+          const senders = pc.getSenders();
+          for (const sender of senders) {
+            if (sender.track && sender.track.kind === 'video') {
+              sender.replaceTrack(_originalTrack).catch(() => {});
+              break;
+            }
+          }
+        }
+        _originalTrack = null;
+
+        // キャンバスストリームのトラックを停止
+        if (_keepAliveStream) {
+          _keepAliveStream.getTracks().forEach(t => t.stop());
+          _keepAliveStream = null;
+        }
       }
 
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
 
         if (document.hidden) {
-          // 別タブへ移動した瞬間 → 即キーフレーム要求（移動先画面を素早く表示）
+          // タブが非表示 → キャンバス代替フレームで送信を維持
+          _startKeepAlive();
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
-          // 案1: 非表示中も定期的にキーフレームを送り続ける
-          _startKeyframeInterval();
 
           if (!_tabIsAway) {
             _tabIsAway = true;
@@ -871,9 +918,8 @@
             });
           }
         } else {
-          // 戻ってきた → インターバル停止 → 即キーフレーム要求
-          _stopKeyframeInterval();
-          _forceSenderKeyframe(); // 復帰直後に即1回送信
+          // タブに戻った → 元のトラックに復帰
+          _stopKeepAlive();
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
 
           if (_tabIsAway) {
@@ -1079,6 +1125,7 @@
     };
     window.stopShare = function() {
       window._shareActive = false;
+      _stopKeepAlive(); // キャンバス代替フレームを停止してから
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
       if (pc) { pc.close(); pc = null; }
       showState('connected');

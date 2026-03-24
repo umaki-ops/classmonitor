@@ -815,48 +815,39 @@
       let _tabAwayCount = 0;
       let _tabIsAway = false;
       let _tabAwayStartTs = null;
-
-      // デバッグオーバーレイ
-      const _dbgEl = document.createElement('div');
-      _dbgEl.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,.9);color:#0f0;font:10px monospace;padding:4px;z-index:99999;max-height:200px;overflow-y:auto;white-space:pre-wrap;';
-      document.body.appendChild(_dbgEl);
-      function _dbg(msg) {
-        const t = new Date().toISOString().slice(11,23);
-        _dbgEl.textContent = `[${t}] ${msg}\n` + _dbgEl.textContent.slice(0,3000);
-      }
-
-      // 1秒ごとにfpsとICE状態をポーリング
-      setInterval(async () => {
-        if (!pc) return;
-        for (const sender of pc.getSenders()) {
-          if (!sender.track || sender.track.kind !== 'video') continue;
-          try {
-            const stats = await pc.getStats(sender.track);
-            stats.forEach(s => {
-              if (s.type === 'outbound-rtp' && s.kind === 'video') {
-                _dbg(`fps=${s.framesPerSecond??'?'} ice=${pc.iceConnectionState} conn=${pc.connectionState}`);
-              }
-            });
-          } catch(e) {}
-        }
-      }, 1000);
-
       document.addEventListener('visibilitychange', () => {
-        _dbg(`=== visibility → ${document.hidden ? 'HIDDEN' : 'VISIBLE'} ===`);
         if (!studentId) return;
+
         if (document.hidden) {
+          // 別タブへ移動した瞬間 → 即キーフレーム要求（移動先画面を素早く表示）
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
+
           if (!_tabIsAway) {
-            _tabIsAway = true; _tabAwayCount++; _tabAwayStartTs = Date.now();
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), { away: true, count: _tabAwayCount, ts: _tabAwayStartTs });
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), { startTs: _tabAwayStartTs });
+            _tabIsAway = true;
+            _tabAwayCount++;
+            _tabAwayStartTs = Date.now();
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+              away: true, count: _tabAwayCount, ts: _tabAwayStartTs
+            });
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+              startTs: _tabAwayStartTs
+            });
           }
         } else {
+          // 戻ってきた → もう一度キーフレーム要求
           set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
+
           if (_tabIsAway) {
-            _tabIsAway = false; const endTs = Date.now();
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), { away: false, count: _tabAwayCount, ts: endTs });
-            if (_tabAwayStartTs) set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), { startTs: _tabAwayStartTs, endTs });
+            _tabIsAway = false;
+            const endTs = Date.now();
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+              away: false, count: _tabAwayCount, ts: endTs
+            });
+            if (_tabAwayStartTs) {
+              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+                startTs: _tabAwayStartTs, endTs: endTs
+              });
+            }
             _tabAwayStartTs = null;
           }
         }
@@ -882,30 +873,18 @@
           });
         };
         pc.onconnectionstatechange = () => {
-          _dbg(`connState → ${pc.connectionState}`);
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
-        pc.oniceconnectionstatechange = () => {
-          _dbg(`iceState → ${pc.iceConnectionState}`);
-        };
-        // データチャンネル作成してキープアライブ
-        try {
-          const dc = pc.createDataChannel('ka', {ordered:false, maxRetransmits:0});
-          dc.onopen = () => _dbg('DC open');
-          dc.onclose = () => _dbg('DC closed');
-          const _dct = setInterval(() => {
-            if (dc.readyState === 'open') { try { dc.send('1'); } catch(e){} }
-            else if (pc.connectionState === 'closed') clearInterval(_dct);
-          }, 500);
-        } catch(e) { _dbg('DC error: '+e.message); }
       }
       // localStream のトラックを追加（未追加の場合のみ）
-      if (localStream) {
+      // ChromeOS対策: Insertable Streams 経由のストリームがあればそちらを使う
+      const streamForRTC = window._rtcStream || localStream;
+      if (streamForRTC) {
         const senders = pc.getSenders();
-        localStream.getTracks().forEach(track => {
-        track.contentHint = 'motion'; // 画面変化への追従速度を優先
+        streamForRTC.getTracks().forEach(track => {
+          track.contentHint = 'motion';
           if (!senders.find(s => s.track === track)) {
-            pc.addTrack(track, localStream);
+            pc.addTrack(track, streamForRTC);
           }
         });
         // 送信ビットレート・優先度を設定
@@ -1055,11 +1034,58 @@
         showState('connected');
         return;
       }
+
+      // ===== ChromeOS対策: Insertable Streams でフレームを中継 =====
+      // タブが非表示でも getDisplayMedia のトラックはフレームを生成し続ける。
+      // しかしChromebookではバックグラウンドで送信側RTCが絞られる。
+      // MediaStreamTrackProcessor → MediaStreamTrackGenerator で
+      // フレームを素通しするパイプラインを作り、そのGeneratorをRTCに渡す。
+      // Generator側はWorkerを使わずメインスレッドで処理するが、
+      // ReadableStream/WritableStream はバックグラウンドでも止まらない。
+      let rtcStream = localStream; // デフォルトはそのまま使う
+      try {
+        if (
+          typeof MediaStreamTrackProcessor !== 'undefined' &&
+          typeof MediaStreamTrackGenerator !== 'undefined'
+        ) {
+          const originalTrack = localStream.getVideoTracks()[0];
+          const processor  = new MediaStreamTrackProcessor({ track: originalTrack });
+          const generator  = new MediaStreamTrackGenerator({ kind: 'video' });
+
+          // パイプ: processor.readable → generator.writable
+          // タブが非表示でもReadableStreamは止まらない
+          processor.readable.pipeTo(generator.writable).catch(() => {});
+
+          // RTCに渡すストリームをgeneratorに切り替え
+          rtcStream = new MediaStream([generator]);
+
+          // localStream はキャプチャ停止検知のために保持（onended 用）
+          originalTrack.onended = () => window.stopShare();
+        }
+      } catch(e) {
+        // Insertable Streams 非対応の場合はそのまま
+      }
+
       const v = document.getElementById('preview-video');
-      if (v) v.srcObject = localStream;
+      if (v) v.srcObject = localStream; // プレビューは元ストリーム
       showState('live');
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
+
+      // RTCトラックをInsertable Streams経由のものに差し替え
+      if (pc && rtcStream !== localStream) {
+        const senders = pc.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(rtcStream.getVideoTracks()[0]).catch(() => {});
+        } else {
+          // senderがまだない場合はstreamごと差し替え（handleOffer時に使われる）
+          localStream = rtcStream;
+        }
+      }
+      // handleOffer より後に startShare が呼ばれることもあるため
+      // _rtcStream に保持してhandleOffer側でも参照できるようにする
+      window._rtcStream = rtcStream;
     };
     window.stopShare = function() {
       window._shareActive = false;

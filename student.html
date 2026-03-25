@@ -634,6 +634,7 @@
     let studentId = null, localStream = null, pc = null;
     let watchPc = null; // 他の生徒の画面を受信するPC
     let twPc = null;    // 教員画面共有受信用PC
+    window._watchSourceName = null;  // 明示的に null 初期化（undefined だと truthy 判定が狂う）
     const ICE = {
       iceServers: [
         {urls:'stun:stun.l.google.com:19302'},
@@ -983,14 +984,20 @@
         if (e.track.kind === 'video') {
           const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           if (window._watchSourceName) {
-            // watchStart済み：直接watch-videoに表示
+            // watchStart済み：watch-videoに表示
             const el = document.getElementById('watch-video');
             if (el) { el.srcObject = stream; el.play().catch(() => {}); showWatch(window._watchSourceName); }
-          } else {
-            // watchStart/teacherShare未着：teacher-videoに格納だけしてCMDを待つ
+          } else if (window._teacherShareActive) {
+            // teacherShare CMD到着済み：teacher-videoに表示
             const el = document.getElementById('teacher-video');
-            if (el) { el.srcObject = stream; el.play().catch(() => {}); }
-            // teacherShare CMDが既に来ていれば表示
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); showTeacher(); }
+          } else {
+            // CMD未着：両方のvideoに格納してCMD到着時に判定
+            const tv = document.getElementById('teacher-video');
+            const wv = document.getElementById('watch-video');
+            if (tv) { tv.srcObject = stream; tv.play().catch(() => {}); }
+            if (wv) { wv.srcObject = stream; }
+            // すでにteacherShareActiveならそのまま表示
             if (window._teacherShareActive) showTeacher();
           }
         }
@@ -1202,11 +1209,46 @@
       showState('live');
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
+      // hidden canvasにlocalStreamを常時描画してcaptureStream()を安定させる
+      // （preview-videoが非表示になってもgetDirectBcastStreamが機能するため）
+      if (!window._bcastHiddenCanvas) {
+        window._bcastHiddenCanvas = document.createElement('canvas');
+        window._bcastHiddenCanvas.width = 1280;
+        window._bcastHiddenCanvas.height = 720;
+        window._bcastHiddenCanvas.style.cssText = 'position:fixed;left:-9999px;top:-9999px;pointer-events:none;';
+        document.body.appendChild(window._bcastHiddenCanvas);
+      }
+      const hc = window._bcastHiddenCanvas;
+      const hctx = hc.getContext('2d');
+      const hiddenVideo = document.createElement('video');
+      hiddenVideo.srcObject = localStream;
+      hiddenVideo.muted = true;
+      hiddenVideo.autoplay = true;
+      hiddenVideo.playsInline = true;
+      hiddenVideo.play().catch(() => {});
+      window._bcastHiddenVideo = hiddenVideo;
+      function drawHidden() {
+        if (!window._bcastHiddenVideo || window._bcastHiddenVideo.readyState < 2) {
+          window._bcastHiddenRAF = requestAnimationFrame(drawHidden); return;
+        }
+        const vw = hiddenVideo.videoWidth || 1280;
+        const vh = hiddenVideo.videoHeight || 720;
+        if (hc.width !== vw || hc.height !== vh) { hc.width = vw; hc.height = vh; }
+        hctx.drawImage(hiddenVideo, 0, 0);
+        window._bcastHiddenRAF = requestAnimationFrame(drawHidden);
+      }
+      if (window._bcastHiddenRAF) cancelAnimationFrame(window._bcastHiddenRAF);
+      window._bcastHiddenRAF = requestAnimationFrame(drawHidden);
+      window._bcastHiddenStream = hc.captureStream(30);
     };
     window.stopShare = function() {
       window._shareActive = false;
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
       if (pc) { pc.close(); pc = null; }
+      // hidden canvas クリーンアップ
+      if (window._bcastHiddenRAF) { cancelAnimationFrame(window._bcastHiddenRAF); window._bcastHiddenRAF = null; }
+      if (window._bcastHiddenVideo) { window._bcastHiddenVideo.srcObject = null; window._bcastHiddenVideo = null; }
+      if (window._bcastHiddenStream) { window._bcastHiddenStream.getTracks().forEach(t=>t.stop()); window._bcastHiddenStream = null; }
       showState('connected');
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
     };
@@ -1238,6 +1280,11 @@
     // P2P配信用のキャプチャストリームを取得（SIGSEGV回避）
     let _directBcastCaptureStream = null;
     function getDirectBcastStream() {
+      // hidden canvas stream が生きていれば最優先で使う（preview-videoの表示状態に依存しない）
+      if (window._bcastHiddenStream && window._bcastHiddenStream.getVideoTracks()[0]?.readyState === 'live') {
+        _directBcastCaptureStream = window._bcastHiddenStream;
+        return _directBcastCaptureStream;
+      }
       // preview-videoからcaptureStream()：localStreamのtrackを直接使わないのでSIGSEGV回避
       const pv = document.getElementById('preview-video');
       if (pv && pv.srcObject && pv.readyState >= 2) {
@@ -2099,18 +2146,21 @@
         window._watchSourceName = data.sourceName || '生徒';
         const tv = document.getElementById('teacher-video');
         const wv = document.getElementById('watch-video');
-        if (tv && wv && tv.srcObject) {
-          // ontrackでteacher-videoに入ってしまっていた映像をwatch-videoへ移す
+        if (wv && wv.srcObject) {
+          // watch-videoに既に映像あり（ontrackで格納済み）→ そのまま再生・表示
+          if (wv.paused) wv.play().catch(() => {});
+          if (tv) { tv.srcObject = null; }
+          document.getElementById('teacher-overlay')?.classList.remove('show');
+          showWatch(window._watchSourceName);
+        } else if (tv && tv.srcObject) {
+          // teacher-videoに入ってしまっていた映像をwatch-videoへ移す
           wv.srcObject = tv.srcObject;
           wv.play().catch(() => {});
           tv.srcObject = null;
-          // teacher-overlayを閉じてwatch-overlayを表示
           document.getElementById('teacher-overlay')?.classList.remove('show');
           showWatch(window._watchSourceName);
-        } else if (wv && wv.srcObject) {
-          if (wv.paused) wv.play().catch(() => {});
-          showWatch(window._watchSourceName);
         }
+        // いずれにも映像がない場合は ontrack が後で来た時に _watchSourceName が設定済みなので自動表示される
       } else if (data.command === 'teacherShare') {
         console.log('[cmd] teacherShare received');
         window._teacherShareActive = true;

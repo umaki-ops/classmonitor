@@ -1209,46 +1209,11 @@
       showState('live');
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
-      // hidden canvasにlocalStreamを常時描画してcaptureStream()を安定させる
-      // （preview-videoが非表示になってもgetDirectBcastStreamが機能するため）
-      if (!window._bcastHiddenCanvas) {
-        window._bcastHiddenCanvas = document.createElement('canvas');
-        window._bcastHiddenCanvas.width = 1280;
-        window._bcastHiddenCanvas.height = 720;
-        window._bcastHiddenCanvas.style.cssText = 'position:fixed;left:-9999px;top:-9999px;pointer-events:none;';
-        document.body.appendChild(window._bcastHiddenCanvas);
-      }
-      const hc = window._bcastHiddenCanvas;
-      const hctx = hc.getContext('2d');
-      const hiddenVideo = document.createElement('video');
-      hiddenVideo.srcObject = localStream;
-      hiddenVideo.muted = true;
-      hiddenVideo.autoplay = true;
-      hiddenVideo.playsInline = true;
-      hiddenVideo.play().catch(() => {});
-      window._bcastHiddenVideo = hiddenVideo;
-      function drawHidden() {
-        if (!window._bcastHiddenVideo || window._bcastHiddenVideo.readyState < 2) {
-          window._bcastHiddenRAF = requestAnimationFrame(drawHidden); return;
-        }
-        const vw = hiddenVideo.videoWidth || 1280;
-        const vh = hiddenVideo.videoHeight || 720;
-        if (hc.width !== vw || hc.height !== vh) { hc.width = vw; hc.height = vh; }
-        hctx.drawImage(hiddenVideo, 0, 0);
-        window._bcastHiddenRAF = requestAnimationFrame(drawHidden);
-      }
-      if (window._bcastHiddenRAF) cancelAnimationFrame(window._bcastHiddenRAF);
-      window._bcastHiddenRAF = requestAnimationFrame(drawHidden);
-      window._bcastHiddenStream = hc.captureStream(30);
     };
     window.stopShare = function() {
       window._shareActive = false;
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
       if (pc) { pc.close(); pc = null; }
-      // hidden canvas クリーンアップ
-      if (window._bcastHiddenRAF) { cancelAnimationFrame(window._bcastHiddenRAF); window._bcastHiddenRAF = null; }
-      if (window._bcastHiddenVideo) { window._bcastHiddenVideo.srcObject = null; window._bcastHiddenVideo = null; }
-      if (window._bcastHiddenStream) { window._bcastHiddenStream.getTracks().forEach(t=>t.stop()); window._bcastHiddenStream = null; }
       showState('connected');
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
     };
@@ -1280,20 +1245,8 @@
     // P2P配信用のキャプチャストリームを取得（SIGSEGV回避）
     let _directBcastCaptureStream = null;
     function getDirectBcastStream() {
-      // hidden canvas stream が生きていれば最優先で使う（preview-videoの表示状態に依存しない）
-      if (window._bcastHiddenStream && window._bcastHiddenStream.getVideoTracks()[0]?.readyState === 'live') {
-        _directBcastCaptureStream = window._bcastHiddenStream;
-        return _directBcastCaptureStream;
-      }
-      // preview-videoからcaptureStream()：localStreamのtrackを直接使わないのでSIGSEGV回避
-      const pv = document.getElementById('preview-video');
-      if (pv && pv.srcObject && pv.readyState >= 2) {
-        try {
-          _directBcastCaptureStream = pv.captureStream(60);
-          return _directBcastCaptureStream;
-        } catch(e) {}
-      }
-      // fallback: localStream
+      // localStreamのトラックを直接使用する
+      // （captureStream経由は バックグラウンドタブで止まるため廃止）
       return localStream;
     }
 
@@ -1303,19 +1256,35 @@
       stopDirectBcast();
       if (!localStream) { console.warn('[DirectBcast] no localStream'); return; }
       console.log('[DirectBcast] starting for targets:', targets);
-      const bcastStream = getDirectBcastStream();
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (!videoTrack) { console.warn('[DirectBcast] no video track'); return; }
+      videoTrack.contentHint = 'detail';
+
+      // タブ移動でtrackがmuteされたとき全PCのsenderを更新する
+      videoTrack.onmute = () => {
+        console.log('[DirectBcast] track muted (tab switch?) - replaceTrack to force resume');
+        // Chrome はタブ非アクティブ時でもgetDisplayMedia trackは止まらないが
+        // muteイベントが来た場合は全senderにreplaceTrackで再通知する
+        for (const [tSid, pc] of Object.entries(_directBcastPcs)) {
+          if (pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
+            const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(videoTrack).catch(e => console.warn('[DirectBcast] replaceTrack err', tSid, e));
+            }
+          }
+        }
+      };
+      videoTrack.onunmute = () => {
+        console.log('[DirectBcast] track unmuted - stream resumed');
+      };
+
       for (const tSid of targets) {
         try {
           const pc = new RTCPeerConnection(ICE_RELAY || ICE);
           _directBcastPcs[tSid] = pc;
-          // captureStream由来のtrackは各PCで独立しているのでSIGSEGVしない
-          bcastStream.getTracks().forEach(track => {
-            track.contentHint = 'detail';
-            pc.addTrack(track, bcastStream);
-          });
+          pc.addTrack(videoTrack, localStream);
           pc.onicecandidate = e => {
             if (e.candidate) {
-              // ICE候補の種類をログ（診断用）
               const c = e.candidate;
               console.log('[DirectBcast ICE候補→'+tSid+']', c.type, c.protocol, c.address?.replace(/\.\d+$/, '.xxx'));
               set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
@@ -1325,7 +1294,6 @@
               console.log('[DirectBcast ICE収集完了→'+tSid+']');
             }
           };
-          // ICE接続失敗時に自動でICE restartを試みる
           let _iceRestartTimer = null;
           pc.oniceconnectionstatechange = () => {
             console.log('[DirectBcast ICE->'+tSid+']', pc.iceConnectionState);
@@ -1372,6 +1340,11 @@
     function stopDirectBcast() {
       for (const pc of Object.values(_directBcastPcs)) { try { pc.close(); } catch(e) {} }
       _directBcastPcs = {};
+      // track イベントリスナーをクリーンアップ
+      if (localStream) {
+        const vt = localStream.getVideoTracks()[0];
+        if (vt) { vt.onmute = null; vt.onunmute = null; }
+      }
       console.log('[DirectBcast] stopped');
     }
 

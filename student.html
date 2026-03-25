@@ -2242,7 +2242,7 @@
         if (!gWbDrawing) return;
         gWbDrawing = false;
         if (gWbCurrentStroke && gWbGroupId) {
-          const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
+          const strokeKey = `${studentId}_${gWbCurrentStroke.ts}_${Math.random().toString(36).slice(2,7)}`;
           if (gWbIsSelectMode) {
             // 番号選択モード: 別パスに保存
             if (gWbFromImg) {
@@ -2292,7 +2292,7 @@
           // 線幅: sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
           let scaledSize = stroke.size;
           if (stroke.sizePct) {
-            scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
+            scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
           } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
             const scaleX = canvas.width  / stroke.canvasW;
             const scaleY = canvas.height / stroke.canvasH;
@@ -2378,7 +2378,7 @@
               if (!pts || pts.length < 2) return;
               let scaledSize = stroke.size;
               if (stroke.sizePct) {
-                scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
+                scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
               } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
                 const scaleX = canvas.width  / stroke.canvasW;
                 const scaleY = canvas.height / stroke.canvasH;

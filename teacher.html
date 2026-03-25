@@ -2927,10 +2927,10 @@ function drawStrokeOnCanvas(canvas, stroke) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const pts = stroke.points;
   if (stroke.normalized) {
-    // sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
+    // sizePctをキャンバスの実際の高さに対して計算（グリッド/拡大で太さが一定に見える）
     let lineWidth;
     if (stroke.sizePct) {
-      lineWidth = Math.max(0.5, stroke.sizePct / 100 * 900);
+      lineWidth = Math.max(0.5, stroke.sizePct / 100 * H);
     } else {
       const srcW = stroke.canvasW || 800;
       const srcH = stroke.canvasH || 500;

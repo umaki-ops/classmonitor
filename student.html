@@ -2214,7 +2214,7 @@
           uid: studentId, tool: gWbTool,
           color: gWbTool === 'eraser' ? null : gWbColor,
           size: rawSize,
-          sizePct: rawSize / 900 * 100,  // 固定基準高さ(900)に対する割合で保存（デバイス間で一貫した太さを保つ）
+          sizePct: rawSize / canvas.height * 100,  // 実際のキャンバス高さに対する割合で保存（復元時も同じ高さで掛け戻す）
           points: [[gWbLX, gWbLY]], ts: Date.now(),
           normalized: true,
           canvasW: canvas.width, canvasH: canvas.height  // 実際のキャンバスサイズ

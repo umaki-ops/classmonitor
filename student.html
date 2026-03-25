@@ -2241,32 +2241,62 @@
       canvas.addEventListener('pointerup', async () => {
         if (!gWbDrawing) return;
         gWbDrawing = false;
-        if (gWbCurrentStroke && gWbGroupId) {
-          const strokeKey = `${studentId}_${gWbCurrentStroke.ts}_${Math.random().toString(36).slice(2,7)}`;
+        const strokeToSave = gWbCurrentStroke;
+        gWbCurrentStroke = null;
+        // 描画フラグをfalseにした後、溜まっていたストローク更新を反映
+        if (_lastStrokesSnapshot !== undefined && _lastStrokesSnapshot !== null) {
+          const pending = _lastStrokesSnapshot;
+          _lastStrokesSnapshot = null;
+          gWbReplayStrokes(pending);
+        }
+        if (strokeToSave && gWbGroupId) {
+          const strokeKey = `${studentId}_${strokeToSave.ts}`;
           if (gWbIsSelectMode) {
             // 番号選択モード: 別パスに保存
             if (gWbFromImg) {
               const path = `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`;
               console.log('[ストローク保存] パス:', path);
-              await set(ref(db, path), gWbCurrentStroke);
+              set(ref(db, path), strokeToSave);
             } else {
               const path = `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`;
               console.log('[ストローク保存] パス:', path);
-              await set(ref(db, path), gWbCurrentStroke);
+              set(ref(db, path), strokeToSave);
             }
           } else {
             // 教員作成モード: 元のパス
             if (gWbFromImg) {
-              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
+              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), strokeToSave);
             } else {
-              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
+              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), strokeToSave);
             }
           }
           gWbScheduleSnapshot();
         }
-        gWbCurrentStroke = null;
       });
-      canvas.addEventListener('pointerleave', () => { gWbDrawing = false; gWbCurrentStroke = null; });
+      canvas.addEventListener('pointerleave', () => {
+        if (!gWbDrawing) return;
+        gWbDrawing = false;
+        const strokeToSave = gWbCurrentStroke;
+        gWbCurrentStroke = null;
+        // 描画中断時も溜まった更新を反映
+        if (_lastStrokesSnapshot !== undefined && _lastStrokesSnapshot !== null) {
+          const pending = _lastStrokesSnapshot;
+          _lastStrokesSnapshot = null;
+          gWbReplayStrokes(pending);
+        }
+        // 途中までのストロークも保存
+        if (strokeToSave && strokeToSave.points && strokeToSave.points.length >= 2 && gWbGroupId) {
+          const strokeKey = `${studentId}_${strokeToSave.ts}`;
+          if (gWbIsSelectMode) {
+            if (gWbFromImg) set(ref(db, `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`), strokeToSave);
+            else            set(ref(db, `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`),  strokeToSave);
+          } else {
+            if (gWbFromImg) set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), strokeToSave);
+            else            set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`),       strokeToSave);
+          }
+          gWbScheduleSnapshot();
+        }
+      });
     }
 
     function gWbDrawSegment(x1, y1, x2, y2, tool, color, size) {
@@ -2342,24 +2372,25 @@
     }
 
     let gWbTextListenerUnsub = null;
-    let _lastStrokesSnapshot = null; // 前回のストロークスナップショットを保持
+    let _lastStrokesSnapshot = undefined; // undefined=未受信、null=データなし、object=有効データ
 
     function gWbListenStrokes(groupId, pathOverride) {
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
-      _lastStrokesSnapshot = null; // リセット
+      _lastStrokesSnapshot = undefined; // リセット
       const strokesPath = pathOverride || `sessions/${sessionId}/groups/${groupId}/wb/strokes`;
       gWbStrokeListenerUnsub = onValue(ref(db, strokesPath), snap => {
         if (!gWbCtx) return;
         const newStrokes = snap.exists() ? snap.val() : null;
         
         // 描画中は更新をスキップ（自分の線が消えるのを防ぐ）
+        // pointerupでfalseにしてからflushするので、ここでは溜めるだけ
         if (gWbDrawing) {
           _lastStrokesSnapshot = newStrokes;
           return;
         }
         
         // 初回または大きな変更がある場合のみ全体再描画
-        const needsFullRedraw = !_lastStrokesSnapshot || 
+        const needsFullRedraw = _lastStrokesSnapshot === undefined || 
                                 _lastStrokesSnapshot === null ||
                                 newStrokes === null ||
                                 Object.keys(newStrokes || {}).length < Object.keys(_lastStrokesSnapshot || {}).length;
@@ -2709,7 +2740,7 @@
       const alreadyOpen = gWbGroupId === groupId;
       gWbGroupId = groupId;
       gWbIsSelectMode = isSelectMode;
-      _lastStrokesSnapshot = null; // WBを開くときにスナップショットをリセット
+      _lastStrokesSnapshot = undefined; // WBを開くときにスナップショットをリセット（undefined=未受信状態）
       const overlay = document.getElementById('group-wb-overlay');
       overlay.style.display = 'flex';
       document.getElementById('group-wb-title').textContent = gWbFromImg ? '🖼 班の画像' : '📋 班のホワイトボード';
@@ -2724,28 +2755,26 @@
         }
       }
       // alreadyOpen でもリスナーを再設定（gWbFromImg が変わった場合に対応）
-      setTimeout(() => {
-        if (!alreadyOpen) gWbInit();
-        if (isSelectMode) {
-          // 番号選択モード: 別パスを使用
-          if (gWbFromImg) {
-            gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectImg/${groupId}/strokes`);
-            gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectImg/${groupId}/texts`);
-          } else {
-            gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectWB/${groupId}/strokes`);
-            gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectWB/${groupId}/texts`);
-          }
+      if (!alreadyOpen) gWbInit();
+      if (isSelectMode) {
+        // 番号選択モード: 別パスを使用
+        if (gWbFromImg) {
+          gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectImg/${groupId}/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectImg/${groupId}/texts`);
         } else {
-          // 教員作成モード: 元のパスを使用
-          if (gWbFromImg) {
-            gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
-            gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
-          } else {
-            gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/wb/strokes`);
-            gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/wb/texts`);
-          }
+          gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectWB/${groupId}/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectWB/${groupId}/texts`);
         }
-      }, 100);
+      } else {
+        // 教員作成モード: 元のパスを使用
+        if (gWbFromImg) {
+          gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
+        } else {
+          gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/wb/strokes`);
+          gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/wb/texts`);
+        }
+      }
     }
 
     function gWbClose() {

@@ -1201,6 +1201,34 @@
       if (v) v.srcObject = localStream;
       showState('live');
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
+
+      // 既存PCにトラックを追加してからstatus=sharingをセット
+      // → 教員はsharingを受け取った時点で既にトラックが届く状態になる
+      if (pc && pc.connectionState !== 'failed' && pc.connectionState !== 'closed') {
+        const senders = pc.getSenders();
+        let trackAdded = false;
+        localStream.getTracks().forEach(track => {
+          if (senders.find(s => s.track && s.track.kind === track.kind)) return;
+          pc.addTrack(track, localStream);
+          trackAdded = true;
+          console.log('[startShare] addTrack to existing pc, connectionState:', pc.connectionState);
+        });
+        if (trackAdded) {
+          // onnegotiationneeded が発火するのを待つ（Chrome は自動でofferを要求する）
+          // ただし Chrome は通常 onnegotiationneeded を使わないため手動でリネゴシエーション
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
+              type: 'offer', from: studentId, to: 'teacher',
+              sdp: { type: offer.type, sdp: offer.sdp }
+            });
+            console.log('[startShare] renegotiation offer sent');
+          } catch(e) {
+            console.warn('[startShare] renegotiation failed:', e);
+          }
+        }
+      }
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
     };
     window.stopShare = function() {

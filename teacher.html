@@ -1483,7 +1483,18 @@ function listenStudents(){
       setBadge(sid,'waiting');updateStats();
     }
     if(d.status==='sharing'){
-      setupPC(sid);
+      const existingPc = peerConnections[sid];
+      const existingState = existingPc?.connectionState;
+      // 既存PCが接続中/接続済みなら再setupしない（LIVE→待機→LIVEを防ぐ）
+      // リネゴシエーションは生徒側が handleOffer で addTrack するので不要
+      // 接続がない・失敗・クローズ状態のときだけ setupPC を呼ぶ
+      if (!existingPc || existingState === 'failed' || existingState === 'closed') {
+        setupPC(sid);
+      } else {
+        // 既存PC上でofferを再送してトラック追加を促す（リネゴシエーション）
+        console.log('[sharing] existing PC state:', existingState, '→ re-offer to trigger addTrack');
+        negotiatePC(sid);
+      }
     }
     // 班別表示も更新
     if(currentView==='group') renderGroupMonitorGrid();
@@ -2927,10 +2938,10 @@ function drawStrokeOnCanvas(canvas, stroke) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const pts = stroke.points;
   if (stroke.normalized) {
-    // sizePctはキャンバス高さに対する割合 → 表示canvasの実際の高さで掛け戻す
+    // sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
     let lineWidth;
     if (stroke.sizePct) {
-      lineWidth = Math.max(0.5, stroke.sizePct / 100 * H);
+      lineWidth = Math.max(0.5, stroke.sizePct / 100 * 900);
     } else {
       const srcW = stroke.canvasW || 800;
       const srcH = stroke.canvasH || 500;

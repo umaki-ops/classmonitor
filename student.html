@@ -652,11 +652,13 @@
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     };
-    // P2P配信専用ICE設定（TURNを強制使用してSymmetric NATを確実に回避）
+    // P2P配信専用ICE設定（生徒A→生徒B直接P2P用）
+    // iceCandidatePoolSizeを大きくしてhost/srflx候補をできるだけ早く収集し
+    // 同一LAN内では直接経路（host）が選ばれやすくする
     const ICE_RELAY = {
       iceServers: ICE.iceServers,
-      iceTransportPolicy: 'all', // relay強制だと遅くなるためallのまま
-      iceCandidatePoolSize: 20,
+      iceTransportPolicy: 'all',   // relayに限定しない（LAN内直接接続を優先させる）
+      iceCandidatePoolSize: 30,    // 候補プールを増やして早期収集
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     };
@@ -1284,6 +1286,23 @@
       stopDirectBcast();
       if (!localStream) { console.warn('[DirectBcast] no localStream'); return; }
       console.log('[DirectBcast] starting for targets:', targets);
+
+      // 送信前にトラックの解像度・フレームレートを最大化
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.contentHint = 'detail';
+        try {
+          await videoTrack.applyConstraints({
+            width:     { ideal: 1920 },
+            height:    { ideal: 1080 },
+            frameRate: { ideal: 30, max: 60 },
+          });
+          const s = videoTrack.getSettings();
+          console.log('[DirectBcast] track after applyConstraints:', s.width, 'x', s.height, '@', s.frameRate);
+        } catch(e) {
+          console.warn('[DirectBcast] applyConstraints failed:', e);
+        }
+      }
       const bcastStream = getDirectBcastStream();
       for (const tSid of targets) {
         try {
@@ -1296,9 +1315,11 @@
           });
           pc.onicecandidate = e => {
             if (e.candidate) {
-              // ICE候補の種類をログ（診断用）
               const c = e.candidate;
-              console.log('[DirectBcast ICE候補→'+tSid+']', c.type, c.protocol, c.address?.replace(/\.\d+$/, '.xxx'));
+              const isLocal = c.type === 'host' || c.type === 'srflx';
+              console.log('[DirectBcast ICE候補→'+tSid+']',
+                isLocal ? '✅LAN/STUN' : '⚠️RELAY',
+                c.type, c.protocol, c.address?.replace(/\.\d+$/, '.xxx'));
               set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
                 type: 'watch-offer-ice', from: studentId, to: tSid, candidate: c.toJSON()
               });
@@ -1325,21 +1346,39 @@
           pc.onconnectionstatechange = () => {
             console.log('[DirectBcast->'+tSid+']', pc.connectionState);
             if (pc.connectionState === 'connected') {
-              pc.getSenders().forEach(async sender => {
-                if (!sender.track || sender.track.kind !== 'video') return;
-                try {
-                  const p = sender.getParameters();
-                  if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-                  p.encodings[0].maxBitrate = 15000000;
-                  p.encodings[0].maxFramerate = 60;
-                  p.encodings[0].priority = 'high';
-                  p.encodings[0].networkPriority = 'high';
-                  await sender.setParameters(p);
-                } catch(e) {}
-              });
+              // 接続経路の種別を取得してビットレートを調整
+              pc.getStats().then(stats => {
+                let candidateType = 'unknown';
+                stats.forEach(report => {
+                  if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    const local = [...stats.values()].find(r => r.id === report.localCandidateId);
+                    if (local) candidateType = local.candidateType || 'unknown';
+                  }
+                });
+                console.log('[DirectBcast->'+tSid+'] 接続経路:', candidateType);
+                // host/srflx（LAN直接）なら高ビットレート、relay（TURN）なら抑制
+                const isRelay = candidateType === 'relay';
+                const maxBitrate = isRelay ? 3000000 : 15000000; // relay:3Mbps / 直接:15Mbps
+                console.log('[DirectBcast->'+tSid+'] maxBitrate:', maxBitrate/1000000, 'Mbps (relay:', isRelay, ')');
+                pc.getSenders().forEach(async sender => {
+                  if (!sender.track || sender.track.kind !== 'video') return;
+                  try {
+                    const p = sender.getParameters();
+                    if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+                    p.encodings[0].maxBitrate = maxBitrate;
+                    p.encodings[0].maxFramerate = 30;
+                    p.encodings[0].priority = 'high';
+                    p.encodings[0].networkPriority = isRelay ? 'medium' : 'high';
+                    await sender.setParameters(p);
+                  } catch(e) {}
+                });
+              }).catch(() => {});
             }
           };
-          const offer = await pc.createOffer();
+          const offer = await pc.createOffer({
+            offerToReceiveVideo: false,  // 送信専用PCとして最適化
+            offerToReceiveAudio: false,
+          });
           await pc.setLocalDescription(offer);
           set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wo_${Math.random().toString(36).slice(2)}`), {
             type: 'watch-offer', from: studentId, to: tSid,

@@ -434,9 +434,9 @@
       <div class="wbc" data-color="#9333ea" style="background:#9333ea" onclick="gWbSetColor(this)"></div>
       <div class="wbc" data-color="#ffffff" style="background:#fff;border:1.5px solid #666;" onclick="gWbSetColor(this)"></div>
       <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
-      <button class="wbt" id="gwb-thin-btn" onclick="gWbSetSize(3)" title="細">細</button>
-      <button class="wbt active" id="gwb-mid-btn" onclick="gWbSetSize(8)" title="中">中</button>
-      <button class="wbt" id="gwb-thick-btn" onclick="gWbSetSize(14)" title="太">太</button>
+      <button class="wbt" id="gwb-thin-btn" onclick="gWbSetSize(2)" title="細">細</button>
+      <button class="wbt active" id="gwb-mid-btn" onclick="gWbSetSize(4)" title="中">中</button>
+      <button class="wbt" id="gwb-thick-btn" onclick="gWbSetSize(8)" title="太">太</button>
       <div style="width:1px;height:20px;background:rgba(255,255,255,.2);"></div>
       <button onclick="gWbClear()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">全消し</button>
       
@@ -2160,7 +2160,7 @@
 
     // ===== 班別WBエンジン =====
     let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
-    let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 8, gWbFontSize = 30;
+    let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 4, gWbFontSize = 30;
     let gWbGroupId = null, gWbResetTs = 0;
     let gWbFromImg = false; // distImg経由でWBを開いた場合true
     let gWbStrokeListenerUnsub = null;
@@ -2810,7 +2810,7 @@
     window.gWbSetSize = function(v) {
       gWbSize = parseInt(v);
       document.querySelectorAll('#gwb-thin-btn,#gwb-mid-btn,#gwb-thick-btn').forEach(b => b.classList.remove('active'));
-      const map = {'3':'#gwb-thin-btn', '8':'#gwb-mid-btn', '14':'#gwb-thick-btn'};
+      const map = {'2':'#gwb-thin-btn', '4':'#gwb-mid-btn', '8':'#gwb-thick-btn'};
       const btn = document.querySelector(map[String(gWbSize)]);
       if (btn) btn.classList.add('active');
     };

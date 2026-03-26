@@ -499,13 +499,13 @@
     <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="wbSetColor(this)"></div>
     <div class="wbc" data-color="#2563eb" style="background:#2563eb" onclick="wbSetColor(this)"></div>
     <div class="wbc" data-color="#16a34a" style="background:#16a34a" onclick="wbSetColor(this)"></div>
+    <div class="wbc" data-color="#d97706" style="background:#d97706" onclick="wbSetColor(this)"></div>
+    <div class="wbc" data-color="#9333ea" style="background:#9333ea" onclick="wbSetColor(this)"></div>
+    <div class="wbc" data-color="#ffffff" style="background:#fff;border:1.5px solid #aaa;" onclick="wbSetColor(this)"></div>
     <div class="wb-sep"></div>
-    <select id="wb-size" onchange="wbSetSize(this.value)">
-      <option value="2">細</option>
-      <option value="4" selected>中</option>
-      <option value="8">太</option>
-      <option value="16">極太</option>
-    </select>
+    <button class="wbt" id="wbt-thin" onclick="wbSetSizeBtn(2)" title="細">細</button>
+    <button class="wbt active" id="wbt-mid" onclick="wbSetSizeBtn(4)" title="中">中</button>
+    <button class="wbt" id="wbt-thick" onclick="wbSetSizeBtn(8)" title="太">太</button>
     <button class="wbt" onclick="wbClear()" title="全消し">🗑️</button>
   </div>
 </div>
@@ -536,13 +536,13 @@
     <div class="wbc" data-color="#dc2626" style="background:#dc2626" onclick="imgSetColor(this)"></div>
     <div class="wbc" data-color="#2563eb" style="background:#2563eb" onclick="imgSetColor(this)"></div>
     <div class="wbc" data-color="#16a34a" style="background:#16a34a" onclick="imgSetColor(this)"></div>
+    <div class="wbc" data-color="#d97706" style="background:#d97706" onclick="imgSetColor(this)"></div>
+    <div class="wbc" data-color="#9333ea" style="background:#9333ea" onclick="imgSetColor(this)"></div>
+    <div class="wbc" data-color="#ffffff" style="background:#fff;border:1.5px solid #aaa;" onclick="imgSetColor(this)"></div>
     <div class="wb-sep"></div>
-    <select id="img-size" onchange="imgSetSize(this.value)">
-      <option value="2">細</option>
-      <option value="4" selected>中</option>
-      <option value="8">太</option>
-      <option value="16">極太</option>
-    </select>
+    <button class="wbt" id="imgt-thin" onclick="imgSetSizeBtn(2)" title="細">細</button>
+    <button class="wbt active" id="imgt-mid" onclick="imgSetSizeBtn(4)" title="中">中</button>
+    <button class="wbt" id="imgt-thick" onclick="imgSetSizeBtn(8)" title="太">太</button>
     <button class="wbt" onclick="distImgClear()" title="全消し">🗑️</button>
   </div>
 </div>
@@ -634,7 +634,6 @@
     let studentId = null, localStream = null, pc = null;
     let watchPc = null; // 他の生徒の画面を受信するPC
     let twPc = null;    // 教員画面共有受信用PC
-    window._watchSourceName = null;  // 明示的に null 初期化（undefined だと truthy 判定が狂う）
     const ICE = {
       iceServers: [
         {urls:'stun:stun.l.google.com:19302'},
@@ -980,32 +979,18 @@
       // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
       // watchStartコマンドが来ていれば watch-video に表示
       pc.ontrack = e => {
-        const wv = document.getElementById('watch-video');
-        const watchPcActive = window._watchPcReceiving
-          || (watchPc
-            && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
-            && wv && wv.srcObject);
-        console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length,
-          '_watchSourceName:', window._watchSourceName, 'watchPcActive:', !!watchPcActive);
+        console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length, '_watchSourceName:', window._watchSourceName);
         if (e.track.kind === 'video') {
           const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
-          // watchPc（P2P直接）が既に映像を受信中なら教員中継で上書きしない
-          if (watchPcActive) {
-            console.log('[PC-TRACK] watchPc already receiving, skipping teacher-relay track');
-            return;
-          }
           if (window._watchSourceName) {
-            // watchStart済み かつ watchPc未接続 → 教員中継として watch-video に表示
-            if (wv) { wv.srcObject = stream; wv.play().catch(() => {}); showWatch(window._watchSourceName); }
-          } else if (window._teacherShareActive) {
-            // teacherShare CMD到着済み：teacher-videoに表示
-            const el = document.getElementById('teacher-video');
-            if (el) { el.srcObject = stream; el.play().catch(() => {}); showTeacher(); }
+            // watchStart済み：直接watch-videoに表示
+            const el = document.getElementById('watch-video');
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); showWatch(window._watchSourceName); }
           } else {
-            // CMD未着：両方のvideoに格納してCMD到着時に判定
-            const tv = document.getElementById('teacher-video');
-            if (tv) { tv.srcObject = stream; tv.play().catch(() => {}); }
-            if (wv) { wv.srcObject = stream; }
+            // watchStart/teacherShare未着：teacher-videoに格納だけしてCMDを待つ
+            const el = document.getElementById('teacher-video');
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); }
+            // teacherShare CMDが既に来ていれば表示
             if (window._teacherShareActive) showTeacher();
           }
         }
@@ -1047,7 +1032,6 @@
     }
     async function handleWatchOffer(fromId, sdp, sourceName) {
       if (watchPc) { try { watchPc.close(); } catch(e) {} }
-      window._watchPcReceiving = false;
       watchPc = new RTCPeerConnection(ICE_RELAY || ICE);
       watchPc.ontrack = e => {
         console.log('[WATCH] ontrack fired, streams:', e.streams.length, 'kind:', e.track.kind);
@@ -1055,7 +1039,6 @@
         if (el) {
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           el.play().catch(err => console.warn('[WATCH] play error:', err));
-          window._watchPcReceiving = true;
         }
         // 受信バッファを最小化して遅延削減
         try {
@@ -1066,12 +1049,6 @@
             }
           });
         } catch(e) {}
-      };
-      watchPc.onconnectionstatechange = () => {
-        console.log('[WATCH] connectionState:', watchPc?.connectionState);
-        if (watchPc && (watchPc.connectionState === 'disconnected' || watchPc.connectionState === 'failed' || watchPc.connectionState === 'closed')) {
-          window._watchPcReceiving = false;
-        }
       };
       watchPc.onicecandidate = e => {
         if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wi`), {
@@ -1261,8 +1238,15 @@
     // P2P配信用のキャプチャストリームを取得（SIGSEGV回避）
     let _directBcastCaptureStream = null;
     function getDirectBcastStream() {
-      // localStreamのトラックを直接使用する
-      // （captureStream経由は バックグラウンドタブで止まるため廃止）
+      // preview-videoからcaptureStream()：localStreamのtrackを直接使わないのでSIGSEGV回避
+      const pv = document.getElementById('preview-video');
+      if (pv && pv.srcObject && pv.readyState >= 2) {
+        try {
+          _directBcastCaptureStream = pv.captureStream(60);
+          return _directBcastCaptureStream;
+        } catch(e) {}
+      }
+      // fallback: localStream
       return localStream;
     }
 
@@ -1272,35 +1256,19 @@
       stopDirectBcast();
       if (!localStream) { console.warn('[DirectBcast] no localStream'); return; }
       console.log('[DirectBcast] starting for targets:', targets);
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (!videoTrack) { console.warn('[DirectBcast] no video track'); return; }
-      videoTrack.contentHint = 'detail';
-
-      // タブ移動でtrackがmuteされたとき全PCのsenderを更新する
-      videoTrack.onmute = () => {
-        console.log('[DirectBcast] track muted (tab switch?) - replaceTrack to force resume');
-        // Chrome はタブ非アクティブ時でもgetDisplayMedia trackは止まらないが
-        // muteイベントが来た場合は全senderにreplaceTrackで再通知する
-        for (const [tSid, pc] of Object.entries(_directBcastPcs)) {
-          if (pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
-            const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) {
-              sender.replaceTrack(videoTrack).catch(e => console.warn('[DirectBcast] replaceTrack err', tSid, e));
-            }
-          }
-        }
-      };
-      videoTrack.onunmute = () => {
-        console.log('[DirectBcast] track unmuted - stream resumed');
-      };
-
+      const bcastStream = getDirectBcastStream();
       for (const tSid of targets) {
         try {
           const pc = new RTCPeerConnection(ICE_RELAY || ICE);
           _directBcastPcs[tSid] = pc;
-          pc.addTrack(videoTrack, localStream);
+          // captureStream由来のtrackは各PCで独立しているのでSIGSEGVしない
+          bcastStream.getTracks().forEach(track => {
+            track.contentHint = 'detail';
+            pc.addTrack(track, bcastStream);
+          });
           pc.onicecandidate = e => {
             if (e.candidate) {
+              // ICE候補の種類をログ（診断用）
               const c = e.candidate;
               console.log('[DirectBcast ICE候補→'+tSid+']', c.type, c.protocol, c.address?.replace(/\.\d+$/, '.xxx'));
               set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_woi_${Math.random().toString(36).slice(2)}`), {
@@ -1310,6 +1278,7 @@
               console.log('[DirectBcast ICE収集完了→'+tSid+']');
             }
           };
+          // ICE接続失敗時に自動でICE restartを試みる
           let _iceRestartTimer = null;
           pc.oniceconnectionstatechange = () => {
             console.log('[DirectBcast ICE->'+tSid+']', pc.iceConnectionState);
@@ -1356,11 +1325,6 @@
     function stopDirectBcast() {
       for (const pc of Object.values(_directBcastPcs)) { try { pc.close(); } catch(e) {} }
       _directBcastPcs = {};
-      // track イベントリスナーをクリーンアップ
-      if (localStream) {
-        const vt = localStream.getVideoTracks()[0];
-        if (vt) { vt.onmute = null; vt.onunmute = null; }
-      }
       console.log('[DirectBcast] stopped');
     }
 
@@ -1409,7 +1373,6 @@
       if (el) el.classList.remove('show');
       if (_watchPlayInterval) { clearInterval(_watchPlayInterval); _watchPlayInterval = null; }
       if (watchPc) { watchPc.close(); watchPc = null; }
-      window._watchPcReceiving = false;
       const v = document.getElementById('watch-video');
       if (v) v.srcObject = null;
     }
@@ -1561,8 +1524,19 @@
     };
     window.imgSetFontSize = function(v) { imgFontSize = parseInt(v); };
     window.distImgSubmit = window.imgSubmit;
-    window.imgSetColor = el => { imgColor = el.dataset.color; document.querySelectorAll('#img-toolbar .wbc').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
+    window.imgSetColor = el => {
+      imgColor = el.dataset.color;
+      document.querySelectorAll('#img-toolbar .wbc').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+    };
     window.imgSetSize = v => { imgSize = parseInt(v); };
+    window.imgSetSizeBtn = function(v) {
+      imgSize = parseInt(v);
+      document.querySelectorAll('#imgt-thin,#imgt-mid,#imgt-thick').forEach(b => b.classList.remove('active'));
+      const map = {'2':'#imgt-thin', '4':'#imgt-mid', '8':'#imgt-thick'};
+      const btn = document.querySelector(map[String(imgSize)]);
+      if (btn) btn.classList.add('active');
+    };
     window.imgAddLabel = () => { makeTxtBox('img-labels', imgLabels, imgColor, imgFontSize); };
     function imgRenderLabels() { /* テキストボックスはmakeTxtBoxで管理 */ }
     function imgExportWithLabels() {
@@ -1953,8 +1927,19 @@
       if (btn) btn.classList.add('active');
     };
     window.wbSetFontSize = function(v) { wbFontSize = parseInt(v); };
-    window.wbSetColor = el => { wbColor = el.dataset.color; document.querySelectorAll('#wb-toolbar .wbc').forEach(e=>e.classList.remove('active')); el.classList.add('active'); };
+    window.wbSetColor = el => {
+      wbColor = el.dataset.color;
+      document.querySelectorAll('#wb-toolbar .wbc').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+    };
     window.wbSetSize = v => { wbSize = parseInt(v); };
+    window.wbSetSizeBtn = function(v) {
+      wbSize = parseInt(v);
+      document.querySelectorAll('#wbt-thin,#wbt-mid,#wbt-thick').forEach(b => b.classList.remove('active'));
+      const map = {'2':'#wbt-thin', '4':'#wbt-mid', '8':'#wbt-thick'};
+      const btn = document.querySelector(map[String(wbSize)]);
+      if (btn) btn.classList.add('active');
+    };
     window.wbAddLabel = () => { makeTxtBox('wb-labels', wbLabels, wbColor, wbFontSize); };
     function wbRenderLabels() { /* テキストボックスはmakeTxtBoxで管理 */ }
     function wbExportWithLabels() {
@@ -2136,21 +2121,18 @@
         window._watchSourceName = data.sourceName || '生徒';
         const tv = document.getElementById('teacher-video');
         const wv = document.getElementById('watch-video');
-        if (wv && wv.srcObject) {
-          // watch-videoに既に映像あり（ontrackで格納済み）→ そのまま再生・表示
-          if (wv.paused) wv.play().catch(() => {});
-          if (tv) { tv.srcObject = null; }
-          document.getElementById('teacher-overlay')?.classList.remove('show');
-          showWatch(window._watchSourceName);
-        } else if (tv && tv.srcObject) {
-          // teacher-videoに入ってしまっていた映像をwatch-videoへ移す
+        if (tv && wv && tv.srcObject) {
+          // ontrackでteacher-videoに入ってしまっていた映像をwatch-videoへ移す
           wv.srcObject = tv.srcObject;
           wv.play().catch(() => {});
           tv.srcObject = null;
+          // teacher-overlayを閉じてwatch-overlayを表示
           document.getElementById('teacher-overlay')?.classList.remove('show');
           showWatch(window._watchSourceName);
+        } else if (wv && wv.srcObject) {
+          if (wv.paused) wv.play().catch(() => {});
+          showWatch(window._watchSourceName);
         }
-        // いずれにも映像がない場合は ontrack が後で来た時に _watchSourceName が設定済みなので自動表示される
       } else if (data.command === 'teacherShare') {
         console.log('[cmd] teacherShare received');
         window._teacherShareActive = true;
@@ -2254,7 +2236,7 @@
           uid: studentId, tool: gWbTool,
           color: gWbTool === 'eraser' ? null : gWbColor,
           size: rawSize,
-          sizePct: rawSize / canvas.height * 100,  // 実際のキャンバス高さに対する割合で保存（復元時も同じ高さで掛け戻す）
+          sizePct: rawSize / 900 * 100,  // 固定基準高さ(900)に対する割合で保存（デバイス間で一貫した太さを保つ）
           points: [[gWbLX, gWbLY]], ts: Date.now(),
           normalized: true,
           canvasW: canvas.width, canvasH: canvas.height  // 実際のキャンバスサイズ
@@ -2281,62 +2263,32 @@
       canvas.addEventListener('pointerup', async () => {
         if (!gWbDrawing) return;
         gWbDrawing = false;
-        const strokeToSave = gWbCurrentStroke;
-        gWbCurrentStroke = null;
-        // 描画フラグをfalseにした後、溜まっていたストローク更新を反映
-        if (_lastStrokesSnapshot !== undefined && _lastStrokesSnapshot !== null) {
-          const pending = _lastStrokesSnapshot;
-          _lastStrokesSnapshot = null;
-          gWbReplayStrokes(pending);
-        }
-        if (strokeToSave && gWbGroupId) {
-          const strokeKey = `${studentId}_${strokeToSave.ts}`;
+        if (gWbCurrentStroke && gWbGroupId) {
+          const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
           if (gWbIsSelectMode) {
             // 番号選択モード: 別パスに保存
             if (gWbFromImg) {
               const path = `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`;
               console.log('[ストローク保存] パス:', path);
-              set(ref(db, path), strokeToSave);
+              await set(ref(db, path), gWbCurrentStroke);
             } else {
               const path = `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`;
               console.log('[ストローク保存] パス:', path);
-              set(ref(db, path), strokeToSave);
+              await set(ref(db, path), gWbCurrentStroke);
             }
           } else {
             // 教員作成モード: 元のパス
             if (gWbFromImg) {
-              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), strokeToSave);
+              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
             } else {
-              set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), strokeToSave);
+              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
             }
           }
           gWbScheduleSnapshot();
         }
-      });
-      canvas.addEventListener('pointerleave', () => {
-        if (!gWbDrawing) return;
-        gWbDrawing = false;
-        const strokeToSave = gWbCurrentStroke;
         gWbCurrentStroke = null;
-        // 描画中断時も溜まった更新を反映
-        if (_lastStrokesSnapshot !== undefined && _lastStrokesSnapshot !== null) {
-          const pending = _lastStrokesSnapshot;
-          _lastStrokesSnapshot = null;
-          gWbReplayStrokes(pending);
-        }
-        // 途中までのストロークも保存
-        if (strokeToSave && strokeToSave.points && strokeToSave.points.length >= 2 && gWbGroupId) {
-          const strokeKey = `${studentId}_${strokeToSave.ts}`;
-          if (gWbIsSelectMode) {
-            if (gWbFromImg) set(ref(db, `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`), strokeToSave);
-            else            set(ref(db, `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`),  strokeToSave);
-          } else {
-            if (gWbFromImg) set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), strokeToSave);
-            else            set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`),       strokeToSave);
-          }
-          gWbScheduleSnapshot();
-        }
       });
+      canvas.addEventListener('pointerleave', () => { gWbDrawing = false; gWbCurrentStroke = null; });
     }
 
     function gWbDrawSegment(x1, y1, x2, y2, tool, color, size) {
@@ -2362,7 +2314,7 @@
           // 線幅: sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
           let scaledSize = stroke.size;
           if (stroke.sizePct) {
-            scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
+            scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
           } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
             const scaleX = canvas.width  / stroke.canvasW;
             const scaleY = canvas.height / stroke.canvasH;
@@ -2412,25 +2364,24 @@
     }
 
     let gWbTextListenerUnsub = null;
-    let _lastStrokesSnapshot = undefined; // undefined=未受信、null=データなし、object=有効データ
+    let _lastStrokesSnapshot = null; // 前回のストロークスナップショットを保持
 
     function gWbListenStrokes(groupId, pathOverride) {
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
-      _lastStrokesSnapshot = undefined; // リセット
+      _lastStrokesSnapshot = null; // リセット
       const strokesPath = pathOverride || `sessions/${sessionId}/groups/${groupId}/wb/strokes`;
       gWbStrokeListenerUnsub = onValue(ref(db, strokesPath), snap => {
         if (!gWbCtx) return;
         const newStrokes = snap.exists() ? snap.val() : null;
         
         // 描画中は更新をスキップ（自分の線が消えるのを防ぐ）
-        // pointerupでfalseにしてからflushするので、ここでは溜めるだけ
         if (gWbDrawing) {
           _lastStrokesSnapshot = newStrokes;
           return;
         }
         
         // 初回または大きな変更がある場合のみ全体再描画
-        const needsFullRedraw = _lastStrokesSnapshot === undefined || 
+        const needsFullRedraw = !_lastStrokesSnapshot || 
                                 _lastStrokesSnapshot === null ||
                                 newStrokes === null ||
                                 Object.keys(newStrokes || {}).length < Object.keys(_lastStrokesSnapshot || {}).length;
@@ -2449,7 +2400,7 @@
               if (!pts || pts.length < 2) return;
               let scaledSize = stroke.size;
               if (stroke.sizePct) {
-                scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
+                scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
               } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
                 const scaleX = canvas.width  / stroke.canvasW;
                 const scaleY = canvas.height / stroke.canvasH;
@@ -2780,7 +2731,7 @@
       const alreadyOpen = gWbGroupId === groupId;
       gWbGroupId = groupId;
       gWbIsSelectMode = isSelectMode;
-      _lastStrokesSnapshot = undefined; // WBを開くときにスナップショットをリセット（undefined=未受信状態）
+      _lastStrokesSnapshot = null; // WBを開くときにスナップショットをリセット
       const overlay = document.getElementById('group-wb-overlay');
       overlay.style.display = 'flex';
       document.getElementById('group-wb-title').textContent = gWbFromImg ? '🖼 班の画像' : '📋 班のホワイトボード';
@@ -2795,26 +2746,28 @@
         }
       }
       // alreadyOpen でもリスナーを再設定（gWbFromImg が変わった場合に対応）
-      if (!alreadyOpen) gWbInit();
-      if (isSelectMode) {
-        // 番号選択モード: 別パスを使用
-        if (gWbFromImg) {
-          gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectImg/${groupId}/strokes`);
-          gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectImg/${groupId}/texts`);
+      setTimeout(() => {
+        if (!alreadyOpen) gWbInit();
+        if (isSelectMode) {
+          // 番号選択モード: 別パスを使用
+          if (gWbFromImg) {
+            gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectImg/${groupId}/strokes`);
+            gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectImg/${groupId}/texts`);
+          } else {
+            gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectWB/${groupId}/strokes`);
+            gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectWB/${groupId}/texts`);
+          }
         } else {
-          gWbListenStrokes(groupId, `sessions/${sessionId}/groupSelectWB/${groupId}/strokes`);
-          gWbListenTexts(groupId,   `sessions/${sessionId}/groupSelectWB/${groupId}/texts`);
+          // 教員作成モード: 元のパスを使用
+          if (gWbFromImg) {
+            gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
+            gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
+          } else {
+            gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/wb/strokes`);
+            gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/wb/texts`);
+          }
         }
-      } else {
-        // 教員作成モード: 元のパスを使用
-        if (gWbFromImg) {
-          gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/distImg/strokes`);
-          gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/distImg/texts`);
-        } else {
-          gWbListenStrokes(groupId, `sessions/${sessionId}/groups/${groupId}/wb/strokes`);
-          gWbListenTexts(groupId,   `sessions/${sessionId}/groups/${groupId}/wb/texts`);
-        }
-      }
+      }, 100);
     }
 
     function gWbClose() {
@@ -2851,10 +2804,16 @@
     };
     window.gWbSetColor = function(el) {
       gWbColor = el.dataset.color;
-      document.querySelectorAll('#gwb-colors .wcolor').forEach(e => e.classList.remove('active'));
+      document.querySelectorAll('#group-wb-overlay .wbc').forEach(e => e.classList.remove('active'));
       el.classList.add('active');
     };
-    window.gWbSetSize = function(v) { gWbSize = parseInt(v); };
+    window.gWbSetSize = function(v) {
+      gWbSize = parseInt(v);
+      document.querySelectorAll('#gwb-thin-btn,#gwb-mid-btn,#gwb-thick-btn').forEach(b => b.classList.remove('active'));
+      const map = {'3':'#gwb-thin-btn', '8':'#gwb-mid-btn', '14':'#gwb-thick-btn'};
+      const btn = document.querySelector(map[String(gWbSize)]);
+      if (btn) btn.classList.add('active');
+    };
     window.gWbClear = async function() {
       if (!gWbGroupId) return;
       if (!confirm('班全員のホワイトボードをリセットします')) return;

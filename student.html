@@ -983,40 +983,6 @@
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
-        // ontrack はPC作成時に一度だけ設定（offerのたびに上書きしない）
-        pc.ontrack = e => {
-          const wv = document.getElementById('watch-video');
-          const watchPcActive = window._watchPcReceiving
-            || (watchPc
-              && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
-              && wv && wv.srcObject);
-          console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length,
-            '_watchSourceName:', window._watchSourceName, 'watchPcActive:', !!watchPcActive);
-          if (e.track.kind === 'video') {
-            const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
-            // watchPc（P2P直接）が既に映像を受信中なら教員中継で上書きしない
-            if (watchPcActive) {
-              console.log('[PC-TRACK] watchPc already receiving, skipping teacher-relay track');
-              return;
-            }
-            if (window._watchSourceName) {
-              // watchStart済み かつ watchPc未接続 → 教員中継として watch-video に表示
-              if (wv) { wv.srcObject = stream; wv.play().catch(() => {}); showWatch(window._watchSourceName); }
-            } else if (window._teacherShareActive) {
-              // teacherShare CMD到着済み：teacher-videoに表示
-              const el = document.getElementById('teacher-video');
-              if (el) { el.srcObject = stream; el.play().catch(() => {}); showTeacher(); }
-            } else {
-              // CMD未着：streamを保留しておきコマンド到着時に使う
-              window._pendingTrackStream = stream;
-              console.log('[PC-TRACK] CMD未着 → _pendingTrackStream に保留');
-              // CMD到着後に即表示できるよう両videoにも格納しておく
-              const tv = document.getElementById('teacher-video');
-              if (tv) { tv.srcObject = stream; tv.play().catch(() => {}); }
-              if (wv) { wv.srcObject = stream; }
-            }
-          }
-        };
       }
       // signalingState が have-local-offer なら rollback してから受け取る（glare解消）
       if (pc.signalingState === 'have-local-offer') {
@@ -1038,6 +1004,39 @@
         console.warn('[handleOffer] unexpected signalingState:', pc.signalingState, '- skipping');
         return;
       }
+      // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
+      // watchStartコマンドが来ていれば watch-video に表示
+      pc.ontrack = e => {
+        const wv = document.getElementById('watch-video');
+        const watchPcActive = window._watchPcReceiving
+          || (watchPc
+            && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
+            && wv && wv.srcObject);
+        console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length,
+          '_watchSourceName:', window._watchSourceName, 'watchPcActive:', !!watchPcActive);
+        if (e.track.kind === 'video') {
+          const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
+          // watchPc（P2P直接）が既に映像を受信中なら教員中継で上書きしない
+          if (watchPcActive) {
+            console.log('[PC-TRACK] watchPc already receiving, skipping teacher-relay track');
+            return;
+          }
+          if (window._watchSourceName) {
+            // watchStart済み かつ watchPc未接続 → 教員中継として watch-video に表示
+            if (wv) { wv.srcObject = stream; wv.play().catch(() => {}); showWatch(window._watchSourceName); }
+          } else if (window._teacherShareActive) {
+            // teacherShare CMD到着済み：teacher-videoに表示
+            const el = document.getElementById('teacher-video');
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); showTeacher(); }
+          } else {
+            // CMD未着：両方のvideoに格納してCMD到着時に判定
+            const tv = document.getElementById('teacher-video');
+            if (tv) { tv.srcObject = stream; tv.play().catch(() => {}); }
+            if (wv) { wv.srcObject = stream; }
+            if (window._teacherShareActive) showTeacher();
+          }
+        }
+      };
       // localStream のトラックを追加（未追加の場合のみ）
       if (localStream) {
         const senders = pc.getSenders();
@@ -2232,7 +2231,6 @@
       } else if (data.command === 'stopWatch') {
         hideWatch();
         window._watchSourceName = null;
-        window._pendingTrackStream = null;
         // 自分がsource側なら配信も停止
         stopDirectBcast();
       } else if (data.command === 'startBcast') {
@@ -2244,52 +2242,17 @@
         window._watchSourceName = data.sourceName || '生徒';
         const tv = document.getElementById('teacher-video');
         const wv = document.getElementById('watch-video');
-        // 保留中のstreamがあればwatch-videoに充てる（ontrackがCMDより先に来た場合）
-        const pendingStream = window._pendingTrackStream || null;
-        window._pendingTrackStream = null;
         if (tv && wv && tv.srcObject) {
           // ontrackでteacher-videoに入ってしまっていた映像をwatch-videoへ移す
           wv.srcObject = tv.srcObject;
           wv.play().catch(() => {});
           tv.srcObject = null;
+          // teacher-overlayを閉じてwatch-overlayを表示
           document.getElementById('teacher-overlay')?.classList.remove('show');
           showWatch(window._watchSourceName);
         } else if (wv && wv.srcObject) {
           if (wv.paused) wv.play().catch(() => {});
           showWatch(window._watchSourceName);
-        } else if (pendingStream) {
-          // ontrack保留stream → watch-videoに即表示
-          console.log('[watchStart] pendingStream使用 → showWatch');
-          if (wv) { wv.srcObject = pendingStream; wv.play().catch(() => {}); }
-          showWatch(window._watchSourceName);
-        } else {
-          // 映像がまだ届いていない場合: 最大3秒間ポーリングして映像を待つ
-          console.log('[watchStart] 映像未着 → ポーリング待機');
-          let _watchWaitCount = 0;
-          const _watchWaitTimer = setInterval(() => {
-            _watchWaitCount++;
-            const wv2 = document.getElementById('watch-video');
-            const tv2 = document.getElementById('teacher-video');
-            const ps = window._pendingTrackStream;
-            if (ps) {
-              clearInterval(_watchWaitTimer);
-              window._pendingTrackStream = null;
-              if (wv2) { wv2.srcObject = ps; wv2.play().catch(() => {}); }
-              showWatch(window._watchSourceName);
-            } else if (wv2 && wv2.srcObject) {
-              clearInterval(_watchWaitTimer);
-              if (wv2.paused) wv2.play().catch(() => {});
-              showWatch(window._watchSourceName);
-            } else if (tv2 && tv2.srcObject) {
-              clearInterval(_watchWaitTimer);
-              wv2.srcObject = tv2.srcObject; wv2.play().catch(() => {});
-              tv2.srcObject = null;
-              showWatch(window._watchSourceName);
-            } else if (_watchWaitCount >= 30) {
-              clearInterval(_watchWaitTimer);
-              console.warn('[watchStart] タイムアウト: 映像が届かなかった');
-            }
-          }, 100);
         }
       } else if (data.command === 'teacherShare') {
         console.log('[cmd] teacherShare received');

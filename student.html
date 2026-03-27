@@ -841,7 +841,8 @@
           _cmdSeen.add(snap.key);
           console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'startTs:', _cmdStartTs);
           // 起動前に書かれた古いコマンドは無視（再ログイン時の誤作動防止）
-          if (data.ts && data.ts < _cmdStartTs - 5000) return;
+          // ★修正: 有効期限を5秒→30秒に延長（遅延参加・再読み込み生徒でもwatchStart等を受け取れるようにする）
+          if (data.ts && data.ts < _cmdStartTs - 30000) return;
           handleCommand(data);
         });
       });
@@ -850,6 +851,42 @@
       onValue(ref(db, `sessions/${sessionId}/teacherSharing`), snap => {
         const active = snap.val();
         if (active === false) hideTeacher();
+      });
+
+      // ★修正: broadcasting ノードを監視 → 参加・再読み込み時に配信中なら即watchStartを再現
+      // watchStartコマンドが古くて破棄された場合のフォールバック
+      onValue(ref(db, `sessions/${sessionId}/broadcasting`), snap => {
+        if (!snap.exists()) return;
+        const b = snap.val();
+        if (!b || !b.active) {
+          // 配信が終わっていたら視聴を停止
+          if (window._watchSourceName) {
+            hideWatch();
+            stopDirectBcast();
+            console.log('[broadcasting] active=false → hideWatch');
+          }
+          return;
+        }
+        // 配信中 → watchStartコマンドと同じ処理を実行
+        // ただし既に視聴中なら重複して処理しない
+        if (window._watchSourceName) return;
+        console.log('[broadcasting] active=true, sourceName:', b.sourceName, '→ watchStart相当を実行');
+        window._watchSourceName = b.sourceName || '生徒';
+        const tv = document.getElementById('teacher-video');
+        const wv = document.getElementById('watch-video');
+        if (tv && wv && tv.srcObject) {
+          wv.srcObject = tv.srcObject;
+          wv.play().catch(() => {});
+          tv.srcObject = null;
+          document.getElementById('teacher-overlay')?.classList.remove('show');
+          showWatch(window._watchSourceName);
+        } else if (wv && wv.srcObject) {
+          if (wv.paused) wv.play().catch(() => {});
+          showWatch(window._watchSourceName);
+        } else {
+          // 映像未着 → オーバーレイだけ先に表示、ontrackで映像が来たときに反映される
+          showWatch(window._watchSourceName);
+        }
       });
       listenMyGroup();
       listenGroupSelect();
@@ -1008,14 +1045,10 @@
       // watchStartコマンドが来ていれば watch-video に表示
       pc.ontrack = e => {
         const wv = document.getElementById('watch-video');
-        // ★修正: watchPc の connectionState が closed/failed の場合は active とみなさない
-        // stopWatch 後に watchPc=null になっているが _watchPcReceiving が残っているケースを排除
-        const watchPcLive = watchPc
-          && watchPc.connectionState !== 'closed'
-          && watchPc.connectionState !== 'failed'
-          && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
-          && wv && wv.srcObject;
-        const watchPcActive = window._watchPcReceiving && watchPcLive;
+        const watchPcActive = window._watchPcReceiving
+          || (watchPc
+            && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
+            && wv && wv.srcObject);
         console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length,
           '_watchSourceName:', window._watchSourceName, 'watchPcActive:', !!watchPcActive);
         if (e.track.kind === 'video') {
@@ -1085,12 +1118,6 @@
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           el.play().catch(err => console.warn('[WATCH] play error:', err));
         }
-        // ★修正: P2P直接受信中フラグをセット（teacher中継 ontrack による上書きを防ぐ）
-        window._watchPcReceiving = true;
-        e.track.onended = () => {
-          // トラック終了（送信元が stopShare した）時にフラグをリセット
-          window._watchPcReceiving = false;
-        };
         // 受信バッファを最小化して遅延削減
         try {
           watchPc.getReceivers().forEach(r => {
@@ -1502,12 +1529,6 @@
       if (watchPc) { watchPc.close(); watchPc = null; }
       const v = document.getElementById('watch-video');
       if (v) v.srcObject = null;
-      // ★修正: P2P受信フラグとwatch名をリセット
-      // これをしないと stopWatch 後も watchPcActive=true のまま残り
-      // 後続の teacher リネゴシエーション offer に対する ontrack が
-      // 「watchPc already receiving」と判定してスキップ→フリーズする
-      window._watchPcReceiving = false;
-      window._watchSourceName = null;
     }
 
     // ===== 配布画像 =====
@@ -2245,11 +2266,8 @@
       } else if (data.command === 'survey-close') {
         hideSurvey();
       } else if (data.command === 'stopWatch') {
-        hideWatch(); // _watchPcReceiving / _watchSourceName のリセットも内包
-        // ★修正: teacher-video に残った映像もクリア（フリーズした画面が残るのを防ぐ）
-        const tv2 = document.getElementById('teacher-video');
-        if (tv2) { tv2.srcObject = null; }
-        document.getElementById('teacher-overlay')?.classList.remove('show');
+        hideWatch();
+        window._watchSourceName = null;
         // 自分がsource側なら配信も停止
         stopDirectBcast();
       } else if (data.command === 'startBcast') {
@@ -2258,6 +2276,11 @@
       } else if (data.command === 'stopBcast') {
         stopDirectBcast();
       } else if (data.command === 'watchStart') {
+        // ★修正: 既に同じ配信を視聴中なら重複処理しない（broadcastingリスナーとの競合防止）
+        if (window._watchSourceName && window._watchSourceName === (data.sourceName || '生徒')) {
+          console.log('[watchStart] already watching, skip duplicate');
+          return;
+        }
         window._watchSourceName = data.sourceName || '生徒';
         const tv = document.getElementById('teacher-video');
         const wv = document.getElementById('watch-video');

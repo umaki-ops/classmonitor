@@ -1034,6 +1034,14 @@
             if (tv) { tv.srcObject = stream; tv.play().catch(() => {}); }
             if (wv) { wv.srcObject = stream; }
             if (window._teacherShareActive) showTeacher();
+            // ★修正: watchSourceNameが既にセット済みの場合はwatch-videoとして表示
+            // （watchStartコマンドがontrackより先に届いたが映像未着だったケース）
+            if (window._watchSourceName) {
+              if (wv) { wv.srcObject = stream; wv.play().catch(() => {}); }
+              if (tv) { tv.srcObject = null; }
+              document.getElementById('teacher-overlay')?.classList.remove('show');
+              showWatch(window._watchSourceName);
+            }
           }
         }
       };
@@ -1081,6 +1089,9 @@
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           el.play().catch(err => console.warn('[WATCH] play error:', err));
         }
+        // ★修正: P2P直接受信フラグをセット（pc.ontrack側でのteacher-relay上書きを防ぐ）
+        window._watchPcReceiving = true;
+        e.track.onended = () => { window._watchPcReceiving = false; };
         // 受信バッファを最小化して遅延削減
         try {
           watchPc.getReceivers().forEach(r => {
@@ -1492,6 +1503,8 @@
       if (watchPc) { watchPc.close(); watchPc = null; }
       const v = document.getElementById('watch-video');
       if (v) v.srcObject = null;
+      // ★修正: P2P直接受信フラグをリセット
+      window._watchPcReceiving = false;
     }
 
     // ===== 配布画像 =====
@@ -2252,6 +2265,10 @@
           showWatch(window._watchSourceName);
         } else if (wv && wv.srcObject) {
           if (wv.paused) wv.play().catch(() => {});
+          showWatch(window._watchSourceName);
+        } else {
+          // ★修正: 映像がまだ届いていない場合もオーバーレイを先に表示して待機
+          // ontrack側で映像が届いた時点で watch-video にセットされる
           showWatch(window._watchSourceName);
         }
       } else if (data.command === 'teacherShare') {

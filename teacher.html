@@ -100,9 +100,11 @@
   .card-footer{padding:6px 10px;display:flex;align-items:center;justify-content:space-between;gap:4px;}
   .jtime{font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
   .card-actions{display:flex;gap:3px;}
-  .icon-btn{height:21px;padding:0 6px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:2px;font-size:10px;font-family:'Noto Sans JP',sans-serif;font-weight:600;transition:all 0.2s;white-space:nowrap;}
+  .icon-btn{height:21px;padding:0 6px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:2px;font-size:10px;font-family:'Noto Sans JP',sans-serif;font-weight:600;transition:all 0.2s;white-space:nowrap;position:relative;}
   .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
   .icon-btn.af{border-color:var(--purple);color:#a78bfa;background:rgba(124,58,237,0.1);}
+  .icon-btn[title]:hover::after{content:attr(title);position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.95);color:#e2e8f0;font-size:11px;font-weight:600;white-space:nowrap;padding:4px 8px;border-radius:6px;border:1px solid var(--border);pointer-events:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.5);}
+  .icon-btn[title]:hover::before{content:'';position:absolute;bottom:calc(100% + 1px);left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:var(--border);pointer-events:none;z-index:9999;}
   #empty-state{grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--muted);}
   #empty-state .ei{font-size:34px;margin-bottom:10px;opacity:0.3;}
 
@@ -2213,11 +2215,12 @@ function updateCardContent(sid){
         <div class="screen-ph" id="ph-${sid}"><div class="screen-ph-icon">⏳</div><div class="screen-ph-text">画面共有を待っています</div></div>
       </div>`;
     actionsEl.innerHTML=`
-      <button class="icon-btn" id="fb-${sid}" onclick="focusStudent('${sid}')">🎯</button>
-      <button class="icon-btn" onclick="unfocusStudent('${sid}')">✅</button>
-      <button class="icon-btn" onclick="broadcastStudentScreen('${sid}')">📡</button>
-      <button class="icon-btn" onclick="openMsgModal('${sid}')">💬</button>
-      <button class="icon-btn" onclick="openFullscreen('${sid}')">⛶</button>`;
+      <button class="icon-btn" id="fb-${sid}" onclick="focusStudent('${sid}')" title="集中モードを表示">🎯</button>
+      <button class="icon-btn" onclick="unfocusStudent('${sid}')" title="集中モードを解除">✅</button>
+      <button class="icon-btn" onclick="broadcastStudentScreen('${sid}')" title="この生徒の画面を全員に共有">📡</button>
+      <button class="icon-btn" onclick="stopBroadcastScreen()" title="画面共有を停止">⏹</button>
+      <button class="icon-btn" onclick="openMsgModal('${sid}')" title="メッセージを送る">💬</button>
+      <button class="icon-btn" onclick="openFullscreen('${sid}')" title="拡大表示">⛶</button>`;
     // ビュー切替後に既存ストリームを新しいvideo要素に再アタッチ
     const pc=peerConnections[sid];
     if(pc){
@@ -2252,9 +2255,9 @@ function updateCardContent(sid){
         <div class="wb-drawing-dot" id="wb-dot-${sid}" style="display:none;"></div>
       </div>`;
     actionsEl.innerHTML=`
-      <button class="icon-btn" onclick="openWbFullscreen('${sid}')">⛶ 拡大</button>
+      <button class="icon-btn" onclick="openWbFullscreen('${sid}')" title="ホワイトボードを拡大表示">⛶ 拡大</button>
       <button class="icon-btn" onclick="clearStudentWb('${sid}')" title="この生徒のWBを消去">🗑️</button>
-      <button class="icon-btn" onclick="openMsgModal('${sid}')">💬</button>`;
+      <button class="icon-btn" onclick="openMsgModal('${sid}')" title="メッセージを送る">💬</button>`;
   }
 }
 

@@ -1525,6 +1525,7 @@
         if (_selectedTxt) { deselectTxt(); return; }
         if (_imgTextMode) { makeTxtBox('img-labels', imgLabels, imgColor, imgFontSize); return; }
         imgDrawing = true;
+        imgCanvas.setPointerCapture(e.pointerId);
         const r = imgCanvas.getBoundingClientRect();
         imgLX = (e.clientX-r.left)*imgCanvas.width/r.width;
         imgLY = (e.clientY-r.top)*imgCanvas.height/r.height;
@@ -1532,14 +1533,15 @@
       imgCanvas.addEventListener('pointermove', e => {
         if (!imgDrawing) return;
         const r = imgCanvas.getBoundingClientRect();
-        const x = (e.clientX-r.left)*imgCanvas.width/r.width;
-        const y = (e.clientY-r.top)*imgCanvas.height/r.height;
+        const x = Math.max(0, Math.min(imgCanvas.width,  (e.clientX-r.left)*imgCanvas.width/r.width));
+        const y = Math.max(0, Math.min(imgCanvas.height, (e.clientY-r.top)*imgCanvas.height/r.height));
         imgDraw(imgLX, imgLY, x, y);
         imgLX = x; imgLY = y;
         imgSignalDrawing();
       });
       imgCanvas.addEventListener('pointerup', () => { imgDrawing = false; imgScheduleSnapshot(); deselectTxt(); });
-      imgCanvas.addEventListener('pointerleave', () => { imgDrawing = false; });
+      imgCanvas.addEventListener('pointercancel', () => { imgDrawing = false; imgScheduleSnapshot(); });
+      imgCanvas.addEventListener('pointerleave', e => { if (e.buttons === 0) { imgDrawing = false; imgScheduleSnapshot(); } });
     }
     function imgResize(forceInit) {
       if (!imgCanvas) return;
@@ -1938,6 +1940,7 @@
         if (_selectedTxt) { deselectTxt(); return; }
         if (_wbTextMode) { makeTxtBox('wb-labels', wbLabels, wbColor, wbFontSize); return; }
         wbDrawing = true;
+        wbCanvas.setPointerCapture(e.pointerId);
         const r = wbCanvas.getBoundingClientRect();
         wbLX = (e.clientX-r.left)*wbCanvas.width/r.width;
         wbLY = (e.clientY-r.top)*wbCanvas.height/r.height;
@@ -1945,14 +1948,15 @@
       wbCanvas.addEventListener('pointermove', e => {
         if (!wbDrawing) return;
         const r = wbCanvas.getBoundingClientRect();
-        const x = (e.clientX-r.left)*wbCanvas.width/r.width;
-        const y = (e.clientY-r.top)*wbCanvas.height/r.height;
+        const x = Math.max(0, Math.min(wbCanvas.width,  (e.clientX-r.left)*wbCanvas.width/r.width));
+        const y = Math.max(0, Math.min(wbCanvas.height, (e.clientY-r.top)*wbCanvas.height/r.height));
         wbDraw(wbLX, wbLY, x, y);
         wbLX = x; wbLY = y;
         wbSignalDrawing();
       });
       wbCanvas.addEventListener('pointerup', () => { wbDrawing = false; wbScheduleSnapshot(); deselectTxt(); });
-      wbCanvas.addEventListener('pointerleave', () => { wbDrawing = false; });
+      wbCanvas.addEventListener('pointercancel', () => { wbDrawing = false; wbScheduleSnapshot(); });
+      wbCanvas.addEventListener('pointerleave', e => { if (e.buttons === 0) { wbDrawing = false; wbScheduleSnapshot(); } });
     }
     function wbResize(forceInit) {
       if (!wbCanvas) return;
@@ -2344,26 +2348,29 @@
           return;
         }
         gWbDrawing = true;
+        canvas.setPointerCapture(e.pointerId); // ② キャンバス外に出ても追跡継続
         const r = canvas.getBoundingClientRect();
         // 座標をパーセント正規化して保存（異なる画面サイズの生徒間で正確に共有するため）
         gWbLX = (e.clientX - r.left) / r.width * 100;
         gWbLY = (e.clientY - r.top) / r.height * 100;
         const rawSize = gWbTool === 'eraser' ? gWbSize * 5 : gWbSize;
+        // sizePctは実際のcanvas高さに対する割合で保存（固定値900ではなく実測値を使用）
         gWbCurrentStroke = {
           uid: studentId, tool: gWbTool,
           color: gWbTool === 'eraser' ? null : gWbColor,
           size: rawSize,
-          sizePct: rawSize / 900 * 100,  // 固定基準高さ(900)に対する割合で保存（デバイス間で一貫した太さを保つ）
+          sizePct: rawSize / canvas.height * 100,
           points: [[gWbLX, gWbLY]], ts: Date.now(),
           normalized: true,
-          canvasW: canvas.width, canvasH: canvas.height  // 実際のキャンバスサイズ
+          canvasW: canvas.width, canvasH: canvas.height
         };
       });
       canvas.addEventListener('pointermove', e => {
         if (!gWbDrawing) return;
         const r = canvas.getBoundingClientRect();
-        const x = (e.clientX - r.left) / r.width * 100;
-        const y = (e.clientY - r.top) / r.height * 100;
+        // キャプチャ中はcanvas外の座標もクランプして受け取る
+        const x = Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100));
+        const y = Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100));
         // 描画はキャンバスのピクセル座標に変換して実行
         gWbDrawSegment(gWbLX / 100 * canvas.width, gWbLY / 100 * canvas.height, x / 100 * canvas.width, y / 100 * canvas.height, gWbTool, gWbColor, gWbSize);
         gWbLX = x; gWbLY = y;
@@ -2377,24 +2384,20 @@
           }
         }
       });
-      canvas.addEventListener('pointerup', async () => {
+
+      // ストロークをFirebaseに保存する共通関数
+      async function gWbSaveCurrentStroke() {
         if (!gWbDrawing) return;
         gWbDrawing = false;
         if (gWbCurrentStroke && gWbGroupId) {
           const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
           if (gWbIsSelectMode) {
-            // 番号選択モード: 別パスに保存
             if (gWbFromImg) {
-              const path = `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`;
-              console.log('[ストローク保存] パス:', path);
-              await set(ref(db, path), gWbCurrentStroke);
+              await set(ref(db, `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`), gWbCurrentStroke);
             } else {
-              const path = `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`;
-              console.log('[ストローク保存] パス:', path);
-              await set(ref(db, path), gWbCurrentStroke);
+              await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`), gWbCurrentStroke);
             }
           } else {
-            // 教員作成モード: 元のパス
             if (gWbFromImg) {
               await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
             } else {
@@ -2404,8 +2407,15 @@
           gWbScheduleSnapshot();
         }
         gWbCurrentStroke = null;
+      }
+
+      canvas.addEventListener('pointerup', gWbSaveCurrentStroke);
+      // pointercancel時もストロークを保存して欠損を防ぐ（② 素早い描画の欠損対策）
+      canvas.addEventListener('pointercancel', gWbSaveCurrentStroke);
+      // pointerleaveはsetPointerCaptureにより通常発生しないが、念のため保存処理を行う
+      canvas.addEventListener('pointerleave', e => {
+        if (e.buttons === 0) gWbSaveCurrentStroke(); // ボタンが離れていれば保存
       });
-      canvas.addEventListener('pointerleave', () => { gWbDrawing = false; gWbCurrentStroke = null; });
     }
 
     function gWbDrawSegment(x1, y1, x2, y2, tool, color, size) {
@@ -2431,7 +2441,7 @@
           // 線幅: sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
           let scaledSize = stroke.size;
           if (stroke.sizePct) {
-            scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
+            scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
           } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
             const scaleX = canvas.width  / stroke.canvasW;
             const scaleY = canvas.height / stroke.canvasH;
@@ -2517,7 +2527,7 @@
               if (!pts || pts.length < 2) return;
               let scaledSize = stroke.size;
               if (stroke.sizePct) {
-                scaledSize = Math.max(0.5, stroke.sizePct / 100 * 900);
+                scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
               } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
                 const scaleX = canvas.width  / stroke.canvasW;
                 const scaleY = canvas.height / stroke.canvasH;

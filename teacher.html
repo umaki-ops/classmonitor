@@ -220,6 +220,16 @@
     border-color: #ef4444 !important;
     animation: tab-away-blink 1s ease-in-out infinite;
   }
+
+  /* ③ 個別モニタリング共有中の生徒カード青点滅枠 */
+  @keyframes monitoring-share-blink {
+    0%,100%{box-shadow:0 0 0 3px #2563eb,0 0 16px 5px rgba(37,99,235,0.55);border-color:#2563eb;}
+    50%{box-shadow:0 0 0 3px rgba(37,99,235,0.2),0 0 4px 1px rgba(37,99,235,0.1);border-color:rgba(37,99,235,0.3);}
+  }
+  .student-card.monitoring-shared {
+    border-color: #2563eb !important;
+    animation: monitoring-share-blink 1s ease-in-out infinite;
+  }
   .badge-tab-away {
     background: rgba(239,68,68,0.2) !important;
     color: #ef4444 !important;
@@ -1942,6 +1952,7 @@ window.broadcastStudentScreen=function(sid){
   currentBroadcastId=sid;
   stopCanvasCapture();
   document.getElementById('card-'+sid)?.classList.add('focused');
+  document.getElementById('card-'+sid)?.classList.add('monitoring-shared');
   const targets=Object.keys(students).filter(s=>s!==sid);
   const sourceName=students[sid]?.name||'生徒';
   // 教員は既存のモニタリング接続経由（P2Pターゲットに含めない → SIGSEGV回避）
@@ -1990,6 +2001,7 @@ function stopBcast(){
   cmd(currentBroadcastId,'stopBcast',{});
   cmd('all','stopWatch',{});
   document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');
+  document.getElementById('card-'+currentBroadcastId)?.classList.remove('monitoring-shared');
   currentBroadcastId=null;
   stopCanvasCapture();
   if(window._watchSenders){
@@ -2964,7 +2976,8 @@ function drawStrokeOnCanvas(canvas, stroke) {
     // sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
     let lineWidth;
     if (stroke.sizePct) {
-      lineWidth = Math.max(0.5, stroke.sizePct / 100 * 900);
+      // sizePctは固定基準高さ(900)に対する割合 → 実際のcanvas高さHに対してスケール
+      lineWidth = Math.max(0.5, stroke.sizePct / 100 * H);
     } else {
       const srcW = stroke.canvasW || 800;
       const srcH = stroke.canvasH || 500;

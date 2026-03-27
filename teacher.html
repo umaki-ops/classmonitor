@@ -1465,8 +1465,10 @@ function listenStudents(){
     if(!students[sid]){
       students[sid]={...d,id:sid};
       addCard(sid,d);
-      // 参加時点でsharingなら即接続、waitingなら共有開始を待つ
-      if(d.status==='sharing') setupPC(sid);
+      // ★修正: waiting・sharing問わず参加時に即setupPC
+      // → 生徒がstartShare()した瞬間にリネゴシエーションofferを受け取れる状態にしておく
+      // （以前はsharingになるまでPCがなく、最初の共有が真っ黒になっていた）
+      setupPC(sid);
     }
   });
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
@@ -1501,9 +1503,12 @@ function listenStudents(){
         // PCがない・壊れている場合のみ再セットアップ
         console.log('[sharing] no valid PC (state:', existingState, ') → setupPC');
         setupPC(sid);
+      } else if (existingState === 'connected') {
+        // ★修正: 既にconnected → リネゴシエーションofferが来るのを待つ＋即キーフレーム要求
+        console.log('[sharing] existing PC connected → waiting for renegotiation + requesting keyframe');
+        forceKeyframe(sid);
       } else {
-        // 既存PCが生きていれば何もしない
-        // 生徒側が addTrack → createOffer → 送信済みなので、そのanswerを待つだけ
+        // connecting等 → 生徒側のリネゴシエーションofferを待つだけ
         console.log('[sharing] existing PC ok (state:', existingState, ') → waiting for student renegotiation offer');
       }
     }
@@ -1609,6 +1614,10 @@ async function setupPC(sid){
       v.play().catch(()=>{});
       v.style.display='block';if(ph)ph.style.display='none';setBadge(sid,'live');updateStats();
     }
+    // ★修正: トラック受信直後に即キーフレーム要求（真っ黒防止）
+    // 接続直後はエンコーダがキーフレームを出すまで黒画面になるため即要求する
+    setTimeout(()=>forceKeyframe(sid), 200);
+    setTimeout(()=>forceKeyframe(sid), 800);
     // fs-videoも更新（拡大表示中のフリーズ防止）
     if(sid===window.currentFsId){
       const fsv=document.getElementById('fs-video');
@@ -1712,6 +1721,9 @@ async function handleStudentOffer(sid,sdp){
     await pc.setLocalDescription(answer);
     sig(sid,{type:'answer',from:'teacher',to:sid,sdp:{type:answer.type,sdp:answer.sdp}});
     console.log('[handleStudentOffer] answered renegotiation from',sid);
+    // ★修正: リネゴシエーション完了後に即キーフレーム要求（映像が出るまでの遅延を削減）
+    setTimeout(()=>forceKeyframe(sid), 300);
+    setTimeout(()=>forceKeyframe(sid), 1000);
     // negotiatePCキューが待機中なら解除してループを止める
     if (_negResolvers[sid]) { _negResolvers[sid](); delete _negResolvers[sid]; }
     // negotiatePCキュー自体もリセット（古いofferが積まれていても送らない）
@@ -1899,7 +1911,10 @@ function startBcastCapture(sid) {
     _bcastCanvas.width = vw;
     _bcastCanvas.height = vh;
   }
-  _bcastStream = _bcastCanvas.captureStream(0);
+  // ★修正: captureStream(0)→captureStream(30) でフレームレートを明示指定
+  // captureStream(0)はrequestFrame()を呼ぶまでフレームが流れないが
+  // ブラウザによっては初回requestFrame()が遅れて受信側で黒くなる
+  _bcastStream = _bcastCanvas.captureStream(30);
   // requestVideoFrameCallback: フレームが届いた瞬間だけ描画（遅延ゼロ）
   let _keepaliveInterval = null;
   function drawFrame(now, metadata) {

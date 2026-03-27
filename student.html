@@ -977,6 +977,16 @@
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
       }
+      // signalingState が have-local-offer（生徒が自分でofferを送った直後）なら
+      // glare（双方向offer競合）を回避するために rollback してから受け取る
+      if (pc.signalingState === 'have-local-offer') {
+        try {
+          console.log('[handleOffer] glare detected, rolling back local offer');
+          await pc.setLocalDescription({ type: 'rollback' });
+        } catch(e) {
+          console.warn('[handleOffer] rollback failed:', e);
+        }
+      }
       // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
       // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
       // watchStartコマンドが来ていれば watch-video に表示
@@ -1216,16 +1226,27 @@
           console.log('[startShare] addTrack to existing pc, connectionState:', pc.connectionState);
         });
         if (trackAdded) {
-          // onnegotiationneeded が発火するのを待つ（Chrome は自動でofferを要求する）
-          // ただし Chrome は通常 onnegotiationneeded を使わないため手動でリネゴシエーション
+          // signalingState が stable になるまで最大500ms待ってからoffer送信
+          const waitForStable = () => new Promise(resolve => {
+            if (pc.signalingState === 'stable') { resolve(); return; }
+            const check = setInterval(() => {
+              if (!pc || pc.signalingState === 'stable' || pc.signalingState === 'closed') {
+                clearInterval(check); resolve();
+              }
+            }, 50);
+            setTimeout(() => { clearInterval(check); resolve(); }, 500);
+          });
           try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
-              type: 'offer', from: studentId, to: 'teacher',
-              sdp: { type: offer.type, sdp: offer.sdp }
-            });
-            console.log('[startShare] renegotiation offer sent');
+            await waitForStable();
+            if (pc && pc.signalingState === 'stable') {
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
+                type: 'offer', from: studentId, to: 'teacher',
+                sdp: { type: offer.type, sdp: offer.sdp }
+              });
+              console.log('[startShare] renegotiation offer sent');
+            }
           } catch(e) {
             console.warn('[startShare] renegotiation failed:', e);
           }

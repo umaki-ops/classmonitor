@@ -1487,15 +1487,14 @@ function listenStudents(){
     if(d.status==='sharing'){
       const existingPc = peerConnections[sid];
       const existingState = existingPc?.connectionState;
-      // 既存PCが接続中/接続済みなら再setupしない（LIVE→待機→LIVEを防ぐ）
-      // リネゴシエーションは生徒側が handleOffer で addTrack するので不要
-      // 接続がない・失敗・クローズ状態のときだけ setupPC を呼ぶ
       if (!existingPc || existingState === 'failed' || existingState === 'closed') {
+        // PCがない・壊れている場合のみ再セットアップ
+        console.log('[sharing] no valid PC (state:', existingState, ') → setupPC');
         setupPC(sid);
       } else {
-        // 既存PC上でofferを再送してトラック追加を促す（リネゴシエーション）
-        console.log('[sharing] existing PC state:', existingState, '→ re-offer to trigger addTrack');
-        negotiatePC(sid);
+        // 既存PCが生きていれば何もしない
+        // 生徒側が addTrack → createOffer → 送信済みなので、そのanswerを待つだけ
+        console.log('[sharing] existing PC ok (state:', existingState, ') → waiting for student renegotiation offer');
       }
     }
     // 班別表示も更新
@@ -1532,6 +1531,7 @@ function listenStudents(){
     const sig=snap.val();
     if(!sig||sig.to!=='teacher')return;
     if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
+    else if(sig.type==='offer')setTimeout(()=>handleStudentOffer(sig.from,sig.sdp),0); // 生徒からのリネゴシエーション
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
     else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
     else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
@@ -1687,6 +1687,22 @@ async function handleAnswer(sid,sdp){
     // negotiatePCキューのanswerが来たら次の処理を解除
     if (_negResolvers[sid]) { _negResolvers[sid](); delete _negResolvers[sid]; }
   }catch(e){console.error('[setRemoteDesc]',e);}
+}
+// 生徒からのリネゴシエーションoffer（addTrack後に生徒が送ってくる）を処理
+async function handleStudentOffer(sid,sdp){
+  const pc=peerConnections[sid];if(!pc)return;
+  // have-local-offer状態（教員もofferを送ろうとしていた）ならrollbackしてから受け取る
+  if(pc.signalingState==='have-local-offer'){
+    try{ await pc.setLocalDescription({type:'rollback'}); }catch(e){ console.warn('[handleStudentOffer] rollback failed:',e); return; }
+  }
+  if(pc.signalingState!=='stable'){ console.warn('[handleStudentOffer] unexpected state:',pc.signalingState); return; }
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const answer=await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sig(sid,{type:'answer',from:'teacher',to:sid,sdp:{type:answer.type,sdp:answer.sdp}});
+    console.log('[handleStudentOffer] answered renegotiation from',sid);
+  }catch(e){console.error('[handleStudentOffer]',e);}
 }
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 

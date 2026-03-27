@@ -982,10 +982,6 @@
         };
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
-          // ★修正: connected時に即キーフレーム要求→教員側で黒画面にならないようにする
-          if (pc.connectionState === 'connected') {
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/keyframeReq`), Date.now());
-          }
         };
       }
       // signalingState が have-local-offer なら rollback してから受け取る（glare解消）
@@ -1012,10 +1008,14 @@
       // watchStartコマンドが来ていれば watch-video に表示
       pc.ontrack = e => {
         const wv = document.getElementById('watch-video');
-        const watchPcActive = window._watchPcReceiving
-          || (watchPc
-            && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
-            && wv && wv.srcObject);
+        // ★修正: watchPc の connectionState が closed/failed の場合は active とみなさない
+        // stopWatch 後に watchPc=null になっているが _watchPcReceiving が残っているケースを排除
+        const watchPcLive = watchPc
+          && watchPc.connectionState !== 'closed'
+          && watchPc.connectionState !== 'failed'
+          && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
+          && wv && wv.srcObject;
+        const watchPcActive = window._watchPcReceiving && watchPcLive;
         console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length,
           '_watchSourceName:', window._watchSourceName, 'watchPcActive:', !!watchPcActive);
         if (e.track.kind === 'video') {
@@ -1048,7 +1048,7 @@
           if (senders.find(s => s.track && s.track.kind === track.kind)) return;
           pc.addTrack(track, localStream);
         });
-        // ★修正: ビットレート設定遅延を1000ms→200msに短縮（タイムラグ削減）
+        // 送信ビットレート・優先度を設定
         setTimeout(async () => {
           for (const sender of pc.getSenders()) {
             if (!sender.track || sender.track.kind !== 'video') continue;
@@ -1062,7 +1062,7 @@
               await sender.setParameters(p);
             } catch(e) {}
           }
-        }, 200);
+        }, 1000);
       }
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
       const answer = await pc.createAnswer();
@@ -1085,6 +1085,12 @@
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           el.play().catch(err => console.warn('[WATCH] play error:', err));
         }
+        // ★修正: P2P直接受信中フラグをセット（teacher中継 ontrack による上書きを防ぐ）
+        window._watchPcReceiving = true;
+        e.track.onended = () => {
+          // トラック終了（送信元が stopShare した）時にフラグをリセット
+          window._watchPcReceiving = false;
+        };
         // 受信バッファを最小化して遅延削減
         try {
           watchPc.getReceivers().forEach(r => {
@@ -1259,7 +1265,7 @@
           console.log('[startShare] addTrack to existing pc, connectionState:', pc.connectionState);
         });
         if (trackAdded) {
-          // ★修正: stable になるまで最大2000ms待つ（connectingの間はsignalingがstableにならない場合がある）
+          // signalingState が stable になるまで最大500ms待ってからoffer送信
           const waitForStable = () => new Promise(resolve => {
             if (pc.signalingState === 'stable') { resolve(); return; }
             const check = setInterval(() => {
@@ -1267,7 +1273,7 @@
                 clearInterval(check); resolve();
               }
             }, 50);
-            setTimeout(() => { clearInterval(check); resolve(); }, 2000);
+            setTimeout(() => { clearInterval(check); resolve(); }, 500);
           });
           try {
             await waitForStable();
@@ -1284,38 +1290,13 @@
             console.warn('[startShare] renegotiation failed:', e);
           }
         }
-      } else if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        // ★修正: PCがまだない（教員のsetupPCのofferが届く前にstartShareが呼ばれた）
-        // → status=sharingをセットした後、教員が再setupPCしてofferを送ってくるので
-        //   handleOffer内でlocalStreamのトラックが自動追加される（既存ロジックで対応済み）
-        console.log('[startShare] no PC yet, will add track when offer arrives');
       }
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
     };
-    window.stopShare = async function() {
+    window.stopShare = function() {
       window._shareActive = false;
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
-      // ★修正: PCをcloseせずトラックだけ削除してリネゴシエーション
-      // → 次回startShare()時にPC再確立不要になり、即リネゴシエーションで共有開始できる
-      if (pc && pc.connectionState === 'connected' && pc.signalingState === 'stable') {
-        const videoSenders = pc.getSenders().filter(s => s.track && s.track.kind === 'video');
-        videoSenders.forEach(s => { try { pc.removeTrack(s); } catch(e) {} });
-        if (videoSenders.length > 0) {
-          try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
-              type: 'offer', from: studentId, to: 'teacher',
-              sdp: { type: offer.type, sdp: offer.sdp }
-            });
-          } catch(e) {
-            console.warn('[stopShare] renegotiation failed, closing PC:', e);
-            pc.close(); pc = null;
-          }
-        }
-      } else if (pc) {
-        pc.close(); pc = null;
-      }
+      if (pc) { pc.close(); pc = null; }
       showState('connected');
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
     };
@@ -1521,6 +1502,12 @@
       if (watchPc) { watchPc.close(); watchPc = null; }
       const v = document.getElementById('watch-video');
       if (v) v.srcObject = null;
+      // ★修正: P2P受信フラグとwatch名をリセット
+      // これをしないと stopWatch 後も watchPcActive=true のまま残り
+      // 後続の teacher リネゴシエーション offer に対する ontrack が
+      // 「watchPc already receiving」と判定してスキップ→フリーズする
+      window._watchPcReceiving = false;
+      window._watchSourceName = null;
     }
 
     // ===== 配布画像 =====
@@ -2258,8 +2245,11 @@
       } else if (data.command === 'survey-close') {
         hideSurvey();
       } else if (data.command === 'stopWatch') {
-        hideWatch();
-        window._watchSourceName = null;
+        hideWatch(); // _watchPcReceiving / _watchSourceName のリセットも内包
+        // ★修正: teacher-video に残った映像もクリア（フリーズした画面が残るのを防ぐ）
+        const tv2 = document.getElementById('teacher-video');
+        if (tv2) { tv2.srcObject = null; }
+        document.getElementById('teacher-overlay')?.classList.remove('show');
         // 自分がsource側なら配信も停止
         stopDirectBcast();
       } else if (data.command === 'startBcast') {

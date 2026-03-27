@@ -841,8 +841,7 @@
           _cmdSeen.add(snap.key);
           console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'startTs:', _cmdStartTs);
           // 起動前に書かれた古いコマンドは無視（再ログイン時の誤作動防止）
-          // ★修正: 有効期限を5秒→30秒に延長（遅延参加・再読み込み生徒でもwatchStart等を受け取れるようにする）
-          if (data.ts && data.ts < _cmdStartTs - 30000) return;
+          if (data.ts && data.ts < _cmdStartTs - 5000) return;
           handleCommand(data);
         });
       });
@@ -852,35 +851,6 @@
         const active = snap.val();
         if (active === false) hideTeacher();
       });
-
-      // ★修正: broadcasting ノードを「参加直後に一度だけ」読み取る（onValueではなくget）
-      // onValueにすると active:false の書き込みでも発火して teacherShare を妨害するため
-      // 参加時点で active:true だった場合のみ watchStart 相当を実行する
-      try {
-        const { get: fbGet } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js');
-        const bSnap = await fbGet(ref(db, `sessions/${sessionId}/broadcasting`));
-        if (bSnap.exists()) {
-          const b = bSnap.val();
-          if (b && b.active && b.sourceName) {
-            console.log('[broadcasting] active=true on join, sourceName:', b.sourceName, '→ watchStart相当を実行');
-            // watchStartコマンドと全く同じ処理を行う
-            window._watchSourceName = b.sourceName;
-            const tv = document.getElementById('teacher-video');
-            const wv = document.getElementById('watch-video');
-            if (tv && wv && tv.srcObject) {
-              wv.srcObject = tv.srcObject; wv.play().catch(() => {});
-              tv.srcObject = null;
-              document.getElementById('teacher-overlay')?.classList.remove('show');
-              showWatch(window._watchSourceName);
-            } else if (wv && wv.srcObject) {
-              if (wv.paused) wv.play().catch(() => {});
-              showWatch(window._watchSourceName);
-            } else {
-              showWatch(window._watchSourceName);
-            }
-          }
-        }
-      } catch(e) { console.warn('[broadcasting] initial get failed:', e); }
       listenMyGroup();
       listenGroupSelect();
 

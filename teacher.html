@@ -1955,9 +1955,6 @@ window.broadcastStudentScreen=function(sid){
   document.getElementById('card-'+sid)?.classList.add('monitoring-shared');
   const targets=Object.keys(students).filter(s=>s!==sid);
   const sourceName=students[sid]?.name||'生徒';
-  // ★修正: 配信状態をFirebaseに書き込む（遅延参加・再読み込み生徒が参照できるようにする）
-  const{ref,set}=window.FB;
-  set(ref(db,`sessions/${sessionId}/broadcasting`),{active:true,sourceSid:sid,sourceName,ts:Date.now()});
   // 教員は既存のモニタリング接続経由（P2Pターゲットに含めない → SIGSEGV回避）
   cmd(sid,'startBcast',{targets,sourceName});
   targets.forEach(tSid=>cmd(tSid,'watchStart',{sourceName}));
@@ -2005,9 +2002,6 @@ function stopBcast(){
   cmd('all','stopWatch',{});
   document.getElementById('card-'+currentBroadcastId)?.classList.remove('focused');
   document.getElementById('card-'+currentBroadcastId)?.classList.remove('monitoring-shared');
-  // ★修正: Firebaseの配信状態をノードごと削除（active:falseを残すと次回参加生徒に誤発火しない）
-  const{ref,remove:fbRemove}=window.FB;
-  fbRemove(ref(db,`sessions/${sessionId}/broadcasting`));
   currentBroadcastId=null;
   stopCanvasCapture();
   if(window._watchSenders){

@@ -1702,6 +1702,10 @@ async function handleStudentOffer(sid,sdp){
     await pc.setLocalDescription(answer);
     sig(sid,{type:'answer',from:'teacher',to:sid,sdp:{type:answer.type,sdp:answer.sdp}});
     console.log('[handleStudentOffer] answered renegotiation from',sid);
+    // negotiatePCキューが待機中なら解除してループを止める
+    if (_negResolvers[sid]) { _negResolvers[sid](); delete _negResolvers[sid]; }
+    // negotiatePCキュー自体もリセット（古いofferが積まれていても送らない）
+    delete _negQueues[sid];
   }catch(e){console.error('[handleStudentOffer]',e);}
 }
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}

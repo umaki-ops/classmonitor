@@ -965,7 +965,14 @@
     }); // end onAuthStateChanged
 
     // ===== WebRTC =====
-    async function handleOffer(sdp) {
+    // handleOffer を直列化するキュー（並列実行による signalingState 競合を防ぐ）
+    let _offerQueue = Promise.resolve();
+    function handleOffer(sdp) {
+      _offerQueue = _offerQueue.then(() => _handleOfferInner(sdp)).catch(e => {
+        console.warn('[handleOffer queue] error:', e);
+      });
+    }
+    async function _handleOfferInner(sdp) {
       if (!pc) {
         pc = new RTCPeerConnection(ICE);
         pc.onicecandidate = e => {
@@ -977,32 +984,55 @@
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
       }
-      // signalingState が have-local-offer（生徒が自分でofferを送った直後）なら
-      // glare（双方向offer競合）を回避するために rollback してから受け取る
+      // signalingState が have-local-offer なら rollback してから受け取る（glare解消）
       if (pc.signalingState === 'have-local-offer') {
         try {
           console.log('[handleOffer] glare detected, rolling back local offer');
           await pc.setLocalDescription({ type: 'rollback' });
         } catch(e) {
           console.warn('[handleOffer] rollback failed:', e);
+          return; // rollback失敗なら今回のofferはスキップ
         }
       }
-      // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
+      // have-remote-offer 状態（前のofferの処理が途中）なら今回はスキップ
+      if (pc.signalingState === 'have-remote-offer') {
+        console.warn('[handleOffer] already have-remote-offer, skipping duplicate offer');
+        return;
+      }
+      // stable 以外（closed/failed）なら処理不可
+      if (pc.signalingState !== 'stable') {
+        console.warn('[handleOffer] unexpected signalingState:', pc.signalingState, '- skipping');
+        return;
+      }
       // リネゴシエーションで教員の画面共有トラックが届いたら teacher-video に表示
       // watchStartコマンドが来ていれば watch-video に表示
       pc.ontrack = e => {
-        console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length, '_watchSourceName:', window._watchSourceName);
+        const wv = document.getElementById('watch-video');
+        const watchPcActive = window._watchPcReceiving
+          || (watchPc
+            && (watchPc.connectionState === 'connected' || watchPc.connectionState === 'connecting')
+            && wv && wv.srcObject);
+        console.log('[PC-TRACK] ontrack kind:', e.track.kind, 'streams:', e.streams.length,
+          '_watchSourceName:', window._watchSourceName, 'watchPcActive:', !!watchPcActive);
         if (e.track.kind === 'video') {
           const stream = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
+          // watchPc（P2P直接）が既に映像を受信中なら教員中継で上書きしない
+          if (watchPcActive) {
+            console.log('[PC-TRACK] watchPc already receiving, skipping teacher-relay track');
+            return;
+          }
           if (window._watchSourceName) {
-            // watchStart済み：直接watch-videoに表示
-            const el = document.getElementById('watch-video');
-            if (el) { el.srcObject = stream; el.play().catch(() => {}); showWatch(window._watchSourceName); }
-          } else {
-            // watchStart/teacherShare未着：teacher-videoに格納だけしてCMDを待つ
+            // watchStart済み かつ watchPc未接続 → 教員中継として watch-video に表示
+            if (wv) { wv.srcObject = stream; wv.play().catch(() => {}); showWatch(window._watchSourceName); }
+          } else if (window._teacherShareActive) {
+            // teacherShare CMD到着済み：teacher-videoに表示
             const el = document.getElementById('teacher-video');
-            if (el) { el.srcObject = stream; el.play().catch(() => {}); }
-            // teacherShare CMDが既に来ていれば表示
+            if (el) { el.srcObject = stream; el.play().catch(() => {}); showTeacher(); }
+          } else {
+            // CMD未着：両方のvideoに格納してCMD到着時に判定
+            const tv = document.getElementById('teacher-video');
+            if (tv) { tv.srcObject = stream; tv.play().catch(() => {}); }
+            if (wv) { wv.srcObject = stream; }
             if (window._teacherShareActive) showTeacher();
           }
         }
@@ -1011,7 +1041,6 @@
       if (localStream) {
         const senders = pc.getSenders();
         localStream.getTracks().forEach(track => {
-          // kindで確認（clone()はIDが変わるのでIDチェックは不可）
           if (senders.find(s => s.track && s.track.kind === track.kind)) return;
           pc.addTrack(track, localStream);
         });

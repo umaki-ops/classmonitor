@@ -1497,13 +1497,15 @@ function listenStudents(){
     if(d.status==='sharing'){
       const existingPc = peerConnections[sid];
       const existingState = existingPc?.connectionState;
-      if (!existingPc || existingState === 'failed' || existingState === 'closed') {
-        // PCがない・壊れている場合のみ再セットアップ
+      // PCが存在しない・失敗・切断済みの場合のみ再セットアップ
+      // new/connecting/connected/disconnected の場合は生徒からのリネゴシエーションofferを待つ
+      const needsNewPc = !existingPc || existingState === 'failed' || existingState === 'closed';
+      if (needsNewPc) {
         console.log('[sharing] no valid PC (state:', existingState, ') → setupPC');
         setupPC(sid);
       } else {
-        // 既存PCが生きていれば何もしない
-        // 生徒側が addTrack → createOffer → 送信済みなので、そのanswerを待つだけ
+        // 既存PCが生きている（new/connecting/connected/disconnected）
+        // 生徒側が addTrack → createOffer → 送信済みなのでシグナルを待つだけ
         console.log('[sharing] existing PC ok (state:', existingState, ') → waiting for student renegotiation offer');
       }
     }

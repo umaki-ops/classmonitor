@@ -1081,15 +1081,34 @@
           el.srcObject = e.streams[0] || (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
           el.play().catch(err => console.warn('[WATCH] play error:', err));
         }
-        // 受信バッファを最小化して遅延削減
+        // 受信バッファを最小化して遅延削減、高解像度受信を許可
         try {
           watchPc.getReceivers().forEach(r => {
             if (r.track && r.track.kind === 'video') {
               if ('jitterBufferDelayHint' in r) r.jitterBufferDelayHint = 0;
               if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0;
+              // 高解像度受信: contentHintをdetailに
+              r.track.contentHint = 'detail';
             }
           });
         } catch(e) {}
+      };
+      // 接続確立後にビットレート上限を引き上げ（受信側でもRTCRtpReceiver経由で影響する環境向け）
+      watchPc.onconnectionstatechange = () => {
+        if (watchPc.connectionState === 'connected') {
+          setTimeout(async () => {
+            try {
+              const senders = watchPc.getSenders();
+              for (const sender of senders) {
+                if (!sender.track || sender.track.kind !== 'video') continue;
+                const p = sender.getParameters();
+                if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+                p.encodings[0].maxBitrate = 20000000; // 20Mbps: 受信側として送信帯域を拡大
+                await sender.setParameters(p);
+              }
+            } catch(e) {}
+          }, 500);
+        }
       };
       watchPc.onicecandidate = e => {
         if (e.candidate) set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wi`), {
@@ -1270,11 +1289,13 @@
             if (pc && pc.signalingState === 'stable') {
               const offer = await pc.createOffer();
               await pc.setLocalDescription(offer);
-              set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
+              // status=sharing より先にofferをFirebaseに書き込む
+              // → 教員がsharingを受け取った時点で既にofferが届いており、setupPCが不要と判断できる
+              await set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
                 type: 'offer', from: studentId, to: 'teacher',
                 sdp: { type: offer.type, sdp: offer.sdp }
               });
-              console.log('[startShare] renegotiation offer sent');
+              console.log('[startShare] renegotiation offer sent (awaited)');
             }
           } catch(e) {
             console.warn('[startShare] renegotiation failed:', e);
@@ -1343,9 +1364,9 @@
         videoTrack.contentHint = 'detail';
         try {
           await videoTrack.applyConstraints({
-            width:     { ideal: 1920 },
-            height:    { ideal: 1080 },
-            frameRate: { ideal: 30, max: 60 },
+            width:     { ideal: 1920, max: 3840 },
+            height:    { ideal: 1080, max: 2160 },
+            frameRate: { ideal: 60, max: 60 }, // 60fps化して滑らかさと解像度を両立
           });
           const s = videoTrack.getSettings();
           console.log('[DirectBcast] track after applyConstraints:', s.width, 'x', s.height, '@', s.frameRate);
@@ -1408,7 +1429,7 @@
                 console.log('[DirectBcast->'+tSid+'] 接続経路:', candidateType);
                 // host/srflx（LAN直接）なら高ビットレート、relay（TURN）なら抑制
                 const isRelay = candidateType === 'relay';
-                const maxBitrate = isRelay ? 3000000 : 15000000; // relay:3Mbps / 直接:15Mbps
+                const maxBitrate = isRelay ? 4000000 : 25000000; // relay:4Mbps / 直接:25Mbps（高解像度向け）
                 console.log('[DirectBcast->'+tSid+'] maxBitrate:', maxBitrate/1000000, 'Mbps (relay:', isRelay, ')');
                 pc.getSenders().forEach(async sender => {
                   if (!sender.track || sender.track.kind !== 'video') return;

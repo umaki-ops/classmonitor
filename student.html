@@ -1074,6 +1074,8 @@
     async function handleWatchOffer(fromId, sdp, sourceName) {
       if (watchPc) { try { watchPc.close(); } catch(e) {} }
       watchPc = new RTCPeerConnection(ICE_RELAY || ICE);
+      // P2P直接受信中フラグをセット（教員中継トラックによる上書きを防ぐ）
+      window._watchPcReceiving = true;
       watchPc.ontrack = e => {
         console.log('[WATCH] ontrack fired, streams:', e.streams.length, 'kind:', e.track.kind);
         const el = document.getElementById('watch-video');
@@ -1092,6 +1094,9 @@
             }
           });
         } catch(e) {}
+        // ontrack完了後にwatch-overlayを確実に表示
+        // sourceName は handleWatchOffer のクロージャから参照
+        showWatch(sourceName);
       };
       // 接続確立後にビットレート上限を引き上げ（受信側でもRTCRtpReceiver経由で影響する環境向け）
       watchPc.onconnectionstatechange = () => {
@@ -1128,7 +1133,7 @@
       set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_wa`), {
         type:'watch-answer', from:studentId, to:fromId, sdp:{type:ans.type,sdp:ans.sdp}
       });
-      showWatch(sourceName);
+      // showWatch はontrack内（映像が実際に届いてから）呼ばれる
     }
     async function handleWatchIce(candidate) {
       if (!candidate) return;
@@ -1513,6 +1518,7 @@
       if (watchPc) { watchPc.close(); watchPc = null; }
       const v = document.getElementById('watch-video');
       if (v) v.srcObject = null;
+      window._watchPcReceiving = false; // P2P直接受信フラグをリセット
     }
 
     // ===== 配布画像 =====
@@ -2266,15 +2272,17 @@
         if (tv && wv && tv.srcObject) {
           // ontrackでteacher-videoに入ってしまっていた映像をwatch-videoへ移す
           wv.srcObject = tv.srcObject;
-          wv.play().catch(() => {});
           tv.srcObject = null;
           // teacher-overlayを閉じてwatch-overlayを表示
           document.getElementById('teacher-overlay')?.classList.remove('show');
+          wv.play().catch(() => {});
           showWatch(window._watchSourceName);
         } else if (wv && wv.srcObject) {
+          // 既にwatch-videoに映像がある（P2P経由でontrackが先に発火した場合）
           if (wv.paused) wv.play().catch(() => {});
           showWatch(window._watchSourceName);
         }
+        // wv.srcObjectがない場合はP2P接続中 → ontrack内のshowWatch(sourceName)を待つ
       } else if (data.command === 'teacherShare') {
         console.log('[cmd] teacherShare received');
         window._teacherShareActive = true;

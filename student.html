@@ -832,16 +832,22 @@
       // コマンド監視（個別 + 全体）- tsで重複処理を防ぐ
       // コマンド: studentId宛 と all宛 を onChildAdded で確実に受け取る
       const _cmdSeen = new Set();
-      const _cmdStartTs = Date.now();
+      const _joinedAt = Date.now(); // セッション参加時刻
       [studentId, 'all'].forEach(target => {
         onChildAdded(ref(db, `sessions/${sessionId}/cmds/${target}`), snap => {
           const data = snap.val();
           if (!data?.command) return;
           if (_cmdSeen.has(snap.key)) return;
           _cmdSeen.add(snap.key);
-          console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'startTs:', _cmdStartTs);
-          // 起動前に書かれた古いコマンドは無視（再ログイン時の誤作動防止）
-          if (data.ts && data.ts < _cmdStartTs - 5000) return;
+          console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'joinedAt:', _joinedAt);
+          // 古いコマンドを無視（onChildAddedは既存データも初回一括配信するため）
+          // 画面共有系は2分前まで許容、その他は5秒前まで
+          if (data.ts) {
+            const allowedAge = ['startBcast','watchStart','stopWatch','stopBcast'].includes(data.command)
+              ? 120000  // 2分前まで許容（認証に時間がかかっても受け取れるよう）
+              : 5000;   // その他は5秒前まで
+            if (data.ts < _joinedAt - allowedAge) return;
+          }
           handleCommand(data);
         });
       });
@@ -894,24 +900,6 @@
         _sessionDepartureCount++;
         const userName = document.getElementById('user-name-display')?.textContent || '';
         const restBase = `${dbUrl.replace(/\/$/, '')}`;
-        const nowTs = Date.now();
-        // ③ タブ離脱中のままページを閉じた場合、endTsをREST APIで記録してから削除
-        if (_tabIsAway && _tabAwayStartTs) {
-          try {
-            fetch(`${restBase}/sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}.json`, {
-              method: 'PUT',
-              body: JSON.stringify({ startTs: _tabAwayStartTs, endTs: nowTs }),
-              keepalive: true
-            }).catch(() => {});
-          } catch(e) {}
-          try {
-            fetch(`${restBase}/sessions/${sessionId}/students/${studentId}/tabAway.json`, {
-              method: 'PUT',
-              body: JSON.stringify({ away: false, count: _tabAwayCount, ts: nowTs }),
-              keepalive: true
-            }).catch(() => {});
-          } catch(e) {}
-        }
         // 離脱回数をstudentsノードとは別パスに保存（DELETEで消えない）
         try {
           fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}.json`, {
@@ -1112,7 +1100,7 @@
         } catch(e) {}
         // P2P映像受信フラグをセット（教員中継による上書きを防ぐ）
         window._watchPcReceiving = true;
-        // sourceName は handleWatchOffer のクロージャ変数を使う
+        // 映像到着後にオーバーレイを表示（sourceName はクロージャ変数）
         showWatch(sourceName);
       };
       watchPc.onicecandidate = e => {
@@ -1294,8 +1282,8 @@
             if (pc && pc.signalingState === 'stable') {
               const offer = await pc.createOffer();
               await pc.setLocalDescription(offer);
-              // status=sharing より先にofferをFirebaseへ書き込む（await）
-              // → 教員がsharingを受け取った時点でofferが既に届いており setupPC不要と判断できる
+              // status=sharing より先にofferをFirebaseへ書き込む（awaitで確実に）
+              // → 教員がsharingを受け取った時点でofferが届いており setupPC不要と判断できる
               await set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
                 type: 'offer', from: studentId, to: 'teacher',
                 sdp: { type: offer.type, sdp: offer.sdp }
@@ -1356,7 +1344,7 @@
           await videoTrack.applyConstraints({
             width:     { ideal: 1920, max: 3840 },
             height:    { ideal: 1080, max: 2160 },
-            frameRate: { ideal: 60, max: 60 },
+            frameRate: { ideal: 60, max: 60 }, // 60fpsでリアルタイム性向上
           });
           const s = videoTrack.getSettings();
           console.log('[DirectBcast] track after applyConstraints:', s.width, 'x', s.height, '@', s.frameRate);
@@ -1364,13 +1352,12 @@
           console.warn('[DirectBcast] applyConstraints failed:', e);
         }
       }
-      // localStream を直接使用する（captureStream中継はlatencyが大きいため廃止）
+      // localStreamを直接使用（captureStream中継を廃止して遅延ゼロ化）
       const bcastStream = localStream;
       for (const tSid of targets) {
         try {
           const pc = new RTCPeerConnection(ICE_RELAY || ICE);
           _directBcastPcs[tSid] = pc;
-          // localStreamのトラックを直接追加（遅延ゼロ）
           bcastStream.getTracks().forEach(track => {
             track.contentHint = 'detail';
             pc.addTrack(track, bcastStream);
@@ -2258,16 +2245,16 @@
         if (tv && wv && tv.srcObject) {
           // ontrackでteacher-videoに入ってしまっていた映像をwatch-videoへ移す
           wv.srcObject = tv.srcObject;
-          tv.srcObject = null; // 先にsrcObject切り替えてからplay
+          tv.srcObject = null; // srcObject切り替えを先に行いAbortError防止
           document.getElementById('teacher-overlay')?.classList.remove('show');
           wv.play().catch(() => {});
           showWatch(window._watchSourceName);
         } else if (wv && wv.srcObject) {
-          // 既にwatch-video に映像あり（P2P ontrackが先に発火した場合）
+          // 既にwatch-videoに映像あり（P2P ontrackが先に発火した場合）
           if (wv.paused) wv.play().catch(() => {});
           showWatch(window._watchSourceName);
         }
-        // wv.srcObjectがない場合はP2P接続中 → ontrack内のshowWatch(sourceName)を待つ
+        // wv.srcObjectがなければP2P接続中 → ontrack内のshowWatch(sourceName)を待つ
       } else if (data.command === 'teacherShare') {
         console.log('[cmd] teacherShare received');
         window._teacherShareActive = true;

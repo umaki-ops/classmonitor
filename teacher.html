@@ -1498,20 +1498,36 @@ function listenStudents(){
       const existingPc = peerConnections[sid];
       const existingState = existingPc?.connectionState;
       if (!existingPc || existingState === 'failed' || existingState === 'closed') {
-        // PCが存在しない・failed・closed → 新規接続
-        console.log('[sharing] no valid PC (state:', existingState, ') → setupPC');
-        setupPC(sid);
+        // PCが存在しない・failed・closed → デバウンスして新規接続
+        // onChildChanged は shareType/status の個別書き込みで複数回発火するため
+        // 短いデバウンスで最後の1回だけ setupPC を呼ぶ
+        console.log('[sharing] no valid PC (state:', existingState, ') → setupPC (debounced)');
+        clearTimeout(window._setupPcTimers = window._setupPcTimers || {});
+        if (!window._setupPcTimers) window._setupPcTimers = {};
+        clearTimeout(window._setupPcTimers[sid]);
+        window._setupPcTimers[sid] = setTimeout(() => {
+          // タイマー発火時点でもまだ接続不要な状態か確認
+          const pc2 = peerConnections[sid];
+          if (!pc2 || pc2.connectionState === 'failed' || pc2.connectionState === 'closed') {
+            setupPC(sid);
+          }
+        }, 150);
       } else if (existingState === 'connected') {
         // 接続済みの場合のみ生徒のリネゴシエーションofferを待つ
-        // （生徒側でaddTrack＋offer送信が完了しているはず）
         console.log('[sharing] PC connected → waiting for renegotiation offer from student');
       } else {
         // new / connecting / disconnected:
-        // PCはあるがまだ接続確立前のため、生徒側はpc===nullかconnecting中で
-        // addTrackもoffer送信もできていない可能性が高い。
-        // → setupPCで新しいofferを送り、生徒の_handleOfferInner内でaddTrackさせる。
-        console.log('[sharing] PC not yet connected (state:', existingState, ') → setupPC');
-        setupPC(sid);
+        // デバウンスして setupPC（連続発火で何度も close しないように）
+        console.log('[sharing] PC not yet connected (state:', existingState, ') → setupPC (debounced)');
+        if (!window._setupPcTimers) window._setupPcTimers = {};
+        clearTimeout(window._setupPcTimers[sid]);
+        window._setupPcTimers[sid] = setTimeout(() => {
+          const pc2 = peerConnections[sid];
+          const st2 = pc2?.connectionState;
+          if (!pc2 || st2 === 'failed' || st2 === 'closed' || st2 === 'new' || st2 === 'connecting') {
+            setupPC(sid);
+          }
+        }, 150);
       }
     }
     // 班別表示も更新
@@ -2867,17 +2883,15 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
       fs = (td.fontSize || 16) / 500 * pH;
     }
     fs = Math.max(8, Math.round(fs));
-    const lineH = Math.round(fs * 1.4); // burnTxtBoxes と合わせた行間
+    const lineH = Math.round(fs * 1.4);
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    // textarea の CSS padding: 上 6px、左 8px
-    // padding は生徒canvasと教員canvasで絶対pxが異なるため、
-    // 生徒canvasH に対する比率で正規化して教員canvas高さでスケールし直す
-    // td.canvasH が保存されていない旧データは生徒canvas高さ ≈ 500 と仮定
-    const srcH = td.canvasH || 500;
-    const padTopPx  = 6 / srcH * pH;   // 生徒での6px → 教員canvas比率に換算
-    const padLeftPx = 8 / srcH * pH;   // 生徒での8px → 教員canvas比率に換算（縦基準で統一）
+    // textarea の padding（上6px、左8px）をフォントサイズ比で表現することで
+    // どんなcanvasサイズでも正確にスケールされる
+    // 生徒のデフォルトフォントサイズ60pxに対して: padTop=6/60=10%, padLeft=8/60=13.3%
+    const padTopPx  = fs * (6 / 60);
+    const padLeftPx = fs * (8 / 60);
     td.text.split('\n').forEach((line, i) => {
       ctx.fillText(line, x + padLeftPx, y + padTopPx + fs + i * lineH);
     });

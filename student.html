@@ -1910,15 +1910,14 @@
         const st = lb.getStyle();
         const scaleX = canvasEl.width  / (canvasEl.offsetWidth  || canvasEl.width);
         const scaleY = canvasEl.height / (canvasEl.offsetHeight || canvasEl.height);
-        // fontSize は表示 px 単位 → canvas 論理 px に変換
         const fontSize = (st.fontSize || 18) * scaleY;
         const lineGap  = fontSize * 1.4;
         ctx.save();
         ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
-        // textarea の padding: 上 6px、左 8px（表示px → canvas論理pxにスケール）
-        const padLeft = 8 * scaleX;
-        const padTop  = 6 * scaleY;
+        // padding をフォントサイズ比で表現（drawTextsOnCanvas と統一）
+        const padLeft = fontSize * (8 / 60);
+        const padTop  = fontSize * (6 / 60);
         const x = st.left * scaleX + padLeft;
         let   y = st.top  * scaleY + padTop + fontSize;
         const lines = (st.text || '').split('\n');
@@ -2813,9 +2812,8 @@
             const yPx  = yPct / 100 * pH * scaleY;
             const fsPx = (parseInt(ta.style.fontSize) || 20) * scaleY;
             const lineH = fsPx * 1.4;
-            // padding は表示px → canvas論理pxにスケール
-            const padLeft = 8 * scaleX;
-            const padTop  = 6 * scaleY;
+            const padLeft = fsPx * (8 / 60);
+            const padTop  = fsPx * (6 / 60);
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = ta.style.color || '#1e293b';
@@ -2834,8 +2832,8 @@
             const yPx  = yPct / 100 * pH * scaleY;
             const fsPx = (parseInt(span.style.fontSize) || 20) * scaleY;
             const lineH = fsPx * 1.4;
-            const padLeft = 8 * scaleX;
-            const padTop  = 4 * scaleY; // peer-text の padding-top は 4px
+            const padLeft = fsPx * (8 / 60);
+            const padTop  = fsPx * (4 / 60);
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = span.style.color || '#1e293b';

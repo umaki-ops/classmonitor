@@ -840,34 +840,30 @@ let _tabAwayReportData = []; // CSVダウンロード用に保持
 
 window.endSession = async function() {
   if (!confirm('セッションを終了しますか？')) return;
-  window._sessionEnding = true; // 終了中フラグ（onChildRemovedの誤カウント防止）
+  window._sessionEnding = true;
 
-  // セッション終了時刻を先に記録
   const sessionEndTime = Date.now();
-  const endTimeStr = new Date(sessionEndTime).toLocaleString('ja-JP', { 
-    hour: '2-digit', 
-    minute: '2-digit', 
-    second: '2-digit',
-    fractionalSecondDigits: 3
-  });
-  console.log('[セッション終了] 終了時刻記録:', sessionEndTime, endTimeStr);
 
-  // セッション終了前にtabAwayデータを収集
   let reportData = [];
   try {
     const { ref, get } = window.FB;
-    // セッション開始時刻を取得
-    const sessionSnap = await get(ref(db, `sessions/${sessionId}/createdAt`));
-    const sessionStartTime = sessionSnap.exists() ? sessionSnap.val() : sessionEndTime;
+
+    // セッション開始時刻・生徒データ・離脱データを並列取得
+    const [sessionSnap, snap, depSnap] = await Promise.all([
+      get(ref(db, `sessions/${sessionId}/createdAt`)),
+      get(ref(db, `sessions/${sessionId}/students`)),
+      get(ref(db, `sessions/${sessionId}/departures`))
+    ]);
+
+    // sessionStartTime が取得できない場合は sessionEndTime-1 にして sessionTotalMs>0 を保証
+    const sessionStartTime = (sessionSnap.exists() && sessionSnap.val() > 0)
+      ? sessionSnap.val()
+      : sessionEndTime - 1;
     const sessionTotalMs = sessionEndTime - sessionStartTime;
 
-    const snap = await get(ref(db, `sessions/${sessionId}/students`));
-    // 別パスに保存した離脱データを取得
-    const depSnap = await get(ref(db, `sessions/${sessionId}/departures`));
     const depData = depSnap.exists() ? depSnap.val() : {};
-    
-    // studentsノードにいる生徒（セッション中）
     const processedSids = new Set();
+
     if (snap.exists()) {
       snap.forEach(child => {
         const sid = child.key;
@@ -877,95 +873,55 @@ window.endSession = async function() {
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
         const sessionDepartures = (depData[sid] && depData[sid].count) || 0;
-        
-        if (count < 1 && sessionDepartures < 1) return; // どちらも離脱なしはスキップ
 
-        // tabAwayLog から合計離脱時間・全離脱ログを計算
+        if (count < 1 && sessionDepartures < 1) return;
+
         const rawLog = d.tabAwayLog || {};
-        console.log(`[離脱ログ確認] ${name}: rawLog=`, JSON.stringify(rawLog));
-        
-        const now = sessionEndTime; // セッション終了時刻を使用
+        const now = sessionEndTime;
         const logs = Object.entries(rawLog)
           .filter(([k, v]) => v && v.startTs)
           .map(([k, v]) => v)
           .sort((a, b) => a.startTs - b.startTs);
-        
-        // 現在離脱中かどうか
-        const isCurrentlyAway = tabAway && tabAway.away === true;
+
+        // 現在タブ離脱中かどうか（away=true または endTs のないログがある）
+        const isCurrentlyAway = (tabAway && tabAway.away === true)
+          || (logs.length > 0 && !logs[logs.length - 1].endTs);
+
         let totalMs = 0;
-        
-        console.log(`[離脱計算 開始] ${name}: ログ数=${logs.length}, 現在離脱中=${isCurrentlyAway}, tabAway.away=${tabAway?.away}`);
-        
-        logs.forEach((log, idx) => {
-          // セッション終了後に開始した離脱は無視
-          if (log.startTs > now) {
-            console.log(`[離脱計算] ログ${idx + 1}: startTs=${log.startTs} > now=${now} のためスキップ`);
-            return;
-          }
-          
-          const startTimeStr = new Date(log.startTs).toLocaleString('ja-JP', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit',
-            fractionalSecondDigits: 3
-          });
-          const endTimeStr = log.endTs ? new Date(log.endTs).toLocaleString('ja-JP', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit',
-            fractionalSecondDigits: 3
-          }) : 'なし';
-          
-          console.log(`[離脱計算] ログ${idx + 1}/${logs.length}:`);
-          console.log(`  startTs=${log.startTs} (${startTimeStr})`);
-          console.log(`  endTs=${log.endTs} (${endTimeStr})`);
-          console.log(`  now=${now} (${endTimeStr})`);
-          
+        logs.forEach(log => {
+          if (log.startTs > now) return;
           let end;
-          
           if (log.endTs && log.endTs > log.startTs) {
-            // 正常に記録された終了時刻
             end = Math.min(log.endTs, now);
-          } else if (!log.endTs) {
-            // endTs未記録：
-            // 現在も離脱中 → セッション終了時刻まで
-            // 既に戻っているなら tabAway.ts（最後の状態変化時刻）を使う
-            if (isCurrentlyAway) {
-              end = now;
-            } else if (tabAway && tabAway.ts && tabAway.ts > log.startTs) {
-              end = Math.min(tabAway.ts, now);
-            } else {
-              end = now; // 最終フォールバック
-            }
           } else {
-            end = Math.min(log.endTs, now);
+            // endTs未記録 = まだ離脱中 → セッション終了時刻まで計上
+            // tabAway.ts は離脱開始時刻なので startTs と一致するはず
+            end = now;
           }
-          
-          const duration = Math.max(0, end - log.startTs);
-          totalMs += duration;
+          totalMs += Math.max(0, end - log.startTs);
         });
-        
-        // フォールバック: logsが空なのに離脱回数がある場合
+
+        // フォールバック: ログはないが離脱フラグが立っている場合
         if (logs.length === 0 && count > 0) {
           if (isCurrentlyAway && tabAway && tabAway.ts) {
-            // 現在離脱中
             totalMs = Math.max(0, now - tabAway.ts);
           }
-          // away=false で logs もない場合 → 時間が記録できていない → 0のまま
         }
-        
-        console.log(`[離脱計算 完了] ${name}: ${logs.length}回, 合計${totalMs}ms`);
-        // セッション離脱時間 = セッション総時間 - 累積接続時間
+
+        // セッション離脱時間の計算
+        // currentConnectedMs: 今回のセッション参加から終了までの時間
         const dep = depData[sid];
-        const totalConnectedMs = dep ? (dep.totalConnectedMs||0) : 0;
+        const totalConnectedMs = dep ? (dep.totalConnectedMs || 0) : 0;
         const joinedAt = d.joinedAt || 0;
         const currentConnectedMs = joinedAt > 0 ? Math.max(0, sessionEndTime - joinedAt) : 0;
         const connectedMs = totalConnectedMs + currentConnectedMs;
         const sessionAbsentMs = sessionDepartures > 0 ? Math.max(0, sessionTotalMs - connectedMs) : 0;
+
         reportData.push({ name, count, logs, totalMs, sid, sessionDepartures, sessionAbsentMs });
       });
     }
-    // セッション離脱したまま（studentsにいないがdeparturesにいる生徒）も追加
+
+    // セッション離脱したまま（studentsにいない）の生徒
     for (const [sid, dep] of Object.entries(depData)) {
       if (processedSids.has(sid)) continue;
       if (!dep || !dep.count) continue;
@@ -983,15 +939,12 @@ window.endSession = async function() {
     console.warn('tabAway data fetch error', e);
   }
 
-  // タブ離脱+セッション離脱の合計で降順ソート
   reportData.sort((a, b) => (b.count + b.sessionDepartures) - (a.count + a.sessionDepartures) || a.name.localeCompare(b.name));
   _tabAwayReportData = reportData;
 
-  // Firebase削除
   if (teacherStream) teacherStream.getTracks().forEach(t => t.stop());
   await window.FB.remove(window.FB.ref(db, `sessions/${sessionId}`));
 
-  // レポート表示
   showTabAwayReport(reportData);
 };
 

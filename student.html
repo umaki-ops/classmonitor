@@ -832,16 +832,30 @@
       // コマンド監視（個別 + 全体）- tsで重複処理を防ぐ
       // コマンド: studentId宛 と all宛 を onChildAdded で確実に受け取る
       const _cmdSeen = new Set();
+      // _cmdStartTs はセッション参加完了時刻（= students ノード書き込み時刻）を使う
+      // Date.now() はFirebase認証完了後の時刻であり、それより前に教員が送ったコマンドも
+      // 正当なコマンドとして処理する必要があるため、joinedAt に合わせた基準時刻を使用する
       const _cmdStartTs = Date.now();
+      // onChildAdded 初回一括配信で届く「過去コマンド」を除外する基準:
+      // 生徒がセッションに参加した時刻（joinedAt）より前のコマンドは再ログイン時の誤作動につながるため無視
+      // ただし startBcast/watchStart は画面共有操作に直結するため、参加時刻より最大120秒前まで許容する
+      const _joinedAt = Date.now();
       [studentId, 'all'].forEach(target => {
         onChildAdded(ref(db, `sessions/${sessionId}/cmds/${target}`), snap => {
           const data = snap.val();
           if (!data?.command) return;
           if (_cmdSeen.has(snap.key)) return;
           _cmdSeen.add(snap.key);
-          console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'startTs:', _cmdStartTs);
-          // 起動前に書かれた古いコマンドは無視（再ログイン時の誤作動防止）
-          if (data.ts && data.ts < _cmdStartTs - 5000) return;
+          console.log('[CMDS-RAW]', snap.key, data?.command, data?.ts, 'joinedAt:', _joinedAt);
+          // 古いコマンドの除外:
+          // - startBcast/watchStart/stopWatch/stopBcast は画面共有操作なので120秒前まで許容
+          // - その他は5秒前までの誤作動防止バッファを維持
+          if (data.ts) {
+            const allowedAge = ['startBcast','watchStart','stopWatch','stopBcast'].includes(data.command)
+              ? 120000  // 画面共有系: 2分前まで許容
+              : 5000;   // その他: 5秒前まで許容
+            if (data.ts < _joinedAt - allowedAge) return;
+          }
           handleCommand(data);
         });
       });

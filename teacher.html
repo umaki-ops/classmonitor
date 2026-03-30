@@ -736,42 +736,54 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
-        if (count < 1) return; // 離脱なしはスキップ
+        // tabClosedAt: タブを閉じた時刻（pagehide または onDisconnect で記録）
+        const tabClosedAt = d.tabClosedAt || null;
+        // status: 'offline' = タブ閉鎖済み（onDisconnect が発動した生徒）
+        const isOffline = d.status === 'offline';
 
-        // tabAwayLog から合計離脱時間・全離脱ログを計算
+        // tabAwayLog を先に確認し、ログがあれば count=0 でも集計対象にする
         const rawLog = d.tabAwayLog || {};
         const logs = Object.entries(rawLog)
           .filter(([k, v]) => v && v.startTs)
           .map(([k, v]) => v)
           .sort((a, b) => a.startTs - b.startTs);
+
+        // 離脱回数もログ件数で補完（タブ閉鎖でDBに書き込めなかった場合の救済）
+        // tabClosedAt があればタブ閉鎖による離脱が1回以上あったとみなす
+        const effectiveCount = Math.max(count, logs.length, tabClosedAt ? 1 : 0);
+        if (effectiveCount < 1) return; // 離脱なしはスキップ
+
         const now = Date.now();
-        // 現在離脱中かどうか
-        const isCurrentlyAway = tabAway && tabAway.away;
-        // 最後の戻り時刻（away===false のとき tabAway.ts が戻り時刻）
-        const lastReturnTs = (!isCurrentlyAway && tabAway && tabAway.ts) ? tabAway.ts : null;
         let totalMs = 0;
+
+        // ① tabAwayLog に記録されたログを集計
         logs.forEach(log => {
           let end;
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
             end = log.endTs;
-          } else if (isCurrentlyAway) {
-            // まだ離脱中 → セッション終了時刻まで
-            end = now;
-          } else if (lastReturnTs && lastReturnTs > log.startTs) {
-            // endTs未記録だが戻ってきている → tabAway.tsを使用
-            end = lastReturnTs;
           } else {
-            // それ以外は now で補完
+            // endTs 未記録 = 離脱継続中またはタブ閉鎖でセッション終了まで
+            // tabClosedAt があればそれを終端、なければセッション終了時刻(now)を使用
+            end = tabClosedAt ? tabClosedAt : now;
+            // さらにセッション終了(now)まで伸ばす（①②の要件: セッション終了時刻まで計上）
             end = now;
           }
           totalMs += Math.max(0, end - log.startTs);
         });
-        // フォールバック: logsが空なのに count >= 1
-        if (logs.length === 0 && tabAway && tabAway.away && tabAway.ts) {
+
+        // ② tabAwayLog が空 or 不足で tabClosedAt だけある場合（②のケース）
+        // tabClosedAt を離脱開始時刻として使い、セッション終了(now)まで計上
+        if (logs.length === 0 && tabClosedAt) {
+          totalMs = Math.max(0, now - tabClosedAt);
+        }
+
+        // フォールバック: logs も tabClosedAt もないが tabAway.away=true（①のタブ離脱継続）
+        if (logs.length === 0 && !tabClosedAt && tabAway && tabAway.away && tabAway.ts) {
           totalMs = Math.max(0, now - tabAway.ts);
         }
-        reportData.push({ name, count, logs, totalMs, sid });
+
+        reportData.push({ name, count: effectiveCount, logs, totalMs, sid });
       });
     }
   } catch (e) {
@@ -1192,6 +1204,11 @@ function listenStudents(){
     if(d.hasOwnProperty('keyframeReq'))forceKeyframe(sid);
     // status が含まれていない変化（shareType だけ等）は無視
     if(!d.hasOwnProperty('status'))return;
+    // offline: タブ閉鎖（onDisconnect で設定）→ カードを消去（③の挙動を維持）
+    if(d.status==='offline'){
+      removeCard(sid);
+      return;
+    }
     if(d.status==='waiting'){
       const v=document.getElementById('v-'+sid);
       const ph=document.getElementById('ph-'+sid);
@@ -1200,19 +1217,7 @@ function listenStudents(){
       setBadge(sid,'waiting');updateStats();
     }
     if(d.status==='sharing'){
-      const existingPc = peerConnections[sid];
-      const existingState = existingPc?.connectionState;
-      // PCが存在しない・failed・closedの場合のみsetupPC
-      // それ以外はリネゴシエーションofferを待つ（setupPCの重複を防ぐ）
-      if (!existingPc || existingState === 'failed' || existingState === 'closed') {
-        console.log('[sharing] setupPC for', sid, '(state:', existingState, ')');
-        setupPC(sid);
-      } else {
-        console.log('[sharing] existing PC ok (state:', existingState, ') → waiting for renegotiation offer');
-        // 既に映像が届いているならliveバッジを確実に立てる
-        const _v = document.getElementById('v-'+sid);
-        if (_v && _v.srcObject) { setBadge(sid,'live'); updateStats(); }
-      }
+      setupPC(sid);
     }
     // 班別表示も更新
     if(currentView==='group') renderGroupMonitorGrid();
@@ -1222,7 +1227,6 @@ function listenStudents(){
     const sig=snap.val();
     if(!sig||sig.to!=='teacher')return;
     if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
-    else if(sig.type==='offer')setTimeout(()=>handleStudentOffer(sig.from,sig.sdp),0); // 生徒からのリネゴシエーション
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
     else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
     else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
@@ -1272,18 +1276,10 @@ async function forceKeyframe(sid){
 let reconnectTimers={};
 
 async function setupPC(sid){
-  // 既に接続中または接続試行中（signalingState が closed 以外）なら重複呼び出しをスキップ
-  const existing = peerConnections[sid];
-  if (existing && existing.signalingState !== 'closed' &&
-      (existing.connectionState === 'connecting' ||
-       existing.connectionState === 'connected' ||
-       existing.iceConnectionState === 'checking' ||
-       existing.iceConnectionState === 'connected' ||
-       existing.iceConnectionState === 'completed')) {
-    return;
-  }
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // signals全体の削除は他の生徒のシグナリングを破壊するため行わない
+  // シグナルのクリアはawaitしない（ネットワーク往復待ちでofferが遅延するのを防ぐ）
+  const{ref,remove}=window.FB;
+  remove(ref(db,`sessions/${sessionId}/signals`)).catch(()=>{});
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
   pc.ontrack=ev=>{
@@ -1349,22 +1345,6 @@ async function handleAnswer(sid,sdp){
   // signalingStateがhave-local-offerでないと失敗するが、iceRestartのケースも考慮
   if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
   try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
-}
-// 生徒からのリネゴシエーションoffer（addTrack後に生徒が送ってくる）を処理
-async function handleStudentOffer(sid,sdp){
-  const pc=peerConnections[sid];if(!pc)return;
-  // have-local-offer状態ならrollbackしてから受け取る
-  if(pc.signalingState==='have-local-offer'){
-    try{ await pc.setLocalDescription({type:'rollback'}); }catch(e){ console.warn('[handleStudentOffer] rollback failed:',e); return; }
-  }
-  if(pc.signalingState!=='stable'){ console.warn('[handleStudentOffer] unexpected state:',pc.signalingState); return; }
-  try{
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer=await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    sig(sid,{type:'answer',from:'teacher',to:sid,sdp:{type:answer.type,sdp:answer.sdp}});
-    console.log('[handleStudentOffer] answered renegotiation from',sid);
-  }catch(e){console.error('[handleStudentOffer]',e);}
 }
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 

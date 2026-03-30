@@ -1908,18 +1908,25 @@
     function burnTxtBoxes(ctx, labelsArr, canvasEl) {
       labelsArr.forEach(lb => {
         const st = lb.getStyle();
-        const scaleX = canvasEl.width / canvasEl.offsetWidth;
-        const scaleY = canvasEl.height / canvasEl.offsetHeight;
-        const fontSize = st.fontSize || 18;
+        // #wb-canvas と #wb-labels は同じ親に position:absolute;inset:0 で重なっているため
+        // st.left / st.top はラベルコンテナ基準 px = キャンバス表示 px と一致する。
+        // canvas の論理ピクセルと表示ピクセルの比だけスケールする。
+        const scaleX = canvasEl.width  / (canvasEl.offsetWidth  || canvasEl.width);
+        const scaleY = canvasEl.height / (canvasEl.offsetHeight || canvasEl.height);
+        // fontSize は表示 px 単位の値なので、canvas スケールを掛けて論理 px に変換する
+        const fontSize = (st.fontSize || 18) * scaleY;
+        const lineGap  = fontSize * 1.4; // textarea の line-height に合わせた行間
         ctx.save();
         ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
-        const x = (st.left + 8) * scaleX;
-        let y = (st.top + fontSize) * scaleY;
+        // textarea の CSS padding は上 6px、左 8px（.txt-box-input の padding:6px 8px）
+        // fillText の y はベースライン基準なのでフォントサイズ分を加算する
+        const x = st.left * scaleX + 8 * scaleX;
+        let   y = st.top  * scaleY + 6 * scaleY + fontSize;
         const lines = (st.text || '').split('\n');
         lines.forEach(line => {
           ctx.fillText(line, x, y);
-          y += (fontSize + 4) * scaleY;
+          y += lineGap;
         });
         ctx.restore();
       });
@@ -2794,26 +2801,47 @@
         ctx.drawImage(canvas, 0, 0);
         const labels = document.getElementById('group-wb-labels');
         if (labels) {
-          const pW = canvas.offsetWidth || canvas.width;
+          const pW = canvas.offsetWidth  || canvas.width;
           const pH = canvas.offsetHeight || canvas.height;
-          const scaleX = canvas.width / pW, scaleY = canvas.height / pH;
-          ctx.font = `bold 16px 'Noto Sans JP', sans-serif`;
+          const scaleX = canvas.width  / pW;
+          const scaleY = canvas.height / pH;
+          // 自分のテキストボックス（.txt-box-wrap）
           labels.querySelectorAll('.txt-box-wrap').forEach(wrap => {
             const ta = wrap.querySelector('.txt-box-input');
             if (!ta || !ta.value) return;
-            const x = parseFloat(wrap.style.left)/100 * pW * scaleX;
-            const y = parseFloat(wrap.style.top) /100 * pH * scaleY;
-            ctx.save(); ctx.fillStyle = ta.style.color || '#1e293b';
-            ta.value.split('\n').forEach((line,i) => ctx.fillText(line, x+8*scaleX, y+18*scaleY+i*20*scaleY));
+            // wrap の left/top は container 基準のパーセンテージ
+            const xPct = parseFloat(wrap.style.left) || 0;
+            const yPct = parseFloat(wrap.style.top)  || 0;
+            const xPx  = xPct / 100 * pW * scaleX;
+            const yPx  = yPct / 100 * pH * scaleY;
+            // フォントサイズは表示 px → canvas 論理 px にスケール
+            const fsPx = (parseInt(ta.style.fontSize) || 20) * scaleY;
+            const lineH = fsPx * 1.4;
+            ctx.save();
+            ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
+            ctx.fillStyle = ta.style.color || '#1e293b';
+            // padding: 6px top, 8px left
+            ta.value.split('\n').forEach((line, i) => {
+              ctx.fillText(line, xPx + 8 * scaleX, yPx + 6 * scaleY + fsPx + i * lineH);
+            });
             ctx.restore();
           });
+          // 他のメンバーのテキスト（.gwb-peer-text）
           labels.querySelectorAll('[data-text-key]:not(.txt-box-wrap)').forEach(div => {
             const span = div.querySelector('.gwb-peer-text');
             if (!span || !span.textContent) return;
-            const x = parseFloat(div.style.left)/100 * pW * scaleX;
-            const y = parseFloat(div.style.top) /100 * pH * scaleY;
-            ctx.save(); ctx.fillStyle = span.style.color || '#1e293b';
-            span.textContent.split('\n').forEach((line,i) => ctx.fillText(line, x+8*scaleX, y+18*scaleY+i*20*scaleY));
+            const xPct = parseFloat(div.style.left) || 0;
+            const yPct = parseFloat(div.style.top)  || 0;
+            const xPx  = xPct / 100 * pW * scaleX;
+            const yPx  = yPct / 100 * pH * scaleY;
+            const fsPx = (parseInt(span.style.fontSize) || 20) * scaleY;
+            const lineH = fsPx * 1.4;
+            ctx.save();
+            ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
+            ctx.fillStyle = span.style.color || '#1e293b';
+            span.textContent.split('\n').forEach((line, i) => {
+              ctx.fillText(line, xPx + 8 * scaleX, yPx + 6 * scaleY + fsPx + i * lineH);
+            });
             ctx.restore();
           });
         }

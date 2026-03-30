@@ -2848,15 +2848,14 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
 function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
   const pW = canvas.width, pH = canvas.height;
-  const REF_H = 900; // 固定基準サイズ（16:9, 1600x900）
   console.log('[教員 テキスト描画] canvas:', pW, 'x', pH, 'テキスト数:', Object.keys(textsObj).length);
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
+    // td.x / td.y はキャンバス表示領域に対するパーセンテージで保存されている
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
     console.log('[教員 テキスト描画] td.x:', td.x, 'td.y:', td.y, '→ ピクセル:', x.toFixed(1), y.toFixed(1));
-    console.log('[教員 テキスト描画] 実際の描画位置 - fillText(x+8, y+8+fs):', (x+8).toFixed(1), ',', 'y:', y.toFixed(1));
-    // fontSizePct は固定基準サイズ(900)に対する割合なので、現在のキャンバス高さにスケール
+    // フォントサイズをキャンバス高さにスケール
     let fs;
     if (td.fontSizePct) {
       fs = td.fontSizePct / 100 * pH;
@@ -2868,13 +2867,15 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
       fs = (td.fontSize || 16) / 500 * pH;
     }
     fs = Math.max(8, Math.round(fs));
-    const lineH = Math.round(fs * 1.25);
+    const lineH = Math.round(fs * 1.4); // burnTxtBoxes と合わせた行間
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    // textareaの内部パディングを考慮: 左8px、上8px + フォントサイズ
-    // textareaは top: y% の位置から開始し、内部に約8pxのパディング + ベースラインまでの距離
-    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+8+fs+i*lineH));
+    // textarea の CSS padding: 上 6px、左 8px
+    // fillText の y はベースライン基準なのでフォントサイズ分を加算する
+    td.text.split('\n').forEach((line, i) => {
+      ctx.fillText(line, x + 8, y + 6 + fs + i * lineH);
+    });
     ctx.restore();
   });
 }

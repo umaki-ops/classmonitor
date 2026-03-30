@@ -1200,7 +1200,19 @@ function listenStudents(){
       setBadge(sid,'waiting');updateStats();
     }
     if(d.status==='sharing'){
-      setupPC(sid);
+      const existingPc = peerConnections[sid];
+      const existingState = existingPc?.connectionState;
+      // PCが存在しない・failed・closedの場合のみsetupPC
+      // それ以外はリネゴシエーションofferを待つ（setupPCの重複を防ぐ）
+      if (!existingPc || existingState === 'failed' || existingState === 'closed') {
+        console.log('[sharing] setupPC for', sid, '(state:', existingState, ')');
+        setupPC(sid);
+      } else {
+        console.log('[sharing] existing PC ok (state:', existingState, ') → waiting for renegotiation offer');
+        // 既に映像が届いているならliveバッジを確実に立てる
+        const _v = document.getElementById('v-'+sid);
+        if (_v && _v.srcObject) { setBadge(sid,'live'); updateStats(); }
+      }
     }
     // 班別表示も更新
     if(currentView==='group') renderGroupMonitorGrid();
@@ -1210,6 +1222,7 @@ function listenStudents(){
     const sig=snap.val();
     if(!sig||sig.to!=='teacher')return;
     if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
+    else if(sig.type==='offer')setTimeout(()=>handleStudentOffer(sig.from,sig.sdp),0); // 生徒からのリネゴシエーション
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
     else if(sig.type==='tw-answer')handleTWAnswer(sig.from,sig.sdp);
     else if(sig.type==='tw-ice')handleTWIce(sig.from,sig.candidate);
@@ -1270,9 +1283,7 @@ async function setupPC(sid){
     return;
   }
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // シグナルのクリアはawaitしない（ネットワーク往復待ちでofferが遅延するのを防ぐ）
-  const{ref,remove}=window.FB;
-  remove(ref(db,`sessions/${sessionId}/signals`)).catch(()=>{});
+  // signals全体の削除は他の生徒のシグナリングを破壊するため行わない
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
   pc.ontrack=ev=>{
@@ -1338,6 +1349,22 @@ async function handleAnswer(sid,sdp){
   // signalingStateがhave-local-offerでないと失敗するが、iceRestartのケースも考慮
   if(pc.signalingState!=='have-local-offer'){console.warn('[answer ignored, state:'+pc.signalingState+']');return;}
   try{await pc.setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){console.error('[setRemoteDesc]',e);}
+}
+// 生徒からのリネゴシエーションoffer（addTrack後に生徒が送ってくる）を処理
+async function handleStudentOffer(sid,sdp){
+  const pc=peerConnections[sid];if(!pc)return;
+  // have-local-offer状態ならrollbackしてから受け取る
+  if(pc.signalingState==='have-local-offer'){
+    try{ await pc.setLocalDescription({type:'rollback'}); }catch(e){ console.warn('[handleStudentOffer] rollback failed:',e); return; }
+  }
+  if(pc.signalingState!=='stable'){ console.warn('[handleStudentOffer] unexpected state:',pc.signalingState); return; }
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const answer=await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sig(sid,{type:'answer',from:'teacher',to:sid,sdp:{type:answer.type,sdp:answer.sdp}});
+    console.log('[handleStudentOffer] answered renegotiation from',sid);
+  }catch(e){console.error('[handleStudentOffer]',e);}
 }
 async function handleRIce(sid,c){const pc=peerConnections[sid];if(!pc)return;try{await pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}}
 

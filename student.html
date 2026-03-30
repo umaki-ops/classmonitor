@@ -1915,9 +1915,9 @@
         ctx.save();
         ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
-        // padding をフォントサイズ比で表現（drawTextsOnCanvas と統一）
-        const padLeft = fontSize * (8 / 60);
-        const padTop  = fontSize * (6 / 60);
+        // padding（上6px, 左8px）を canvas スケールで変換
+        const padLeft = 8 * scaleX;
+        const padTop  = 6 * scaleY;
         const x = st.left * scaleX + padLeft;
         let   y = st.top  * scaleY + padTop + fontSize;
         const lines = (st.text || '').split('\n');
@@ -2438,13 +2438,16 @@
 
     function gWbReplayStrokes(strokes) {
       if (!gWbCtx) return;
+      // 描画中は全消去再描画を行わない（自分の線が消えるのを防ぐ）
+      if (gWbDrawing) return;
       const canvas = document.getElementById('group-wb-canvas');
       const drawStrokes = () => {
+        // 画像ロード完了後も描画中になっていたら上書きしない
+        if (gWbDrawing) return;
         if (!strokes) return;
         Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
           const pts = stroke.points;
           if (!pts || pts.length < 2) return;
-          // 線幅: sizePctがあればキャンバス高さから復元、なければcanvasW/Hでスケール
           let scaledSize = stroke.size;
           if (stroke.sizePct) {
             scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
@@ -2469,23 +2472,18 @@
       if (gWbBgImage) {
         const img = new Image();
         img.onload = () => {
-          // アスペクト比を保って描画
           const imgAspect = img.width / img.height;
           const canvasAspect = canvas.width / canvas.height;
           let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
-          
           if (imgAspect > canvasAspect) {
-            // 画像の方が横長 → 幅を基準
             drawWidth = canvas.width;
             drawHeight = canvas.width / imgAspect;
             offsetY = (canvas.height - drawHeight) / 2;
           } else {
-            // 画像の方が縦長 → 高さを基準
             drawHeight = canvas.height;
             drawWidth = canvas.height * imgAspect;
             offsetX = (canvas.width - drawWidth) / 2;
           }
-          
           gWbCtx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
           drawStrokes();
         };
@@ -2501,57 +2499,54 @@
 
     function gWbListenStrokes(groupId, pathOverride) {
       if (gWbStrokeListenerUnsub) { gWbStrokeListenerUnsub(); gWbStrokeListenerUnsub = null; }
-      _lastStrokesSnapshot = null; // リセット
+      _lastStrokesSnapshot = null;
       const strokesPath = pathOverride || `sessions/${sessionId}/groups/${groupId}/wb/strokes`;
       gWbStrokeListenerUnsub = onValue(ref(db, strokesPath), snap => {
         if (!gWbCtx) return;
         const newStrokes = snap.exists() ? snap.val() : null;
-        
+
         // 描画中は更新をスキップ（自分の線が消えるのを防ぐ）
         if (gWbDrawing) {
           _lastStrokesSnapshot = newStrokes;
           return;
         }
-        
-        // 初回または大きな変更がある場合のみ全体再描画
-        const needsFullRedraw = !_lastStrokesSnapshot || 
-                                _lastStrokesSnapshot === null ||
-                                newStrokes === null ||
-                                Object.keys(newStrokes || {}).length < Object.keys(_lastStrokesSnapshot || {}).length;
-        
+
+        // ストロークが減った（消去操作）または初回 → 全体再描画
+        const prevCount = Object.keys(_lastStrokesSnapshot || {}).length;
+        const newCount  = Object.keys(newStrokes  || {}).length;
+        const needsFullRedraw = !_lastStrokesSnapshot || newStrokes === null || newCount < prevCount;
+
         if (needsFullRedraw) {
           gWbReplayStrokes(newStrokes);
         } else {
           // 増分更新: 新しいストロークのみ描画
           const oldKeys = new Set(Object.keys(_lastStrokesSnapshot || {}));
+          const canvas = document.getElementById('group-wb-canvas');
+          if (!canvas) { _lastStrokesSnapshot = newStrokes; return; }
           Object.entries(newStrokes || {}).forEach(([key, stroke]) => {
-            if (!oldKeys.has(key)) {
-              // 新しいストロークのみ描画
-              const canvas = document.getElementById('group-wb-canvas');
-              if (!canvas) return;
-              const pts = stroke.points;
-              if (!pts || pts.length < 2) return;
-              let scaledSize = stroke.size;
-              if (stroke.sizePct) {
-                scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
-              } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
-                const scaleX = canvas.width  / stroke.canvasW;
-                const scaleY = canvas.height / stroke.canvasH;
-                scaledSize = Math.max(0.5, stroke.size * Math.sqrt(scaleX * scaleY));
+            if (oldKeys.has(key)) return;
+            const pts = stroke.points;
+            if (!pts || pts.length < 2) return;
+            let scaledSize = stroke.size;
+            if (stroke.sizePct) {
+              scaledSize = Math.max(0.5, stroke.sizePct / 100 * canvas.height);
+            } else if (stroke.normalized && stroke.canvasW && stroke.canvasH) {
+              const scaleX = canvas.width  / stroke.canvasW;
+              const scaleY = canvas.height / stroke.canvasH;
+              scaledSize = Math.max(0.5, stroke.size * Math.sqrt(scaleX * scaleY));
+            }
+            for (let i = 1; i < pts.length; i++) {
+              let x1 = pts[i-1][0], y1 = pts[i-1][1];
+              let x2 = pts[i][0],   y2 = pts[i][1];
+              if (stroke.normalized) {
+                x1 = x1 / 100 * canvas.width;  y1 = y1 / 100 * canvas.height;
+                x2 = x2 / 100 * canvas.width;  y2 = y2 / 100 * canvas.height;
               }
-              for (let i = 1; i < pts.length; i++) {
-                let x1 = pts[i-1][0], y1 = pts[i-1][1];
-                let x2 = pts[i][0],   y2 = pts[i][1];
-                if (stroke.normalized) {
-                  x1 = x1 / 100 * canvas.width;  y1 = y1 / 100 * canvas.height;
-                  x2 = x2 / 100 * canvas.width;  y2 = y2 / 100 * canvas.height;
-                }
-                gWbDrawSegment(x1, y1, x2, y2, stroke.tool, stroke.color, scaledSize);
-              }
+              gWbDrawSegment(x1, y1, x2, y2, stroke.tool, stroke.color, scaledSize);
             }
           });
         }
-        
+
         _lastStrokesSnapshot = newStrokes;
       });
     }
@@ -2812,8 +2807,8 @@
             const yPx  = yPct / 100 * pH * scaleY;
             const fsPx = (parseInt(ta.style.fontSize) || 20) * scaleY;
             const lineH = fsPx * 1.4;
-            const padLeft = fsPx * (8 / 60);
-            const padTop  = fsPx * (6 / 60);
+            const padLeft = 8 * scaleX;
+            const padTop  = 6 * scaleY;
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = ta.style.color || '#1e293b';
@@ -2832,8 +2827,8 @@
             const yPx  = yPct / 100 * pH * scaleY;
             const fsPx = (parseInt(span.style.fontSize) || 20) * scaleY;
             const lineH = fsPx * 1.4;
-            const padLeft = fsPx * (8 / 60);
-            const padTop  = fsPx * (4 / 60);
+            const padLeft = 8 * scaleX;
+            const padTop  = 4 * scaleY;
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = span.style.color || '#1e293b';

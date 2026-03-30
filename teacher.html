@@ -1497,29 +1497,21 @@ function listenStudents(){
     if(d.status==='sharing'){
       const existingPc = peerConnections[sid];
       const existingState = existingPc?.connectionState;
+      if (!window._setupPcTimers) window._setupPcTimers = {};
       if (!existingPc || existingState === 'failed' || existingState === 'closed') {
-        // PCが存在しない・failed・closed → デバウンスして新規接続
-        // onChildChanged は shareType/status の個別書き込みで複数回発火するため
-        // 短いデバウンスで最後の1回だけ setupPC を呼ぶ
         console.log('[sharing] no valid PC (state:', existingState, ') → setupPC (debounced)');
-        clearTimeout(window._setupPcTimers = window._setupPcTimers || {});
-        if (!window._setupPcTimers) window._setupPcTimers = {};
         clearTimeout(window._setupPcTimers[sid]);
         window._setupPcTimers[sid] = setTimeout(() => {
-          // タイマー発火時点でもまだ接続不要な状態か確認
           const pc2 = peerConnections[sid];
           if (!pc2 || pc2.connectionState === 'failed' || pc2.connectionState === 'closed') {
             setupPC(sid);
           }
-        }, 150);
+        }, 500);
       } else if (existingState === 'connected') {
-        // 接続済みの場合のみ生徒のリネゴシエーションofferを待つ
         console.log('[sharing] PC connected → waiting for renegotiation offer from student');
       } else {
-        // new / connecting / disconnected:
-        // デバウンスして setupPC（連続発火で何度も close しないように）
+        // new / connecting / disconnected → デバウンスしてsetupPC
         console.log('[sharing] PC not yet connected (state:', existingState, ') → setupPC (debounced)');
-        if (!window._setupPcTimers) window._setupPcTimers = {};
         clearTimeout(window._setupPcTimers[sid]);
         window._setupPcTimers[sid] = setTimeout(() => {
           const pc2 = peerConnections[sid];
@@ -1527,7 +1519,7 @@ function listenStudents(){
           if (!pc2 || st2 === 'failed' || st2 === 'closed' || st2 === 'new' || st2 === 'connecting') {
             setupPC(sid);
           }
-        }, 150);
+        }, 500);
       }
     }
     // 班別表示も更新
@@ -2887,11 +2879,16 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    // textarea の padding（上6px、左8px）をフォントサイズ比で表現することで
-    // どんなcanvasサイズでも正確にスケールされる
-    // 生徒のデフォルトフォントサイズ60pxに対して: padTop=6/60=10%, padLeft=8/60=13.3%
-    const padTopPx  = fs * (6 / 60);
-    const padLeftPx = fs * (8 / 60);
+    // padding (上6px, 左8px) を生徒canvasのスケールに合わせて変換する。
+    // fontSize と fontSizePct から生徒の実際のcanvas高さを逆算できる。
+    // 例: fontSize=60, fontSizePct=10.33% → srcH=60/0.1033=581px（実測値）
+    //     fontSize=60, fontSizePct=6.667% → srcH=60/0.0667=900px（旧固定値）
+    // 旧データ(srcH=900)でも新データ(srcH=実測)でも一貫して扱う。
+    const srcH = (td.fontSizePct && td.fontSize)
+      ? Math.round(td.fontSize / (td.fontSizePct / 100))
+      : (td.canvasH || 500);
+    const padTopPx  = 6 / srcH * pH;
+    const padLeftPx = 8 / srcH * pH;
     td.text.split('\n').forEach((line, i) => {
       ctx.fillText(line, x + padLeftPx, y + padTopPx + fs + i * lineH);
     });

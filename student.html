@@ -1035,36 +1035,6 @@
       if (v) v.srcObject = localStream;
       showState('live');
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
-
-      // 既存PCがあればトラックを追加してリネゴシエーションofferを送る
-      // → 教員側はofferを受け取ってontrackで映像を表示できる
-      if (pc && pc.signalingState !== 'closed') {
-        const senders = pc.getSenders();
-        let trackAdded = false;
-        localStream.getTracks().forEach(track => {
-          track.contentHint = 'motion';
-          if (!senders.find(s => s.track === track)) {
-            pc.addTrack(track, localStream);
-            trackAdded = true;
-          }
-        });
-        if (trackAdded && pc.signalingState === 'stable') {
-          try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            // offerをFirebaseに書き込んでからstatus=sharingを書く
-            // → 教員がsharingを受け取った時点でofferが届いている
-            await set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
-              type: 'offer', from: studentId, to: 'teacher',
-              sdp: { type: offer.type, sdp: offer.sdp }
-            });
-            console.log('[startShare] renegotiation offer sent');
-          } catch(e) {
-            console.warn('[startShare] renegotiation failed:', e);
-          }
-        }
-      }
-
       // shareType と status を1回の update() でまとめて書き込む。
       // 分けて書くと onChildChanged が複数回発火し、教員側で setupPC が重複呼び出しされる原因になる。
       update(ref(db, `sessions/${sessionId}/students/${studentId}`), {

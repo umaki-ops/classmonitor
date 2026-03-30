@@ -927,15 +927,17 @@ window.endSession = async function() {
             // 正常に記録された終了時刻
             end = Math.min(log.endTs, now);
           } else if (!log.endTs) {
-            // endTs未記録：
-            // 現在も離脱中 → セッション終了時刻まで
-            // 既に戻っているなら tabAway.ts（最後の状態変化時刻）を使う
+            // endTs未記録（タブ離脱中にページを閉じた等）:
+            // tabAway.ts は最後に状態が変化した時刻なので終了時刻の代替として使える
             if (isCurrentlyAway) {
+              // セッション終了時点でも離脱中 → セッション終了時刻まで
               end = now;
             } else if (tabAway && tabAway.ts && tabAway.ts > log.startTs) {
+              // 戻ってきた記録あり → tabAway.ts を終了時刻として使用
               end = Math.min(tabAway.ts, now);
             } else {
-              end = now; // 最終フォールバック
+              // フォールバック: tabAway情報なし → セッション終了時刻まで（最大値）
+              end = now;
             }
           } else {
             end = Math.min(log.endTs, now);
@@ -1498,14 +1500,14 @@ function listenStudents(){
       const existingPc = peerConnections[sid];
       const existingState = existingPc?.connectionState;
       // PCが存在しない・失敗・切断済みの場合のみ再セットアップ
-      // new/connecting/connected/disconnected の場合は生徒からのリネゴシエーションofferを待つ
-      const needsNewPc = !existingPc || existingState === 'failed' || existingState === 'closed';
-      if (needsNewPc) {
+      // new/connecting/connected/disconnected はリネゴシエーション処理中の可能性があるためsetupPC不要
+      const needsSetup = !existingPc || existingState === 'failed' || existingState === 'closed';
+      if (needsSetup) {
         console.log('[sharing] no valid PC (state:', existingState, ') → setupPC');
         setupPC(sid);
       } else {
         // 既存PCが生きている（new/connecting/connected/disconnected）
-        // 生徒側が addTrack → createOffer → 送信済みなのでシグナルを待つだけ
+        // 生徒側がaddTrack→createOffer→await書き込み済みなのでofferを待つだけ
         console.log('[sharing] existing PC ok (state:', existingState, ') → waiting for student renegotiation offer');
       }
     }

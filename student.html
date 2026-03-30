@@ -1915,18 +1915,42 @@
         ctx.save();
         ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
-        // padding（上6px, 左8px）を canvas スケールで変換
         const padLeft = 8 * scaleX;
         const padTop  = 6 * scaleY;
-        const x = st.left * scaleX + padLeft;
-        let   y = st.top  * scaleY + padTop + fontSize;
-        const lines = (st.text || '').split('\n');
-        lines.forEach(line => {
-          ctx.fillText(line, x, y);
+        // テキストボックス幅をcanvas論理pxに換算して折り返し幅とする
+        const maxLineWidth = Math.max((st.width || 200) * scaleX - padLeft * 2, fontSize * 2);
+        const wrappedLines = _wrapTextToLines(ctx, st.text || '', maxLineWidth);
+        let y = st.top * scaleY + padTop + fontSize;
+        wrappedLines.forEach(line => {
+          ctx.fillText(line, st.left * scaleX + padLeft, y);
           y += lineGap;
         });
         ctx.restore();
       });
+    }
+
+    // テキストを指定幅で折り返して行配列を返す（student側ヘルパー）
+    function _wrapTextToLines(ctx, text, maxWidth) {
+      const lines = [];
+      text.split('\n').forEach(paragraph => {
+        if (!paragraph) { lines.push(''); return; }
+        if (ctx.measureText(paragraph).width <= maxWidth) {
+          lines.push(paragraph);
+          return;
+        }
+        let current = '';
+        for (const ch of paragraph) {
+          const test = current + ch;
+          if (ctx.measureText(test).width > maxWidth && current.length > 0) {
+            lines.push(current);
+            current = ch;
+          } else {
+            current = test;
+          }
+        }
+        if (current.length > 0) lines.push(current);
+      });
+      return lines;
     }
 
     // ===== ホワイトボード =====
@@ -2825,7 +2849,9 @@
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = ta.style.color || '#1e293b';
-            ta.value.split('\n').forEach((line, i) => {
+            const maxW = Math.max(wrap.offsetWidth * scaleX - padLeft * 2, fsPx * 2);
+            const lines = _wrapTextToLines(ctx, ta.value, maxW);
+            lines.forEach((line, i) => {
               ctx.fillText(line, xPx + padLeft, yPx + padTop + fsPx + i * lineH);
             });
             ctx.restore();
@@ -2845,7 +2871,9 @@
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = span.style.color || '#1e293b';
-            span.textContent.split('\n').forEach((line, i) => {
+            const maxW = Math.max(div.offsetWidth * scaleX - padLeft * 2, fsPx * 2);
+            const lines = _wrapTextToLines(ctx, span.textContent, maxW);
+            lines.forEach((line, i) => {
               ctx.fillText(line, xPx + padLeft, yPx + padTop + fsPx + i * lineH);
             });
             ctx.restore();

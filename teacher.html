@@ -2852,6 +2852,31 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
   }
 }
 
+// テキストを指定幅で折り返して行配列を返す
+function wrapTextToLines(ctx, text, maxWidth) {
+  const lines = [];
+  // まず明示的な改行で分割
+  text.split('\n').forEach(paragraph => {
+    if (ctx.measureText(paragraph).width <= maxWidth) {
+      lines.push(paragraph);
+      return;
+    }
+    // 1文字ずつ追加して幅を測定（日本語混じりでも確実）
+    let current = '';
+    for (const ch of paragraph) {
+      const test = current + ch;
+      if (ctx.measureText(test).width > maxWidth && current.length > 0) {
+        lines.push(current);
+        current = ch;
+      } else {
+        current = test;
+      }
+    }
+    if (current.length > 0) lines.push(current);
+  });
+  return lines;
+}
+
 // テキストデータをcanvasに描画（透明背景）
 function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
@@ -2859,19 +2884,15 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
   console.log('[教員 テキスト描画] canvas:', pW, 'x', pH, 'テキスト数:', Object.keys(textsObj).length);
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
-    // td.x / td.y はキャンバス表示領域に対するパーセンテージで保存されている
     const x = (td.x / 100) * pW;
     const y = (td.y / 100) * pH;
     console.log('[教員 テキスト描画] td.x:', td.x, 'td.y:', td.y, '→ ピクセル:', x.toFixed(1), y.toFixed(1));
-    // フォントサイズをキャンバス高さにスケール
     let fs;
     if (td.fontSizePct) {
       fs = td.fontSizePct / 100 * pH;
     } else if (td.canvasH) {
-      // 旧形式: 元のcanvasHに対する割合を現在のpHに変換
       fs = (td.fontSize || 16) / td.canvasH * pH;
     } else {
-      // 旧形式: 生徒canvasH≈500を仮定してスケール
       fs = (td.fontSize || 16) / 500 * pH;
     }
     fs = Math.max(8, Math.round(fs));
@@ -2879,17 +2900,18 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    // padding (上6px, 左8px) を生徒canvasのスケールに合わせて変換する。
-    // fontSize と fontSizePct から生徒の実際のcanvas高さを逆算できる。
-    // 例: fontSize=60, fontSizePct=10.33% → srcH=60/0.1033=581px（実測値）
-    //     fontSize=60, fontSizePct=6.667% → srcH=60/0.0667=900px（旧固定値）
-    // 旧データ(srcH=900)でも新データ(srcH=実測)でも一貫して扱う。
     const srcH = (td.fontSizePct && td.fontSize)
       ? Math.round(td.fontSize / (td.fontSizePct / 100))
       : (td.canvasH || 500);
     const padTopPx  = 6 / srcH * pH;
     const padLeftPx = 8 / srcH * pH;
-    td.text.split('\n').forEach((line, i) => {
+    // テキストボックス幅を教員canvas上にスケール換算して折り返し幅を算出
+    // td.w は生徒canvas表示px、td.canvasH も生徒canvas表示高さpxなので比率で換算
+    const srcW = td.canvasW || srcH * 16 / 9;
+    const scaledW = td.w ? (td.w / srcW * pW) : pW * 0.3;
+    const maxLineWidth = Math.max(scaledW - padLeftPx * 2, fs * 2);
+    const wrappedLines = wrapTextToLines(ctx, td.text, maxLineWidth);
+    wrappedLines.forEach((line, i) => {
       ctx.fillText(line, x + padLeftPx, y + padTopPx + fs + i * lineH);
     });
     ctx.restore();

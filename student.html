@@ -1267,7 +1267,8 @@
           console.log('[startShare] addTrack to existing pc, connectionState:', pc.connectionState);
         });
         if (trackAdded) {
-          // signalingState が stable になるまで最大500ms待ってからoffer送信
+          // signalingState が stable になるまで最大2000ms待ってからoffer送信
+          // （学校ネットワーク等の遅延環境でも確実にstableを待つ）
           const waitForStable = () => new Promise(resolve => {
             if (pc.signalingState === 'stable') { resolve(); return; }
             const check = setInterval(() => {
@@ -1275,7 +1276,7 @@
                 clearInterval(check); resolve();
               }
             }, 50);
-            setTimeout(() => { clearInterval(check); resolve(); }, 500);
+            setTimeout(() => { clearInterval(check); resolve(); }, 2000);
           });
           try {
             await waitForStable();

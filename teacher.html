@@ -1515,7 +1515,7 @@ function listenStudents(){
       }
     }
     // 班別表示も更新
-    if(currentView==='group') renderGroupMonitorGrid();
+    if(currentView==='group') renderGroupPanel();
   });
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key;
@@ -2872,9 +2872,14 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
     // textarea の CSS padding: 上 6px、左 8px
-    // fillText の y はベースライン基準なのでフォントサイズ分を加算する
+    // padding は生徒canvasと教員canvasで絶対pxが異なるため、
+    // 生徒canvasH に対する比率で正規化して教員canvas高さでスケールし直す
+    // td.canvasH が保存されていない旧データは生徒canvas高さ ≈ 500 と仮定
+    const srcH = td.canvasH || 500;
+    const padTopPx  = 6 / srcH * pH;   // 生徒での6px → 教員canvas比率に換算
+    const padLeftPx = 8 / srcH * pH;   // 生徒での8px → 教員canvas比率に換算（縦基準で統一）
     td.text.split('\n').forEach((line, i) => {
-      ctx.fillText(line, x + 8, y + 6 + fs + i * lineH);
+      ctx.fillText(line, x + padLeftPx, y + padTopPx + fs + i * lineH);
     });
     ctx.restore();
   });

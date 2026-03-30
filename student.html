@@ -1908,21 +1908,19 @@
     function burnTxtBoxes(ctx, labelsArr, canvasEl) {
       labelsArr.forEach(lb => {
         const st = lb.getStyle();
-        // #wb-canvas と #wb-labels は同じ親に position:absolute;inset:0 で重なっているため
-        // st.left / st.top はラベルコンテナ基準 px = キャンバス表示 px と一致する。
-        // canvas の論理ピクセルと表示ピクセルの比だけスケールする。
         const scaleX = canvasEl.width  / (canvasEl.offsetWidth  || canvasEl.width);
         const scaleY = canvasEl.height / (canvasEl.offsetHeight || canvasEl.height);
-        // fontSize は表示 px 単位の値なので、canvas スケールを掛けて論理 px に変換する
+        // fontSize は表示 px 単位 → canvas 論理 px に変換
         const fontSize = (st.fontSize || 18) * scaleY;
-        const lineGap  = fontSize * 1.4; // textarea の line-height に合わせた行間
+        const lineGap  = fontSize * 1.4;
         ctx.save();
         ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
-        // textarea の CSS padding は上 6px、左 8px（.txt-box-input の padding:6px 8px）
-        // fillText の y はベースライン基準なのでフォントサイズ分を加算する
-        const x = st.left * scaleX + 8 * scaleX;
-        let   y = st.top  * scaleY + 6 * scaleY + fontSize;
+        // textarea の padding: 上 6px、左 8px（表示px → canvas論理pxにスケール）
+        const padLeft = 8 * scaleX;
+        const padTop  = 6 * scaleY;
+        const x = st.left * scaleX + padLeft;
+        let   y = st.top  * scaleY + padTop + fontSize;
         const lines = (st.text || '').split('\n');
         lines.forEach(line => {
           ctx.fillText(line, x, y);
@@ -2329,11 +2327,11 @@
           const xPct = (e.clientX - r2.left) / r2.width * 100;
           const yPct = (e.clientY - r2.top)  / r2.height * 100;
           const textKey = `${studentId}_txt_${Date.now()}`;
-          // 固定基準サイズ（800x600）に対するパーセンテージでフォントサイズを保存
-          const REF_H = 900;  // 16:9のアスペクト比（1600x900）
+          const canvas2 = document.getElementById('group-wb-canvas');
+          const actualCanvasH = canvas2 ? canvas2.height : 900;
           const textData = { uid: studentId, x: xPct, y: yPct, w: 200, text: '', color: gWbColor,
-            fontSize: gWbFontSize, fontSizePct: gWbFontSize / REF_H * 100,
-            canvasW: 1600, canvasH: REF_H, ts: Date.now() };
+            fontSize: gWbFontSize, fontSizePct: gWbFontSize / actualCanvasH * 100,
+            canvasW: canvas2 ? canvas2.width : 1600, canvasH: actualCanvasH, ts: Date.now() };
           console.log('[テキスト作成] textData:', JSON.stringify(textData));
           console.log('[テキスト作成] クリック位置 - client:', e.clientX, e.clientY, 'canvas:', r2.left, r2.top, r2.width, r2.height);
           console.log('[テキスト作成] パーセント座標:', xPct.toFixed(2), yPct.toFixed(2));
@@ -2766,11 +2764,11 @@
       const canvasY = (canvasPy / canvasRect.height) * 100;
       
       const _fs = parseInt(ta.style.fontSize) || gWbFontSize;
-      const REF_H = 900;  // 16:9のアスペクト比（1600x900）
+      // fontSizePct は実際の canvas 高さ基準で保存する（固定値900ではなく実測値）
       const textData = { uid: studentId, x: canvasX, y: canvasY,
         w: wrap.offsetWidth, text: ta.value, color: ta.style.color || gWbColor,
-        fontSize: _fs, fontSizePct: _fs / REF_H * 100,
-        canvasW: 1600, canvasH: REF_H, ts: Date.now() };
+        fontSize: _fs, fontSizePct: _fs / canvasRect.height * 100,
+        canvasW: canvasRect.width, canvasH: canvasRect.height, ts: Date.now() };
       if (gWbIsSelectMode) {
         // 番号選択モード: 別パス
         if (gWbFromImg) {
@@ -2809,20 +2807,20 @@
           labels.querySelectorAll('.txt-box-wrap').forEach(wrap => {
             const ta = wrap.querySelector('.txt-box-input');
             if (!ta || !ta.value) return;
-            // wrap の left/top は container 基準のパーセンテージ
             const xPct = parseFloat(wrap.style.left) || 0;
             const yPct = parseFloat(wrap.style.top)  || 0;
             const xPx  = xPct / 100 * pW * scaleX;
             const yPx  = yPct / 100 * pH * scaleY;
-            // フォントサイズは表示 px → canvas 論理 px にスケール
             const fsPx = (parseInt(ta.style.fontSize) || 20) * scaleY;
             const lineH = fsPx * 1.4;
+            // padding は表示px → canvas論理pxにスケール
+            const padLeft = 8 * scaleX;
+            const padTop  = 6 * scaleY;
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = ta.style.color || '#1e293b';
-            // padding: 6px top, 8px left
             ta.value.split('\n').forEach((line, i) => {
-              ctx.fillText(line, xPx + 8 * scaleX, yPx + 6 * scaleY + fsPx + i * lineH);
+              ctx.fillText(line, xPx + padLeft, yPx + padTop + fsPx + i * lineH);
             });
             ctx.restore();
           });
@@ -2836,11 +2834,13 @@
             const yPx  = yPct / 100 * pH * scaleY;
             const fsPx = (parseInt(span.style.fontSize) || 20) * scaleY;
             const lineH = fsPx * 1.4;
+            const padLeft = 8 * scaleX;
+            const padTop  = 4 * scaleY; // peer-text の padding-top は 4px
             ctx.save();
             ctx.font = `bold ${fsPx}px 'Noto Sans JP', sans-serif`;
             ctx.fillStyle = span.style.color || '#1e293b';
             span.textContent.split('\n').forEach((line, i) => {
-              ctx.fillText(line, xPx + 8 * scaleX, yPx + 6 * scaleY + fsPx + i * lineH);
+              ctx.fillText(line, xPx + padLeft, yPx + padTop + fsPx + i * lineH);
             });
             ctx.restore();
           });

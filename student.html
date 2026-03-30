@@ -1403,16 +1403,7 @@
 
       // ===== テキスト入力 =====
       ta.addEventListener('input', () => {
-        if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) {
-          // 班別WB: Firebaseにテキストをリアルタイム保存
-          gWbScheduleSnapshot();
-        } else if (containerId === 'wb-labels' && typeof wbScheduleSnapshot === 'function') {
-          // 個別WB: スナップショットを更新
-          wbScheduleSnapshot();
-        } else if (containerId === 'img-labels' && typeof imgScheduleSnapshot === 'function') {
-          // 個別画像配布: スナップショットを更新
-          imgScheduleSnapshot();
-        }
+        if (typeof gWbScheduleSnapshot === 'function' && gWbGroupId) gWbScheduleSnapshot();
       });
 
       // 初期状態: 移動モードで開始
@@ -1441,13 +1432,11 @@
         const scaleX = canvasEl.width / canvasEl.offsetWidth;
         const scaleY = canvasEl.height / canvasEl.offsetHeight;
         const fontSize = st.fontSize || 18;
-        const paddingTop = 6;  // .txt-box-input の padding-top に合わせた値
         ctx.save();
         ctx.font = `bold ${fontSize}px 'Noto Sans JP', sans-serif`;
         ctx.fillStyle = st.color || '#1e293b';
         const x = (st.left + 8) * scaleX;
-        // padding-top(6px) + フォントのベースライン(fontSize) 分だけ下にずらす
-        let y = (st.top + paddingTop + fontSize) * scaleY;
+        let y = (st.top + fontSize) * scaleY;
         const lines = (st.text || '').split('\n');
         lines.forEach(line => {
           ctx.fillText(line, x, y);

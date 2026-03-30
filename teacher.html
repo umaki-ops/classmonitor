@@ -2080,7 +2080,6 @@ function replayWithBg(canvas, strokesObj, bgDataUrl, textsObj) {
 function drawTextsOnCanvas(ctx, canvas, textsObj) {
   if (!textsObj) return;
   const pW = canvas.width, pH = canvas.height;
-  const paddingTop = 6; // .txt-box-input の padding-top に合わせた値（生徒側 burnTxtBoxes と統一）
   Object.values(textsObj).forEach(td => {
     if (!td.text) return;
     const x = (td.x / 100) * pW;
@@ -2096,15 +2095,11 @@ function drawTextsOnCanvas(ctx, canvas, textsObj) {
       fs = (td.fontSize || 16) / 500 * pH;
     }
     fs = Math.max(8, Math.round(fs));
-    // padding-top のスケール換算（生徒のcanvasHが分かる場合はそれで割る、なければpHで近似）
-    const srcH = td.canvasH || 500;
-    const scaledPadding = paddingTop / srcH * pH;
     const lineH = Math.round(fs * 1.25);
     ctx.save();
     ctx.font = `bold ${fs}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = td.color || '#1e293b';
-    // padding-top(scaledPadding) + フォントのベースライン(fs) 分だけ下にずらす（burnTxtBoxes と統一）
-    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+scaledPadding+fs+i*lineH));
+    td.text.split('\n').forEach((line, i) => ctx.fillText(line, x+8, y+fs+i*lineH));
     ctx.restore();
   });
 }

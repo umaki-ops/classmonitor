@@ -736,6 +736,10 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
+        // tabClosedAt: タブを閉じた時刻（pagehide または onDisconnect で記録）
+        const tabClosedAt = d.tabClosedAt || null;
+        // status: 'offline' = タブ閉鎖済み（onDisconnect が発動した生徒）
+        const isOffline = d.status === 'offline';
 
         // tabAwayLog を先に確認し、ログがあれば count=0 でも集計対象にする
         const rawLog = d.tabAwayLog || {};
@@ -745,34 +749,38 @@ window.endSession = async function() {
           .sort((a, b) => a.startTs - b.startTs);
 
         // 離脱回数もログ件数で補完（タブ閉鎖でDBに書き込めなかった場合の救済）
-        const effectiveCount = Math.max(count, logs.length);
+        // tabClosedAt があればタブ閉鎖による離脱が1回以上あったとみなす
+        const effectiveCount = Math.max(count, logs.length, tabClosedAt ? 1 : 0);
         if (effectiveCount < 1) return; // 離脱なしはスキップ
 
         const now = Date.now();
-        // 現在離脱中かどうか（away===true、または endTs 未記録のログが存在する場合）
-        const isCurrentlyAway = (tabAway && tabAway.away) ||
-          (logs.length > 0 && !logs[logs.length - 1].endTs);
-
         let totalMs = 0;
+
+        // ① tabAwayLog に記録されたログを集計
         logs.forEach(log => {
           let end;
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
             end = log.endTs;
           } else {
-            // endTs未記録 = セッション終了まで離脱していた（タブ閉鎖・離脱継続いずれも）
+            // endTs 未記録 = 離脱継続中またはタブ閉鎖でセッション終了まで
+            // tabClosedAt があればそれを終端、なければセッション終了時刻(now)を使用
+            end = tabClosedAt ? tabClosedAt : now;
+            // さらにセッション終了(now)まで伸ばす（①②の要件: セッション終了時刻まで計上）
             end = now;
           }
           totalMs += Math.max(0, end - log.startTs);
         });
 
-        // フォールバック: logsが空なのに count >= 1（tabAwayLogが書き込めなかったケース）
-        if (logs.length === 0 && tabAway && tabAway.ts) {
-          // away=true なら startTs として tabAway.ts を使う
-          if (tabAway.away) {
-            totalMs = Math.max(0, now - tabAway.ts);
-          }
-          // away=false（戻ってきていた）なら時間は計算できないためスキップ
+        // ② tabAwayLog が空 or 不足で tabClosedAt だけある場合（②のケース）
+        // tabClosedAt を離脱開始時刻として使い、セッション終了(now)まで計上
+        if (logs.length === 0 && tabClosedAt) {
+          totalMs = Math.max(0, now - tabClosedAt);
+        }
+
+        // フォールバック: logs も tabClosedAt もないが tabAway.away=true（①のタブ離脱継続）
+        if (logs.length === 0 && !tabClosedAt && tabAway && tabAway.away && tabAway.ts) {
+          totalMs = Math.max(0, now - tabAway.ts);
         }
 
         reportData.push({ name, count: effectiveCount, logs, totalMs, sid });
@@ -1196,6 +1204,11 @@ function listenStudents(){
     if(d.hasOwnProperty('keyframeReq'))forceKeyframe(sid);
     // status が含まれていない変化（shareType だけ等）は無視
     if(!d.hasOwnProperty('status'))return;
+    // offline: タブ閉鎖（onDisconnect で設定）→ カードを消去（③の挙動を維持）
+    if(d.status==='offline'){
+      removeCard(sid);
+      return;
+    }
     if(d.status==='waiting'){
       const v=document.getElementById('v-'+sid);
       const ph=document.getElementById('ph-'+sid);

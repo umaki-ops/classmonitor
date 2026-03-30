@@ -675,8 +675,10 @@
           joinedAt: Date.now(),
           status: 'waiting'
         });
-        // ③ タブを閉じた際に生徒ノードをFirebaseサーバー側で自動削除する（元の消去挙動を復元）
-        onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).remove();
+        // タブを閉じた際、Firebaseサーバー側で status を 'offline' に更新する。
+        // remove() にするとレポート用の tabAwayLog が消えてしまうため update() を使用。
+        // 教員側は onChildChanged で status='offline' を検知してカードを消去する。
+        onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).update({ status: 'offline' });
         showState('connected');
       }, {onlyOnce:true});
 
@@ -822,16 +824,20 @@
       // visibilitychange はタブ閉鎖時に発火しないブラウザがあるため pagehide で補完する。
       // Firebase set() はベストエフォートで送信される（完了保証はないが多くの場合有効）。
       window.addEventListener('pagehide', () => {
-        if (!studentId || !_tabIsAway) return;
-        // まだ離脱中（visibilitychange の hidden 後に pagehide が来た場合）→ endTs を記録
-        const endTs = Date.now();
-        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
-          away: false, count: _tabAwayCount, ts: endTs
-        });
-        if (_tabAwayStartTs) {
-          set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
-            startTs: _tabAwayStartTs, endTs: endTs
+        if (!studentId) return;
+        const closedAt = Date.now();
+        if (_tabIsAway && _tabAwayStartTs) {
+          // visibilitychange(hidden) 済みで離脱中のまま閉じた → endTs を記録
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+            away: false, count: _tabAwayCount, ts: closedAt
           });
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+            startTs: _tabAwayStartTs, endTs: closedAt
+          });
+        } else if (!_tabIsAway) {
+          // visibilitychange なしで直接閉じた（②のケース）→ 閉じた時刻を tabClosedAt に記録
+          // onDisconnect の update({ status: 'offline' }) が走るタイミングより早く書けることがある
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/tabClosedAt`), closedAt);
         }
       });
 
@@ -852,6 +858,12 @@
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
               startTs: _tabAwayStartTs
             });
+            // onDisconnect を更新: 離脱中にタブを閉じた場合、tabClosedAt と status を記録
+            // これにより endSession 時に tabClosedAt = 離脱開始時刻として使える
+            onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).update({
+              status: 'offline',
+              tabClosedAt: _tabAwayStartTs
+            });
           }
         } else {
           // 戻ってきた → もう一度キーフレーム要求
@@ -869,6 +881,8 @@
               });
             }
             _tabAwayStartTs = null;
+            // onDisconnect を元に戻す（tabClosedAt なしのシンプルな offline 更新）
+            onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).update({ status: 'offline' });
           }
         }
       });

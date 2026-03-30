@@ -2394,25 +2394,38 @@
       // ストロークをFirebaseに保存する共通関数
       async function gWbSaveCurrentStroke() {
         if (!gWbDrawing) return;
-        gWbDrawing = false;
-        if (gWbCurrentStroke && gWbGroupId) {
-          const strokeKey = `${studentId}_${gWbCurrentStroke.ts}`;
+        if (!gWbCurrentStroke || !gWbGroupId) {
+          gWbDrawing = false;
+          gWbCurrentStroke = null;
+          return;
+        }
+        // ストロークを手元に退避してから描画フラグを落とす前に保存する
+        // → Firebase の onValue が発火するまで gWbDrawing=true を維持し
+        //   gWbReplayStrokes による全消去を防ぐ
+        const stroke = gWbCurrentStroke;
+        gWbCurrentStroke = null;
+        const strokeKey = `${studentId}_${stroke.ts}`;
+        try {
           if (gWbIsSelectMode) {
             if (gWbFromImg) {
-              await set(ref(db, `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`), gWbCurrentStroke);
+              await set(ref(db, `sessions/${sessionId}/groupSelectImg/${gWbGroupId}/strokes/${strokeKey}`), stroke);
             } else {
-              await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`), gWbCurrentStroke);
+              await set(ref(db, `sessions/${sessionId}/groupSelectWB/${gWbGroupId}/strokes/${strokeKey}`), stroke);
             }
           } else {
             if (gWbFromImg) {
-              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), gWbCurrentStroke);
+              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/distImg/strokes/${strokeKey}`), stroke);
             } else {
-              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), gWbCurrentStroke);
+              await set(ref(db, `sessions/${sessionId}/groups/${gWbGroupId}/wb/strokes/${strokeKey}`), stroke);
             }
           }
+        } finally {
+          // Firebase書き込み完了後に描画フラグを落とす
+          // これにより onValue 発火時には gWbDrawing=false になっており
+          // かつ新ストロークは既に DB に存在するため消えない
+          gWbDrawing = false;
           gWbScheduleSnapshot();
         }
-        gWbCurrentStroke = null;
       }
 
       canvas.addEventListener('pointerup', gWbSaveCurrentStroke);

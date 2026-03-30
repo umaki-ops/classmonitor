@@ -2310,7 +2310,7 @@
     }
 
     // ===== 班別WBエンジン =====
-    let gWbCtx = null, gWbDrawing = false, gWbLX = 0, gWbLY = 0;
+    let gWbCtx = null, gWbDrawing = false, gWbSaving = false, gWbLX = 0, gWbLY = 0;
     let gWbTool = 'pen', gWbColor = '#1e293b', gWbSize = 4, gWbFontSize = 30;
     let gWbGroupId = null, gWbResetTs = 0;
     let gWbFromImg = false; // distImg経由でWBを開いた場合true
@@ -2418,17 +2418,17 @@
       // ストロークをFirebaseに保存する共通関数
       async function gWbSaveCurrentStroke() {
         if (!gWbDrawing) return;
+        // ペンを離した瞬間に描画フラグを落とす（次のストロークをすぐ開始できる）
+        gWbDrawing = false;
         if (!gWbCurrentStroke || !gWbGroupId) {
-          gWbDrawing = false;
           gWbCurrentStroke = null;
           return;
         }
-        // ストロークを手元に退避してから描画フラグを落とす前に保存する
-        // → Firebase の onValue が発火するまで gWbDrawing=true を維持し
-        //   gWbReplayStrokes による全消去を防ぐ
         const stroke = gWbCurrentStroke;
         gWbCurrentStroke = null;
         const strokeKey = `${studentId}_${stroke.ts}`;
+        // Firebase保存中フラグを立てて onValue による全消去を防ぐ
+        gWbSaving = true;
         try {
           if (gWbIsSelectMode) {
             if (gWbFromImg) {
@@ -2444,10 +2444,8 @@
             }
           }
         } finally {
-          // Firebase書き込み完了後に描画フラグを落とす
-          // これにより onValue 発火時には gWbDrawing=false になっており
-          // かつ新ストロークは既に DB に存在するため消えない
-          gWbDrawing = false;
+          // 保存完了後にフラグを落とす（この後 onValue が来ても安全）
+          gWbSaving = false;
           gWbScheduleSnapshot();
         }
       }
@@ -2475,12 +2473,12 @@
 
     function gWbReplayStrokes(strokes) {
       if (!gWbCtx) return;
-      // 描画中は全消去再描画を行わない（自分の線が消えるのを防ぐ）
-      if (gWbDrawing) return;
+      // 描画中またはFirebase保存中は全消去再描画を行わない（自分の線が消えるのを防ぐ）
+      if (gWbDrawing || gWbSaving) return;
       const canvas = document.getElementById('group-wb-canvas');
       const drawStrokes = () => {
-        // 画像ロード完了後も描画中になっていたら上書きしない
-        if (gWbDrawing) return;
+        // 画像ロード完了後も描画中・保存中になっていたら上書きしない
+        if (gWbDrawing || gWbSaving) return;
         if (!strokes) return;
         Object.values(strokes).sort((a, b) => a.ts - b.ts).forEach(stroke => {
           const pts = stroke.points;
@@ -2542,8 +2540,8 @@
         if (!gWbCtx) return;
         const newStrokes = snap.exists() ? snap.val() : null;
 
-        // 描画中は更新をスキップ（自分の線が消えるのを防ぐ）
-        if (gWbDrawing) {
+        // 描画中またはFirebase保存中は更新をスキップ（自分の線が消えるのを防ぐ）
+        if (gWbDrawing || gWbSaving) {
           _lastStrokesSnapshot = newStrokes;
           return;
         }

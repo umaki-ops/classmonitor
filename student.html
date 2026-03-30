@@ -544,7 +544,7 @@
 <script type="module">
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-  import { getDatabase, ref, set, update, onValue, onChildAdded, get} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+  import { getDatabase, ref, set, update, onValue, onChildAdded, get, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
   // ===== 状態管理 =====
@@ -675,6 +675,8 @@
           joinedAt: Date.now(),
           status: 'waiting'
         });
+        // ③ タブを閉じた際に生徒ノードをFirebaseサーバー側で自動削除する（元の消去挙動を復元）
+        onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).remove();
         showState('connected');
       }, {onlyOnce:true});
 
@@ -815,6 +817,24 @@
       let _tabAwayCount = 0;
       let _tabIsAway = false;
       let _tabAwayStartTs = null;
+
+      // ①② pagehide: タブを閉じた・ページを離れた瞬間に離脱を記録する
+      // visibilitychange はタブ閉鎖時に発火しないブラウザがあるため pagehide で補完する。
+      // Firebase set() はベストエフォートで送信される（完了保証はないが多くの場合有効）。
+      window.addEventListener('pagehide', () => {
+        if (!studentId || !_tabIsAway) return;
+        // まだ離脱中（visibilitychange の hidden 後に pagehide が来た場合）→ endTs を記録
+        const endTs = Date.now();
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
+          away: false, count: _tabAwayCount, ts: endTs
+        });
+        if (_tabAwayStartTs) {
+          set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+            startTs: _tabAwayStartTs, endTs: endTs
+          });
+        }
+      });
+
       document.addEventListener('visibilitychange', () => {
         if (!studentId) return;
 
@@ -1026,6 +1046,7 @@
           alert('「画面全体」を選択してください。ウィンドウやタブの共有は使用できません。');
           return;
         }
+        set(ref(db, `sessions/${sessionId}/students/${studentId}/shareType`), '画面全体');
       } catch(e) {
         window._shareActive = false;
         showState('connected');
@@ -1035,12 +1056,7 @@
       if (v) v.srcObject = localStream;
       showState('live');
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
-      // shareType と status を1回の update() でまとめて書き込む。
-      // 分けて書くと onChildChanged が複数回発火し、教員側で setupPC が重複呼び出しされる原因になる。
-      update(ref(db, `sessions/${sessionId}/students/${studentId}`), {
-        shareType: '画面全体',
-        status: 'sharing'
-      });
+      set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
     };
     window.stopShare = function() {
       window._shareActive = false;

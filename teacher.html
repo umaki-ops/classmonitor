@@ -736,42 +736,46 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const tabAway = d.tabAway || null;
         const count = tabAway ? (tabAway.count || 0) : 0;
-        if (count < 1) return; // 離脱なしはスキップ
 
-        // tabAwayLog から合計離脱時間・全離脱ログを計算
+        // tabAwayLog を先に確認し、ログがあれば count=0 でも集計対象にする
         const rawLog = d.tabAwayLog || {};
         const logs = Object.entries(rawLog)
           .filter(([k, v]) => v && v.startTs)
           .map(([k, v]) => v)
           .sort((a, b) => a.startTs - b.startTs);
+
+        // 離脱回数もログ件数で補完（タブ閉鎖でDBに書き込めなかった場合の救済）
+        const effectiveCount = Math.max(count, logs.length);
+        if (effectiveCount < 1) return; // 離脱なしはスキップ
+
         const now = Date.now();
-        // 現在離脱中かどうか
-        const isCurrentlyAway = tabAway && tabAway.away;
-        // 最後の戻り時刻（away===false のとき tabAway.ts が戻り時刻）
-        const lastReturnTs = (!isCurrentlyAway && tabAway && tabAway.ts) ? tabAway.ts : null;
+        // 現在離脱中かどうか（away===true、または endTs 未記録のログが存在する場合）
+        const isCurrentlyAway = (tabAway && tabAway.away) ||
+          (logs.length > 0 && !logs[logs.length - 1].endTs);
+
         let totalMs = 0;
         logs.forEach(log => {
           let end;
           if (log.endTs && log.endTs > log.startTs) {
             // 正常に記録された終了時刻
             end = log.endTs;
-          } else if (isCurrentlyAway) {
-            // まだ離脱中 → セッション終了時刻まで
-            end = now;
-          } else if (lastReturnTs && lastReturnTs > log.startTs) {
-            // endTs未記録だが戻ってきている → tabAway.tsを使用
-            end = lastReturnTs;
           } else {
-            // それ以外は now で補完
+            // endTs未記録 = セッション終了まで離脱していた（タブ閉鎖・離脱継続いずれも）
             end = now;
           }
           totalMs += Math.max(0, end - log.startTs);
         });
-        // フォールバック: logsが空なのに count >= 1
-        if (logs.length === 0 && tabAway && tabAway.away && tabAway.ts) {
-          totalMs = Math.max(0, now - tabAway.ts);
+
+        // フォールバック: logsが空なのに count >= 1（tabAwayLogが書き込めなかったケース）
+        if (logs.length === 0 && tabAway && tabAway.ts) {
+          // away=true なら startTs として tabAway.ts を使う
+          if (tabAway.away) {
+            totalMs = Math.max(0, now - tabAway.ts);
+          }
+          // away=false（戻ってきていた）なら時間は計算できないためスキップ
         }
-        reportData.push({ name, count, logs, totalMs, sid });
+
+        reportData.push({ name, count: effectiveCount, logs, totalMs, sid });
       });
     }
   } catch (e) {
@@ -1259,16 +1263,6 @@ async function forceKeyframe(sid){
 let reconnectTimers={};
 
 async function setupPC(sid){
-  // 既に接続中または接続試行中（signalingState が closed 以外）なら重複呼び出しをスキップ
-  const existing = peerConnections[sid];
-  if (existing && existing.signalingState !== 'closed' &&
-      (existing.connectionState === 'connecting' ||
-       existing.connectionState === 'connected' ||
-       existing.iceConnectionState === 'checking' ||
-       existing.iceConnectionState === 'connected' ||
-       existing.iceConnectionState === 'completed')) {
-    return;
-  }
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
   // シグナルのクリアはawaitしない（ネットワーク往復待ちでofferが遅延するのを防ぐ）
   const{ref,remove}=window.FB;

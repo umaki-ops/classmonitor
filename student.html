@@ -709,6 +709,23 @@
         const userName = document.getElementById('user-name-display')?.textContent || '';
         onDisconnect(ref(db, `sessions/${sessionId}/departures/${studentId}/lastLeft`)).set(Date.now());
         onDisconnect(ref(db, `sessions/${sessionId}/departures/${studentId}/name`)).set(userName);
+
+        // .info/connected を監視して切断を即座に検知する
+        // onDisconnect はサーバー側で処理されるため数十秒かかることがあるが、
+        // .info/connected は Firebase SDK がローカルで即座に検知する
+        let _wasConnected = false;
+        onValue(ref(db, '.info/connected'), connSnap => {
+          const connected = connSnap.val();
+          if (connected) {
+            _wasConnected = true;
+            // 再接続時：onDisconnect を再登録して確実に動作させる
+            onDisconnect(ref(db, `sessions/${sessionId}/students/${studentId}`)).remove();
+          } else if (_wasConnected) {
+            // 切断検知（初回の false は無視、一度接続後の切断のみ処理）
+            // SDK レベルで即座に students ノードを削除してグリッドから消す
+            try { remove(ref(db, `sessions/${sessionId}/students/${studentId}`)); } catch(e) {}
+          }
+        });
         // 参加（または復帰）のタイムスタンプを departureLogs に記録
         // 初回参加は log_0、2回目以降は _sessionDepartureCount に対応するログに returnedAt を記録
         (async () => {

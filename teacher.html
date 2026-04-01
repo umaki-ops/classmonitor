@@ -1559,6 +1559,8 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(!students[sid]){
       students[sid]={...d,id:sid};
+      // 参加時点の tabAway 状態を記録（以降の onChildChanged で「変化」を正しく検知するため）
+      if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
     } else {
@@ -1576,13 +1578,13 @@ function listenStudents(){
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
     if(students[sid]) {
-      // _tabAwayTeacherLog/_sessionDepTeacherLog は Firebase データに含まれないため
-      // スプレッド後も明示的に引き継ぐ
-      const teacherLog    = students[sid]._tabAwayTeacherLog;
-      const sessionDepLog = students[sid]._sessionDepTeacherLog;
+      const teacherLog      = students[sid]._tabAwayTeacherLog;
+      const sessionDepLog   = students[sid]._sessionDepTeacherLog;
+      const lastTabAwayState = students[sid]._lastTabAwayState;
       students[sid]={...students[sid],...d};
-      if(teacherLog)    students[sid]._tabAwayTeacherLog    = teacherLog;
-      if(sessionDepLog) students[sid]._sessionDepTeacherLog = sessionDepLog;
+      if(teacherLog)       students[sid]._tabAwayTeacherLog    = teacherLog;
+      if(sessionDepLog)    students[sid]._sessionDepTeacherLog = sessionDepLog;
+      if(lastTabAwayState) students[sid]._lastTabAwayState     = lastTabAwayState;
     }
     // 再接続時など name が後から来た場合にカードの表示名を更新する
     if(d.name){
@@ -1595,20 +1597,32 @@ function listenStudents(){
     if(d.shareType)updateShareType(sid,d.shareType);
     // tabAway の変化を処理
     if(d.hasOwnProperty('tabAway')) {
-      // 教員端末時計でタブ離脱の開始・終了時刻を直接記録
       const ta = d.tabAway;
       if (ta) {
-        if (!students[sid]._tabAwayTeacherLog) students[sid]._tabAwayTeacherLog = [];
-        const log = students[sid]._tabAwayTeacherLog;
-        if (ta.away === true) {
-          // 離脱開始：同じ count で未登録なら追加
-          if (!log.find(l => l.count === ta.count)) {
-            log.push({ count: ta.count, startTs: Date.now(), endTs: null });
+        // 前回の away 状態と比較して「実際に変化したとき」だけ記録する
+        // （keyframeReq などの別フィールド更新で onChildChanged が発火しても
+        //   tabAway が変化していなければ重複記録しない）
+        const prevAway  = students[sid]?._lastTabAwayState;   // 前回記録した {away, count}
+        const stateChanged = !prevAway
+          || prevAway.away  !== ta.away
+          || prevAway.count !== ta.count;
+
+        if (stateChanged) {
+          students[sid]._lastTabAwayState = { away: ta.away, count: ta.count };
+
+          if (!students[sid]._tabAwayTeacherLog) students[sid]._tabAwayTeacherLog = [];
+          const log = students[sid]._tabAwayTeacherLog;
+
+          if (ta.away === true) {
+            // 離脱開始：同じ count で未登録なら追加
+            if (!log.find(l => l.count === ta.count)) {
+              log.push({ count: ta.count, startTs: Date.now(), endTs: null });
+            }
+          } else {
+            // 離脱終了：該当 count の endTs を記録
+            const entry = log.find(l => l.count === ta.count && !l.endTs);
+            if (entry) entry.endTs = Date.now();
           }
-        } else {
-          // 離脱終了：該当 count の endTs を記録
-          const entry = log.find(l => l.count === ta.count && !l.endTs);
-          if (entry) entry.endTs = Date.now();
         }
       }
       updateTabAway(sid, d.tabAway);

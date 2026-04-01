@@ -968,7 +968,7 @@
             set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAway`), {
               away: true, count: _tabAwayCount, ts: _tabAwayStartTs
             });
-            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+            set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/t${_tabAwayStartTs}`), {
               startTs: _tabAwayStartTs
             });
           }
@@ -983,7 +983,7 @@
               away: false, count: _tabAwayCount, ts: endTs
             });
             if (_tabAwayStartTs) {
-              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/log_${_tabAwayStartTs}`), {
+              set(ref(db, `sessions/${sessionId}/students/${studentId}/tabAwayLog/t${_tabAwayStartTs}`), {
                 startTs: _tabAwayStartTs, endTs: endTs
               });
             }

@@ -866,18 +866,22 @@ window.endSession = async function() {
     function calcTabAwayLogs(d, now) {
       const tabAway = d.tabAway || null;
       const count = tabAway ? (tabAway.count || 0) : 0;
+      if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
+
       const rawLog = d.tabAwayLog || {};
 
-      // Firebase は数値っぽいキーを配列として返すことがある。
-      // Object.entries で null エントリが混入する場合があるため、
-      // values() を使いつつ null/undefined を除外して処理する。
-      const logEntries = Array.isArray(rawLog)
-        ? rawLog.filter(v => v && v.startTs)           // 配列の場合
-        : Object.values(rawLog).filter(v => v && v.startTs); // オブジェクトの場合
+      // Firebase は数値っぽいキー（タイムスタンプ等）を配列として返すことがある。
+      // キーを 't${ts}' に変更済みだが旧データ互換のため両方対応する。
+      const logEntries = [];
+      if (Array.isArray(rawLog)) {
+        // 旧形式：配列として返ってきた場合（null エントリを除外）
+        rawLog.forEach(v => { if (v && v.startTs) logEntries.push(v); });
+      } else {
+        Object.values(rawLog).forEach(v => { if (v && v.startTs) logEntries.push(v); });
+      }
+      logEntries.sort((a, b) => a.startTs - b.startTs);
 
-      const logs = logEntries.sort((a, b) => a.startTs - b.startTs);
-
-      const tabLogs = logs.map(log => {
+      const tabLogs = logEntries.map(log => {
         const start = log.startTs;
         const end = log.endTs ? Math.min(log.endTs, now) : now;
         return {
@@ -888,17 +892,17 @@ window.endSession = async function() {
         };
       });
 
-      // フォールバック: ログが取れなかったが tabAway フラグが立っている場合
-      if (tabLogs.length === 0 && count > 0) {
-        // away===true でなくても ts があれば離脱開始時刻として使う
-        if (tabAway && tabAway.ts) {
-          tabLogs.push({
-            startTs: tabAway.ts,
-            endTs: null,
-            durationMs: Math.max(0, now - tabAway.ts),
-            isOngoing: true
-          });
-        }
+      // フォールバック: ログが取れなかった場合は tabAway.ts を使う
+      // （tabAway.ts は離脱開始時刻として確実に記録されている）
+      if (tabLogs.length === 0 && tabAway && tabAway.ts) {
+        const isOngoing = tabAway.away === true;
+        const end = isOngoing ? now : tabAway.ts; // away=false なら既に戻っている（時間不明）
+        tabLogs.push({
+          startTs: tabAway.ts,
+          endTs: isOngoing ? null : tabAway.ts,
+          durationMs: isOngoing ? Math.max(0, now - tabAway.ts) : 0,
+          isOngoing
+        });
       }
 
       const totalTabAwayMs = tabLogs.reduce((s, l) => s + l.durationMs, 0);

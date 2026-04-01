@@ -867,28 +867,31 @@ window.endSession = async function() {
       const tabAway = d.tabAway || null;
       const count = tabAway ? (tabAway.count || 0) : 0;
       const rawLog = d.tabAwayLog || {};
-      const logs = Object.entries(rawLog)
-        .filter(([k, v]) => v && v.startTs)
-        .map(([k, v]) => v)
-        .sort((a, b) => a.startTs - b.startTs);
 
-      // ①②③: 各タブ離脱を個別に計算
-      // endTs がないログ = まだ離脱中 → now まで計上
+      // Firebase は数値っぽいキーを配列として返すことがある。
+      // Object.entries で null エントリが混入する場合があるため、
+      // values() を使いつつ null/undefined を除外して処理する。
+      const logEntries = Array.isArray(rawLog)
+        ? rawLog.filter(v => v && v.startTs)           // 配列の場合
+        : Object.values(rawLog).filter(v => v && v.startTs); // オブジェクトの場合
+
+      const logs = logEntries.sort((a, b) => a.startTs - b.startTs);
+
       const tabLogs = logs.map(log => {
         const start = log.startTs;
         const end = log.endTs ? Math.min(log.endTs, now) : now;
         return {
           startTs: start,
-          endTs: log.endTs || null,        // null = 離脱中のまま終了
+          endTs: log.endTs || null,
           durationMs: Math.max(0, end - start),
-          isOngoing: !log.endTs            // セッション終了時も離脱中だったか
+          isOngoing: !log.endTs
         };
       });
 
-      // フォールバック: ログはないが離脱フラグが立っている
+      // フォールバック: ログが取れなかったが tabAway フラグが立っている場合
       if (tabLogs.length === 0 && count > 0) {
-        const isAway = tabAway && tabAway.away === true;
-        if (isAway && tabAway.ts) {
+        // away===true でなくても ts があれば離脱開始時刻として使う
+        if (tabAway && tabAway.ts) {
           tabLogs.push({
             startTs: tabAway.ts,
             endTs: null,

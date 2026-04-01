@@ -1542,12 +1542,8 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(!students[sid]){
       students[sid]={...d,id:sid};
-      // 教員受信時刻と生徒の joinedAt でクロックスキューを計測する
-      // clockSkew = _joinTeacherTs - joinedAt
-      //   正: 教員時計が進んでいる
-      //   負: 生徒時計が進んでいる（よくある）
-      students[sid]._joinTeacherTs = Date.now();
-      // 参加時点の tabAway 状態を記録
+      students[sid]._joinTeacherTs  = Date.now();
+      students[sid]._lastStatus     = d.status;  // 初期statusを記録
       if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
@@ -1558,7 +1554,17 @@ function listenStudents(){
       const log = students[sid]._sessionDepTeacherLog;
       const last = log.length > 0 ? log[log.length-1] : null;
       if(last && !last.returnedAt) last.returnedAt = returnedAt;
+      // プライベートフィールドを保持しつつ更新
+      const _tabAwayTeacherLog    = students[sid]._tabAwayTeacherLog;
+      const _sessionDepTeacherLog = students[sid]._sessionDepTeacherLog;
+      const _lastTabAwayState     = students[sid]._lastTabAwayState;
+      const _joinTeacherTs        = students[sid]._joinTeacherTs;
       students[sid]={...students[sid],...d,id:sid};
+      if(_tabAwayTeacherLog)    students[sid]._tabAwayTeacherLog    = _tabAwayTeacherLog;
+      if(_sessionDepTeacherLog) students[sid]._sessionDepTeacherLog = _sessionDepTeacherLog;
+      if(_lastTabAwayState)     students[sid]._lastTabAwayState     = _lastTabAwayState;
+      if(_joinTeacherTs)        students[sid]._joinTeacherTs        = _joinTeacherTs;
+      students[sid]._lastStatus = d.status;  // 復帰時のstatusを記録
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
     }
@@ -1566,15 +1572,17 @@ function listenStudents(){
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key,d=snap.val();
     if(students[sid]) {
-      const teacherLog      = students[sid]._tabAwayTeacherLog;
-      const sessionDepLog   = students[sid]._sessionDepTeacherLog;
+      const teacherLog       = students[sid]._tabAwayTeacherLog;
+      const sessionDepLog    = students[sid]._sessionDepTeacherLog;
       const lastTabAwayState = students[sid]._lastTabAwayState;
-      const joinTeacherTs   = students[sid]._joinTeacherTs;
+      const joinTeacherTs    = students[sid]._joinTeacherTs;
+      const lastStatus       = students[sid]._lastStatus;
       students[sid]={...students[sid],...d};
       if(teacherLog)       students[sid]._tabAwayTeacherLog    = teacherLog;
       if(sessionDepLog)    students[sid]._sessionDepTeacherLog = sessionDepLog;
       if(lastTabAwayState) students[sid]._lastTabAwayState     = lastTabAwayState;
       if(joinTeacherTs)    students[sid]._joinTeacherTs        = joinTeacherTs;
+      if(lastStatus)       students[sid]._lastStatus           = lastStatus;
     }
     // 再接続時など name が後から来た場合にカードの表示名を更新する
     if(d.name){
@@ -1619,8 +1627,16 @@ function listenStudents(){
     }
     // キーフレーム要求（タブ切り替え時の画面更新遅延解消）
     if(d.hasOwnProperty('keyframeReq'))forceKeyframe(sid);
-    // status が含まれていない変化（shareType だけ等）は無視
+    // status が含まれていない変化（shareType / tabAway / keyframeReq だけ等）は無視
     if(!d.hasOwnProperty('status'))return;
+
+    // status が実際に変化したときだけ処理する
+    // （onChildChanged はノード全体を返すため、他フィールドの更新でも
+    //   status='sharing' が含まれて繰り返し発火してしまう）
+    const prevStatus = students[sid]?._lastStatus;
+    const statusChanged = prevStatus !== d.status;
+    if(students[sid]) students[sid]._lastStatus = d.status;
+
     if(d.status==='waiting'){
       const v=document.getElementById('v-'+sid);
       const ph=document.getElementById('ph-'+sid);
@@ -1642,7 +1658,11 @@ function listenStudents(){
           }
         }, 500);
       } else if (existingState === 'connected') {
-        console.log('[sharing] PC connected → waiting for renegotiation offer from student');
+        // PC接続済み → status が sharing に変化したときだけリネゴシエーション待ち
+        // 他フィールド更新による重複発火時はスキップ
+        if(statusChanged) {
+          console.log('[sharing] PC connected → waiting for renegotiation offer from student');
+        }
       } else {
         // new / connecting / disconnected → デバウンスしてsetupPC
         console.log('[sharing] PC not yet connected (state:', existingState, ') → setupPC (debounced)');

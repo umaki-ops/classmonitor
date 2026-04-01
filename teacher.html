@@ -884,25 +884,17 @@ window.endSession = async function() {
       const count = tabAway ? (tabAway.count || 0) : 0;
       if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
 
-      // ① 教員端末時計のログを優先使用（端末間の時計ずれがない）
-      const lookupSid = sid || d.id || '';
-      const teacherLog = students[lookupSid]?._tabAwayTeacherLog || [];
-      if (teacherLog.length > 0) {
-        const tabLogs = teacherLog.map(entry => {
-          const start = entry.startTs;
-          const end = entry.endTs ? entry.endTs : now;
-          return {
-            startTs: start,
-            endTs: entry.endTs || null,
-            durationMs: Math.max(0, end - start),
-            isOngoing: !entry.endTs
-          };
-        });
-        const totalTabAwayMs = tabLogs.reduce((s, l) => s + l.durationMs, 0);
-        return { count, tabLogs, totalTabAwayMs };
-      }
+      // クロックスキューを計算
+      // joinedAt（生徒時計）と _joinTeacherTs（教員受信時刻）から推定
+      const joinedAt       = d.joinedAt || 0;
+      const joinTeacherTs  = students[sid]?._joinTeacherTs || 0;
+      // clockSkew = 教員時計 - 生徒時計 （正: 教員が進んでいる、負: 生徒が進んでいる）
+      const clockSkew = (joinTeacherTs > 0 && joinedAt > 0) ? (joinTeacherTs - joinedAt) : 0;
 
-      // ② 教員ログがない場合（ページ再読み込み後など）は Firebase の tabAwayLog を使用
+      // 生徒タイムスタンプ → 教員時計空間に変換するヘルパー
+      const toTeacher = ts => ts + clockSkew;
+
+      // tabAwayLog を使って各離脱ログを計算
       const rawLog = d.tabAwayLog || {};
       const logEntries = [];
       if (Array.isArray(rawLog)) {
@@ -913,25 +905,24 @@ window.endSession = async function() {
       logEntries.sort((a, b) => a.startTs - b.startTs);
 
       const tabLogs = logEntries.map(log => {
-        const start = log.startTs;
-        const end = log.endTs ? Math.min(log.endTs, now) : now;
+        const startTeacher = toTeacher(log.startTs);
+        const endTeacher   = log.endTs ? Math.min(toTeacher(log.endTs), now) : now;
         return {
-          startTs: start,
-          endTs: log.endTs || null,
-          durationMs: Math.max(0, end - start),
-          isOngoing: !log.endTs
+          startTs:   startTeacher,
+          endTs:     log.endTs ? toTeacher(log.endTs) : null,
+          durationMs: Math.max(0, endTeacher - startTeacher),
+          isOngoing:  !log.endTs
         };
       });
 
-      // ③ ログが空でも tabAway.away=true なら今も離脱中
+      // フォールバック: tabAwayLog が取れない場合は tabAway.ts + clockSkew を使用
       if (tabLogs.length === 0 && tabAway && tabAway.away === true) {
-        // tabAway.ts は生徒端末時計なので now より大きい可能性あり → Math.min で保護
-        const start = Math.min(tabAway.ts || now, now - 1);
+        const startTeacher = toTeacher(tabAway.ts);
         tabLogs.push({
-          startTs: start,
-          endTs: null,
-          durationMs: Math.max(0, now - start),
-          isOngoing: true
+          startTs:   startTeacher,
+          endTs:     null,
+          durationMs: Math.max(0, now - startTeacher),
+          isOngoing:  true
         });
       }
 
@@ -1003,10 +994,12 @@ window.endSession = async function() {
         console.log(`[REPORT DEBUG] 生徒: ${name} (${sid})`);
         console.log(`[REPORT DEBUG] d.tabAway:`, JSON.stringify(d.tabAway));
         console.log(`[REPORT DEBUG] d.tabAwayLog:`, JSON.stringify(d.tabAwayLog));
-        console.log(`[REPORT DEBUG] teacherLog:`, JSON.stringify(students[sid]?._tabAwayTeacherLog));
+        const _joinTs = students[sid]?._joinTeacherTs || 0;
+        const _clockSkew = (_joinTs > 0 && d.joinedAt > 0) ? (_joinTs - d.joinedAt) : 0;
+        console.log(`[REPORT DEBUG] clockSkew: ${_clockSkew}ms (joinTeacherTs=${_joinTs}, joinedAt=${d.joinedAt})`);
         // ===== デバッグログここまで =====
 
-        const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(d, sessionEndTime);
+        const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(d, sessionEndTime, sid);
         const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, d.joinedAt || 0, sessionEndTime, sid);
 
         console.log(`[REPORT DEBUG] tabCount:${tabCount} tabLogs:`, JSON.stringify(tabLogs), `totalTabAwayMs:${totalTabAwayMs}`);
@@ -1559,12 +1552,17 @@ function listenStudents(){
     const sid=snap.key,d=snap.val();
     if(!students[sid]){
       students[sid]={...d,id:sid};
-      // 参加時点の tabAway 状態を記録（以降の onChildChanged で「変化」を正しく検知するため）
+      // 教員受信時刻と生徒の joinedAt でクロックスキューを計測する
+      // clockSkew = _joinTeacherTs - joinedAt
+      //   正: 教員時計が進んでいる
+      //   負: 生徒時計が進んでいる（よくある）
+      students[sid]._joinTeacherTs = Date.now();
+      // 参加時点の tabAway 状態を記録
       if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
     } else {
-      // 再参加（セッション復帰）→ 教員時計で returnedAt を記録
+      // 再参加（セッション復帰）
       const returnedAt = Date.now();
       if(!students[sid]._sessionDepTeacherLog) students[sid]._sessionDepTeacherLog=[];
       const log = students[sid]._sessionDepTeacherLog;
@@ -1581,10 +1579,12 @@ function listenStudents(){
       const teacherLog      = students[sid]._tabAwayTeacherLog;
       const sessionDepLog   = students[sid]._sessionDepTeacherLog;
       const lastTabAwayState = students[sid]._lastTabAwayState;
+      const joinTeacherTs   = students[sid]._joinTeacherTs;
       students[sid]={...students[sid],...d};
       if(teacherLog)       students[sid]._tabAwayTeacherLog    = teacherLog;
       if(sessionDepLog)    students[sid]._sessionDepTeacherLog = sessionDepLog;
       if(lastTabAwayState) students[sid]._lastTabAwayState     = lastTabAwayState;
+      if(joinTeacherTs)    students[sid]._joinTeacherTs        = joinTeacherTs;
     }
     // 再接続時など name が後から来た場合にカードの表示名を更新する
     if(d.name){

@@ -870,6 +870,20 @@ window.endSession = async function() {
 
     // ===== タブ離脱ログの計算 =====
     function calcTabAwayLogs(d, now, sid) {
+      // ① 教員端末ログが存在すれば最優先で使用（セッション離脱済み生徒の場合も対応）
+      const teacherLog = students[sid]?._tabAwayTeacherLog || [];
+      if (teacherLog.length > 0) {
+        const tabLogs = teacherLog.map(entry => ({
+          startTs:    entry.startTs,
+          endTs:      entry.endTs || null,
+          durationMs: Math.max(0, (entry.endTs || now) - entry.startTs),
+          isOngoing:  !entry.endTs
+        }));
+        const count = d.tabAway?.count || teacherLog.length;
+        return { count, tabLogs, totalTabAwayMs: tabLogs.reduce((s,l)=>s+l.durationMs,0) };
+      }
+
+      // ② 教員ログがない場合は Firebase の tabAway/tabAwayLog から計算（clockSkew補正あり）
       const tabAway = d.tabAway || null;
       const count = tabAway ? (tabAway.count || 0) : 0;
       if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
@@ -1011,9 +1025,17 @@ window.endSession = async function() {
       if (!dep || !dep.count) continue;
       const name = dep.name || students[sid]?.name || '不明';
 
-      // タブ離脱データはstudentsノードにある（今はいないので取得不可 → 空）
-      const tabCount = 0, tabLogs = [], totalTabAwayMs = 0;
+      // セッション離脱後は Firebase の students ノードが削除されているが、
+      // 教員側メモリ（students[sid]._tabAwayTeacherLog）にタブ離脱ログが残っている。
+      // students[sid] が存在する場合はそこからタブ離脱データを取得する。
+      const memStu = students[sid] || null;
+      const { count: tabCount, tabLogs, totalTabAwayMs } = memStu
+        ? calcTabAwayLogs(memStu, sessionEndTime, sid)
+        : { count: 0, tabLogs: [], totalTabAwayMs: 0 };
+
       const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, 0, sessionEndTime, sid);
+
+      if (tabCount < 1 && depCount < 1) continue;
 
       reportData.push({
         name, sid,

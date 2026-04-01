@@ -695,11 +695,12 @@
         if (!snap.exists() || !snap.val()) { clearTimeout(timeout); showState('error'); document.getElementById('error-msg').textContent = 'セッションが終了しました。';; return; }
         clearTimeout(timeout);
         sessionConfirmed = true;
+        const joinedAt = Date.now();
         set(ref(db, `sessions/${sessionId}/students/${studentId}`), {
           name: user.displayName || user.email || user.uid,
           email: user.email,
           photoURL: user.photoURL || '',
-          joinedAt: Date.now(),
+          joinedAt,
           status: 'waiting'
         });
         // 接続が切れたら自動でstudentsノードを削除（グリッドから消える）
@@ -708,6 +709,31 @@
         const userName = document.getElementById('user-name-display')?.textContent || '';
         onDisconnect(ref(db, `sessions/${sessionId}/departures/${studentId}/lastLeft`)).set(Date.now());
         onDisconnect(ref(db, `sessions/${sessionId}/departures/${studentId}/name`)).set(userName);
+        // 参加（または復帰）のタイムスタンプを departureLogs に記録
+        // 初回参加は log_0、2回目以降は _sessionDepartureCount に対応するログに returnedAt を記録
+        (async () => {
+          try {
+            const restBase = `${dbUrl.replace(/\/$/, '')}`;
+            const res = await fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}.json`);
+            const existing = res.ok ? await res.json() : null;
+            if (!existing || !existing.count) {
+              // 初回参加：log_0 として joinedAt を記録
+              fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}/departureLogs/log_0.json`, {
+                method: 'PUT',
+                body: JSON.stringify({ joinedAt }),
+                keepalive: true
+              }).catch(() => {});
+            } else {
+              // 再参加：直前の離脱ログに returnedAt を記録
+              const logKey = `log_${existing.count}`;
+              fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}/departureLogs/${logKey}/returnedAt.json`, {
+                method: 'PUT',
+                body: JSON.stringify(joinedAt),
+                keepalive: true
+              }).catch(() => {});
+            }
+          } catch(e) {}
+        })();
         showState('connected');
       }, {onlyOnce:true});
 
@@ -899,12 +925,18 @@
         _departureRecorded = true;
         _sessionDepartureCount++;
         const userName = document.getElementById('user-name-display')?.textContent || '';
+        const leftAt = Date.now();
         const restBase = `${dbUrl.replace(/\/$/, '')}`;
-        // 離脱回数をstudentsノードとは別パスに保存（DELETEで消えない）
+        // 離脱回数・離脱時刻を記録（DELETEで消えない別パス）
+        const logKey = `log_${_sessionDepartureCount}`;
         try {
           fetch(`${restBase}/sessions/${sessionId}/departures/${studentId}.json`, {
-            method: 'PUT',
-            body: JSON.stringify({ count: _sessionDepartureCount, name: userName }),
+            method: 'PATCH',
+            body: JSON.stringify({
+              count: _sessionDepartureCount,
+              name: userName,
+              [`departureLogs/${logKey}/leftAt`]: leftAt
+            }),
             keepalive: true
           }).catch(() => {});
         } catch(e) {}

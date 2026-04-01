@@ -848,14 +848,12 @@ window.endSession = async function() {
   try {
     const { ref, get } = window.FB;
 
-    // セッション開始時刻・生徒データ・離脱データを並列取得
     const [sessionSnap, snap, depSnap] = await Promise.all([
       get(ref(db, `sessions/${sessionId}/createdAt`)),
       get(ref(db, `sessions/${sessionId}/students`)),
       get(ref(db, `sessions/${sessionId}/departures`))
     ]);
 
-    // sessionStartTime が取得できない場合は sessionEndTime-1 にして sessionTotalMs>0 を保証
     const sessionStartTime = (sessionSnap.exists() && sessionSnap.val() > 0)
       ? sessionSnap.val()
       : sessionEndTime - 1;
@@ -864,74 +862,133 @@ window.endSession = async function() {
     const depData = depSnap.exists() ? depSnap.val() : {};
     const processedSids = new Set();
 
+    // ===== タブ離脱ログの計算 =====
+    function calcTabAwayLogs(d, now) {
+      const tabAway = d.tabAway || null;
+      const count = tabAway ? (tabAway.count || 0) : 0;
+      const rawLog = d.tabAwayLog || {};
+      const logs = Object.entries(rawLog)
+        .filter(([k, v]) => v && v.startTs)
+        .map(([k, v]) => v)
+        .sort((a, b) => a.startTs - b.startTs);
+
+      // ①②③: 各タブ離脱を個別に計算
+      // endTs がないログ = まだ離脱中 → now まで計上
+      const tabLogs = logs.map(log => {
+        const start = log.startTs;
+        const end = log.endTs ? Math.min(log.endTs, now) : now;
+        return {
+          startTs: start,
+          endTs: log.endTs || null,        // null = 離脱中のまま終了
+          durationMs: Math.max(0, end - start),
+          isOngoing: !log.endTs            // セッション終了時も離脱中だったか
+        };
+      });
+
+      // フォールバック: ログはないが離脱フラグが立っている
+      if (tabLogs.length === 0 && count > 0) {
+        const isAway = tabAway && tabAway.away === true;
+        if (isAway && tabAway.ts) {
+          tabLogs.push({
+            startTs: tabAway.ts,
+            endTs: null,
+            durationMs: Math.max(0, now - tabAway.ts),
+            isOngoing: true
+          });
+        }
+      }
+
+      const totalTabAwayMs = tabLogs.reduce((s, l) => s + l.durationMs, 0);
+      return { count, tabLogs, totalTabAwayMs };
+    }
+
+    // ===== セッション離脱ログの計算 =====
+    function calcSessionDepLogs(dep, currentJoinedAt, now) {
+      if (!dep || !dep.count) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
+      const count = dep.count;
+      const departureLogs = dep.departureLogs || {};
+
+      // log_1 ～ log_N を順番に処理
+      const sessionLogs = [];
+      for (let i = 1; i <= count; i++) {
+        const logKey = `log_${i}`;
+        const entry = departureLogs[logKey] || {};
+        // log_0 は初回参加なので joinedAt として使用
+        const prevEntry = departureLogs[`log_${i-1}`] || departureLogs['log_0'] || {};
+
+        // 離脱時刻: leftAt がなければ推定不能（スキップ）
+        const leftAt = entry.leftAt;
+        if (!leftAt) continue;
+
+        // 復帰時刻: returnedAt があれば使用、なければ未復帰
+        const returnedAt = entry.returnedAt || null;
+
+        // ⑤ 離脱していた時間（leftAt ～ returnedAt or now）
+        const absentEnd = returnedAt ? returnedAt : now;
+        const absentMs = Math.max(0, absentEnd - leftAt);
+
+        sessionLogs.push({
+          index: i,
+          leftAt,
+          returnedAt,          // null = 未復帰
+          absentMs,
+          isOngoing: !returnedAt  // セッション終了時も未復帰だったか
+        });
+      }
+
+      // 未記録の離脱（古いデータ互換: departureLogs がない場合）
+      if (sessionLogs.length === 0 && count > 0) {
+        // totalConnectedMs から推定
+        const connectedMs = dep.totalConnectedMs || 0;
+        // 現在セッションにいる場合は currentJoinedAt ～ now を加算
+        const totalConnected = connectedMs + (currentJoinedAt > 0 ? Math.max(0, now - currentJoinedAt) : 0);
+        const absentMs = Math.max(0, (now - sessionStartTime) - totalConnected); // ※ sessionStartTime はクロージャ外なので 0 フォールバック
+        if (absentMs > 0) {
+          sessionLogs.push({ index: 1, leftAt: null, returnedAt: null, absentMs, isOngoing: false });
+        }
+      }
+
+      const totalSessionAbsentMs = sessionLogs.reduce((s, l) => s + l.absentMs, 0);
+      return { count, sessionLogs, totalSessionAbsentMs };
+    }
+
+    // ===== 現在セッション中の生徒 =====
     if (snap.exists()) {
       snap.forEach(child => {
         const sid = child.key;
         const d = child.val();
         processedSids.add(sid);
         const name = d.name || '不明';
-        const tabAway = d.tabAway || null;
-        const count = tabAway ? (tabAway.count || 0) : 0;
-        const sessionDepartures = (depData[sid] && depData[sid].count) || 0;
+        const dep = depData[sid] || null;
 
-        if (count < 1 && sessionDepartures < 1) return;
+        const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(d, sessionEndTime);
+        const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, d.joinedAt || 0, sessionEndTime);
 
-        const rawLog = d.tabAwayLog || {};
-        const now = sessionEndTime;
-        const logs = Object.entries(rawLog)
-          .filter(([k, v]) => v && v.startTs)
-          .map(([k, v]) => v)
-          .sort((a, b) => a.startTs - b.startTs);
+        if (tabCount < 1 && depCount < 1) return;
 
-        // 現在タブ離脱中かどうか（away=true または endTs のないログがある）
-        const isCurrentlyAway = (tabAway && tabAway.away === true)
-          || (logs.length > 0 && !logs[logs.length - 1].endTs);
-
-        let totalMs = 0;
-        logs.forEach(log => {
-          if (log.startTs > now) return;
-          let end;
-          if (log.endTs && log.endTs > log.startTs) {
-            end = Math.min(log.endTs, now);
-          } else {
-            // endTs未記録 = まだ離脱中 → セッション終了時刻まで計上
-            // tabAway.ts は離脱開始時刻なので startTs と一致するはず
-            end = now;
-          }
-          totalMs += Math.max(0, end - log.startTs);
+        reportData.push({
+          name, sid,
+          tabCount, tabLogs, totalTabAwayMs,
+          depCount, sessionLogs, totalSessionAbsentMs,
+          isDeparted: false
         });
-
-        // フォールバック: ログはないが離脱フラグが立っている場合
-        if (logs.length === 0 && count > 0) {
-          if (isCurrentlyAway && tabAway && tabAway.ts) {
-            totalMs = Math.max(0, now - tabAway.ts);
-          }
-        }
-
-        // セッション離脱時間の計算
-        // currentConnectedMs: 今回のセッション参加から終了までの時間
-        const dep = depData[sid];
-        const totalConnectedMs = dep ? (dep.totalConnectedMs || 0) : 0;
-        const joinedAt = d.joinedAt || 0;
-        const currentConnectedMs = joinedAt > 0 ? Math.max(0, sessionEndTime - joinedAt) : 0;
-        const connectedMs = totalConnectedMs + currentConnectedMs;
-        const sessionAbsentMs = sessionDepartures > 0 ? Math.max(0, sessionTotalMs - connectedMs) : 0;
-
-        reportData.push({ name, count, logs, totalMs, sid, sessionDepartures, sessionAbsentMs });
       });
     }
 
-    // セッション離脱したまま（studentsにいない）の生徒
+    // ===== セッション離脱中のまま（studentsにいない）生徒 =====
     for (const [sid, dep] of Object.entries(depData)) {
       if (processedSids.has(sid)) continue;
       if (!dep || !dep.count) continue;
-      const depName = dep.name || students[sid]?.name || '不明';
-      const connectedMs2 = dep.totalConnectedMs || 0;
-      const sessionAbsentMs2 = Math.max(0, sessionTotalMs - connectedMs2);
+      const name = dep.name || students[sid]?.name || '不明';
+
+      // タブ離脱データはstudentsノードにある（今はいないので取得不可 → 空）
+      const tabCount = 0, tabLogs = [], totalTabAwayMs = 0;
+      const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, 0, sessionEndTime);
+
       reportData.push({
-        name: depName, count: 0, logs: [], totalMs: 0, sid,
-        sessionDepartures: dep.count,
-        sessionAbsentMs: sessionAbsentMs2,
+        name, sid,
+        tabCount, tabLogs, totalTabAwayMs,
+        depCount, sessionLogs, totalSessionAbsentMs,
         isDeparted: true
       });
     }
@@ -939,7 +996,10 @@ window.endSession = async function() {
     console.warn('tabAway data fetch error', e);
   }
 
-  reportData.sort((a, b) => (b.count + b.sessionDepartures) - (a.count + a.sessionDepartures) || a.name.localeCompare(b.name));
+  // 離脱合計が多い順にソート
+  reportData.sort((a, b) =>
+    (b.tabCount + b.depCount) - (a.tabCount + a.depCount) || a.name.localeCompare(b.name)
+  );
   _tabAwayReportData = reportData;
 
   if (teacherStream) teacherStream.getTracks().forEach(t => t.stop());
@@ -957,49 +1017,123 @@ function showTabAwayReport(data) {
   if (data.length === 0) {
     content.innerHTML = `<div class="tabaway-no-data">✅ 離脱者はいませんでした</div>`;
     document.getElementById('tabaway-csv-btn').style.display = 'none';
-  } else {
-    document.getElementById('tabaway-csv-btn').style.display = '';
-    const toTime = ts => new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    let rows = data.map((d, i) => {
-      const rank = i + 1;
-      const rankClass = rank <= 3 ? `rank-${rank}` : '';
-      const totalStr = d.totalMs > 0 ? formatMs(d.totalMs) : '0秒';
-      const timesHtml = d.logs.length > 0
-        ? d.logs.map(log => `<span style="display:inline-block;white-space:nowrap;">${toTime(log.startTs)}</span>`).join('<br>')
-        : '−';
-      const depStr = d.sessionDepartures > 0 ? `${d.sessionDepartures}回` : '−';
-      const absentSec = d.sessionAbsentMs > 0 ? Math.floor(d.sessionAbsentMs / 1000) : 0;
-      const absentStr = d.sessionDepartures > 0 && absentSec > 0 ? formatMs(d.sessionAbsentMs) : '−';
-      const departedBadge = d.isDeparted ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;">離脱中</span>` : '';
-      return `<tr${d.isDeparted ? ' style="opacity:0.8;"' : ''}>
-        <td><span class="rank-badge ${rankClass}">${rank}</span></td>
-        <td style="font-weight:600;">${esc(d.name)}${departedBadge}</td>
-        <td class="tabaway-count-cell">${d.count}回</td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8;">${timesHtml}</td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${totalStr}</td>
-        <td class="tabaway-count-cell" style="color:var(--red);">${depStr}</td>
-        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red);">${absentStr}</td>
-      </tr>`;
-    }).join('');
-    content.innerHTML = `
-      <table class="tabaway-report-table">
-        <thead>
-          <tr>
-            <th>順位</th>
-            <th>氏名</th>
-            <th>タブ離脱回数</th>
-            <th>離脱開始時刻（全回）</th>
-            <th>合計離脱時間</th>
-            <th>セッション離脱</th>
-            <th>セッション離脱時間</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+    document.getElementById('tabaway-report-modal').classList.add('show');
+    return;
   }
+
+  document.getElementById('tabaway-csv-btn').style.display = '';
+  const toTime = ts => ts ? new Date(ts).toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '−';
+
+  let rows = data.map((d, i) => {
+    const rank = i + 1;
+    const rankClass = rank <= 3 ? `rank-${rank}` : '';
+    const departedBadge = d.isDeparted ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;">離脱中</span>` : '';
+
+    const tabCountStr = d.tabCount > 0 ? `${d.tabCount}回` : '−';
+    const tabLogsHtml = d.tabLogs.length > 0
+      ? d.tabLogs.map((l, idx) => {
+          const ongoingBadge = l.isOngoing ? `<span style="font-size:9px;color:var(--red);margin-left:3px;">（終了時離脱中）</span>` : '';
+          return `<span style="display:block;white-space:nowrap;font-size:11px;">${idx+1}回目: ${toTime(l.startTs)}〜${l.endTs ? toTime(l.endTs) : 'セッション終了'} [${formatMs(l.durationMs)}]${ongoingBadge}</span>`;
+        }).join('')
+      : '−';
+    const totalTabStr = d.totalTabAwayMs > 0 ? formatMs(d.totalTabAwayMs) : '−';
+
+    const depCountStr = d.depCount > 0 ? `${d.depCount}回` : '−';
+    const sessionLogsHtml = d.sessionLogs.length > 0
+      ? d.sessionLogs.map((l, idx) => {
+          const ongoingBadge = l.isOngoing ? `<span style="font-size:9px;color:var(--red);margin-left:3px;">（未復帰）</span>` : '';
+          const timeStr = l.leftAt
+            ? `${toTime(l.leftAt)}〜${l.returnedAt ? toTime(l.returnedAt) : 'セッション終了'}`
+            : '（記録なし）';
+          return `<span style="display:block;white-space:nowrap;font-size:11px;">${idx+1}回目: ${timeStr} [${formatMs(l.absentMs)}]${ongoingBadge}</span>`;
+        }).join('')
+      : '−';
+    const totalDepStr = d.totalSessionAbsentMs > 0 ? formatMs(d.totalSessionAbsentMs) : '−';
+
+    return `<tr${d.isDeparted ? ' style="opacity:0.8;"' : ''}>
+      <td><span class="rank-badge ${rankClass}">${rank}</span></td>
+      <td style="font-weight:600;">${esc(d.name)}${departedBadge}</td>
+      <td class="tabaway-count-cell">${tabCountStr}</td>
+      <td style="line-height:1.7;">${tabLogsHtml}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${totalTabStr}</td>
+      <td class="tabaway-count-cell" style="color:var(--red);">${depCountStr}</td>
+      <td style="line-height:1.7;">${sessionLogsHtml}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red);">${totalDepStr}</td>
+    </tr>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div style="overflow-x:auto;">
+    <table class="tabaway-report-table" style="min-width:720px;">
+      <thead>
+        <tr>
+          <th>順位</th>
+          <th>氏名</th>
+          <th>タブ離脱回数</th>
+          <th>タブ離脱詳細（開始〜終了 [時間]）</th>
+          <th>タブ離脱合計</th>
+          <th>セッション離脱</th>
+          <th>セッション離脱詳細（離脱〜復帰 [時間]）</th>
+          <th>セッション離脱合計</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+
+  const box = document.querySelector('.tabaway-report-box');
+  if (box) box.style.maxWidth = '960px';
 
   document.getElementById('tabaway-report-modal').classList.add('show');
 }
+
+window.downloadTabAwayCSV = function() {
+  const data = _tabAwayReportData;
+  if (!data || data.length === 0) { toast('データがありません'); return; }
+
+  const BOM = '\uFEFF';
+  const toDateTime = ts => ts ? new Date(ts).toLocaleString('ja-JP') : '−';
+
+  const header = [
+    '順位', '氏名',
+    'タブ離脱回数', 'タブ離脱詳細（回数: 開始〜終了 [時間]）', 'タブ離脱合計時間',
+    'セッション離脱回数', 'セッション離脱詳細（回数: 離脱〜復帰 [時間]）', 'セッション離脱合計時間'
+  ];
+
+  const rows = data.map((d, i) => {
+    const rank = i + 1;
+    const tabDetail = d.tabLogs.length > 0
+      ? d.tabLogs.map((l, idx) =>
+          `${idx+1}回目: ${toDateTime(l.startTs)}〜${l.endTs ? toDateTime(l.endTs) : 'セッション終了'} [${formatMs(l.durationMs)}]${l.isOngoing ? '（終了時離脱中）' : ''}`
+        ).join('\n')
+      : '−';
+    const totalTabStr = d.totalTabAwayMs > 0 ? formatMs(d.totalTabAwayMs) : '−';
+    const depDetail = d.sessionLogs.length > 0
+      ? d.sessionLogs.map((l, idx) =>
+          `${idx+1}回目: ${l.leftAt ? toDateTime(l.leftAt) : '不明'}〜${l.returnedAt ? toDateTime(l.returnedAt) : 'セッション終了'} [${formatMs(l.absentMs)}]${l.isOngoing ? '（未復帰）' : ''}`
+        ).join('\n')
+      : '−';
+    const totalDepStr = d.totalSessionAbsentMs > 0 ? formatMs(d.totalSessionAbsentMs) : '−';
+    return [rank, d.name, d.tabCount||0, tabDetail, totalTabStr, d.depCount||0, depDetail, totalDepStr]
+      .map(v => `"${String(v).replace(/"/g, '""')}"`)
+      .join(',');
+  });
+
+  const csv = BOM + header.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const y = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  a.href = url;
+  a.download = `${y}年${mo}月${day}日_離脱レポート.csv`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('✅ CSVをダウンロードしました');
+};
 
 function formatMs(ms) {
   if (!ms || ms <= 0) return '0秒';
@@ -1014,45 +1148,6 @@ function formatMs(ms) {
 window.closeTabAwayReport = function() {
   document.getElementById('tabaway-report-modal').classList.remove('show');
   location.reload();
-};
-
-window.downloadTabAwayCSV = function() {
-  const data = _tabAwayReportData;
-  if (!data || data.length === 0) { toast('データがありません'); return; }
-
-  const BOM = '\uFEFF'; // Excel用BOM
-  const toDateTime = ts => new Date(ts).toLocaleString('ja-JP');
-
-  // ヘッダー行
-  const header = ['順位', '氏名', 'タブ離脱回数', '離脱開始時刻（全回）', '合計離脱時間', 'セッション離脱回数', 'セッション離脱時間'];
-
-  const rows = data.map((d, i) => {
-    const rank = i + 1;
-    const totalStr = d.totalMs > 0 ? formatMs(d.totalMs) : '0秒';
-    const allTimes = d.logs.map(log => toDateTime(log.startTs)).join('\n');
-    const dep = d.sessionDepartures || 0;
-    const absentStr = dep > 0 && d.sessionAbsentMs > 0 ? formatMs(d.sessionAbsentMs) : '−';
-    return [rank, d.name, d.count, allTimes, totalStr, dep, absentStr]
-      .map(v => `"${String(v).replace(/"/g, '""')}"`)
-      .join(',');
-  });
-
-  const csv = BOM + header.join(',') + '\n' + rows.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-
-  // ファイル名は日付（YYYY年MM月DD日）
-  const now = new Date();
-  const y = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  a.href = url;
-  a.download = `${y}年${mo}月${day}日_離脱レポート.csv`;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  toast('✅ CSVをダウンロードしました');
 };
 
 // ===== VIEW SWITCH =====
@@ -1481,25 +1576,33 @@ function listenStudents(){
   onChildRemoved(ref(db,`sessions/${sessionId}/students`),snap=>{
     const sid=snap.key;
     const d=snap.val()||{};
-    // nameを同期的に確実に取得（非同期処理前に取っておく）
     const name = d.name || students[sid]?.name || '';
     const joinedAt = d.joinedAt || 0;
     const nowTs = Date.now();
     const sessionDuration = joinedAt > 0 ? (nowTs - joinedAt) : 0;
-    // セッションが終了中でなければ離脱としてカウント（endSessionでremoveする場合は除外）
     if(sessionId && !window._sessionEnding && name){
-      const{ref:fbRef,set:fbSet,get:fbGet}=window.FB;
+      const{ref:fbRef,set:fbSet,get:fbGet,update:fbUpdate}=window.FB;
       fbGet(fbRef(db,`sessions/${sessionId}/departures/${sid}`)).then(snap=>{
         const prev=snap.exists()&&snap.val()||{};
+        const newCount = (prev.count||0)+1;
+        const logKey = `log_${newCount}`;
+        // 既存の departureLogs を保持しつつ新しい leftAt を追加
+        const existingLogs = prev.departureLogs || {};
+        const updatedLogs = {
+          ...existingLogs,
+          [logKey]: { ...(existingLogs[logKey]||{}), leftAt: nowTs }
+        };
         fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{
-          count:(prev.count||0)+1,
+          count: newCount,
           name: prev.name||name,
-          totalConnectedMs: (prev.totalConnectedMs||0) + sessionDuration // 接続時間を累積
+          totalConnectedMs: (prev.totalConnectedMs||0) + sessionDuration,
+          departureLogs: updatedLogs
         });
       }).catch(()=>{
         fbSet(fbRef(db,`sessions/${sessionId}/departures/${sid}`),{
           count:1, name,
-          totalConnectedMs: sessionDuration
+          totalConnectedMs: sessionDuration,
+          departureLogs: { log_1: { leftAt: nowTs } }
         });
       });
     }

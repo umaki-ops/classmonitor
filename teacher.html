@@ -842,7 +842,9 @@ window.endSession = async function() {
   if (!confirm('セッションを終了しますか？')) return;
   window._sessionEnding = true;
 
-  // 仮の終了時刻（confirm後すぐ）
+  // 終了時刻は教員端末の時計で固定する
+  // （clockSkew補正により生徒タイムスタンプを教員時計空間に変換するので
+  //   sessionEndTime を生徒時計ベースで調整する必要はない）
   const sessionEndTimeApprox = Date.now();
 
   let reportData = [];
@@ -855,20 +857,8 @@ window.endSession = async function() {
       get(ref(db, `sessions/${sessionId}/departures`))
     ]);
 
-    // データ取得完了後に改めて現在時刻を取得
-    // → 生徒端末との時計ずれ対策として、取得したデータ内の最新タイムスタンプより
-    //   必ず大きい値になるよう保証する
-    let sessionEndTime = Date.now();
-
-    // 生徒の tabAway.ts がセッション終了時刻より新しい場合（端末間の時計ずれ）に備え
-    // すべての tabAway.ts の最大値より少なくとも1秒後を sessionEndTime とする
-    if (snap.exists()) {
-      snap.forEach(child => {
-        const d = child.val();
-        const ts = d.tabAway && d.tabAway.ts;
-        if (ts && ts > sessionEndTime) sessionEndTime = ts + 1000;
-      });
-    }
+    // データ取得完了後の教員時計をセッション終了時刻とする
+    const sessionEndTime = Date.now();
 
     const sessionStartTime = (sessionSnap.exists() && sessionSnap.val() > 0)
       ? sessionSnap.val()

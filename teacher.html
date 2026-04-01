@@ -968,8 +968,20 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const dep = depData[sid] || null;
 
+        // ===== デバッグログ（原因調査用） =====
+        console.log(`[REPORT DEBUG] 生徒: ${name} (${sid})`);
+        console.log(`[REPORT DEBUG] d.tabAway:`, JSON.stringify(d.tabAway));
+        console.log(`[REPORT DEBUG] d.tabAwayLog:`, JSON.stringify(d.tabAwayLog));
+        console.log(`[REPORT DEBUG] d.tabAwayLog type:`, Array.isArray(d.tabAwayLog) ? 'Array' : typeof d.tabAwayLog);
+        if (d.tabAwayLog && !Array.isArray(d.tabAwayLog)) {
+          console.log(`[REPORT DEBUG] tabAwayLog keys:`, Object.keys(d.tabAwayLog));
+        }
+        // ===== デバッグログここまで =====
+
         const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(d, sessionEndTime);
         const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, d.joinedAt || 0, sessionEndTime);
+
+        console.log(`[REPORT DEBUG] tabCount:${tabCount} tabLogs:`, JSON.stringify(tabLogs), `totalTabAwayMs:${totalTabAwayMs}`);
 
         if (tabCount < 1 && depCount < 1) return;
 

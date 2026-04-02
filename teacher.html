@@ -870,39 +870,16 @@ window.endSession = async function() {
     const processedSids = new Set();
 
     // ===== タブ離脱ログの計算 =====
-    function calcTabAwayLogs(d, now, sid) {
-      // ① 教員端末ログが存在すれば最優先で使用
-      // セッション離脱済み生徒は _departedTabLogs に退避済み
-      const teacherLog = students[sid]?._tabAwayTeacherLog
-        || window._departedTabLogs?.[sid]?.tabAwayTeacherLog
-        || [];
-      if (teacherLog.length > 0) {
-        const tabLogs = teacherLog.map(entry => ({
-          startTs:    entry.startTs,
-          endTs:      entry.endTs || null,
-          durationMs: Math.max(0, (entry.endTs || now) - entry.startTs),
-          isOngoing:  !entry.endTs
-        }));
-        const count = d.tabAway?.count || teacherLog.length;
-        return { count, tabLogs, totalTabAwayMs: tabLogs.reduce((s,l)=>s+l.durationMs,0) };
-      }
-
-      // ② 教員ログがない場合は Firebase の tabAway/tabAwayLog から計算（clockSkew補正あり）
+    // sessionLeftAt: セッション離脱時刻（教員時計）。偽エントリ除去に使用。
+    function calcTabAwayLogs(d, now, sid, sessionLeftAt) {
       const tabAway = d.tabAway || null;
-      const count = tabAway ? (tabAway.count || 0) : 0;
-      if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
 
-      // クロックスキューを計算
-      // joinedAt（生徒時計）と _joinTeacherTs（教員受信時刻）から推定
-      const joinedAt       = d.joinedAt || 0;
-      const joinTeacherTs  = students[sid]?._joinTeacherTs || 0;
-      // clockSkew = 教員時計 - 生徒時計 （正: 教員が進んでいる、負: 生徒が進んでいる）
-      const clockSkew = (joinTeacherTs > 0 && joinedAt > 0) ? (joinTeacherTs - joinedAt) : 0;
+      // Firebase tabAwayLog を clockSkew 補正して変換
+      const joinedAt      = d.joinedAt || 0;
+      const joinTeacherTs = students[sid]?._joinTeacherTs || 0;
+      const clockSkew     = (joinTeacherTs > 0 && joinedAt > 0) ? (joinTeacherTs - joinedAt) : 0;
+      const toTeacher     = ts => ts + clockSkew;
 
-      // 生徒タイムスタンプ → 教員時計空間に変換するヘルパー
-      const toTeacher = ts => ts + clockSkew;
-
-      // tabAwayLog を使って各離脱ログを計算
       const rawLog = d.tabAwayLog || {};
       const logEntries = [];
       if (Array.isArray(rawLog)) {
@@ -912,30 +889,48 @@ window.endSession = async function() {
       }
       logEntries.sort((a, b) => a.startTs - b.startTs);
 
-      const tabLogs = logEntries.map(log => {
+      let tabLogs = logEntries.map(log => {
         const startTeacher = toTeacher(log.startTs);
         const endTeacher   = log.endTs ? Math.min(toTeacher(log.endTs), now) : now;
         return {
-          startTs:   startTeacher,
-          endTs:     log.endTs ? toTeacher(log.endTs) : null,
+          startTs:    startTeacher,
+          endTs:      log.endTs ? toTeacher(log.endTs) : null,
           durationMs: Math.max(0, endTeacher - startTeacher),
           isOngoing:  !log.endTs
         };
       });
 
-      // フォールバック: tabAwayLog が取れない場合は tabAway.ts + clockSkew を使用
-      if (tabLogs.length === 0 && tabAway && tabAway.away === true) {
+      // 偽エントリ除去：
+      // ブラウザ閉じ直前の visibilitychange による spurious なタブ離脱を除く。
+      // 条件: endTs なし かつ (a) startTs がセッション離脱時刻と3秒以内、
+      //                   または (b) startTs > now（時計ずれで未来になっているもの）
+      tabLogs = tabLogs.filter(tab => {
+        if (!tab.isOngoing) return true; // 完了済みは必ず保持
+        if (tab.startTs > now) return false; // 未来タイムスタンプは除去
+        if (sessionLeftAt && Math.abs(tab.startTs - sessionLeftAt) < 3000) return false; // 離脱直前の偽エントリ
+        return true;
+      });
+
+      // count: 完了済みログ数 + 残った ongoing 数（Firebase count は偽エントリ込みなので使わない）
+      const count = tabLogs.length > 0 ? tabLogs.length
+        : (tabAway && tabAway.count ? tabAway.count : 0);
+
+      if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
+
+      // tabLogs が空でも tabAway.away=true（かつ偽エントリでない）ならフォールバック
+      if (tabLogs.length === 0 && tabAway?.away === true && tabAway.ts) {
         const startTeacher = toTeacher(tabAway.ts);
-        tabLogs.push({
-          startTs:   startTeacher,
-          endTs:     null,
-          durationMs: Math.max(0, now - startTeacher),
-          isOngoing:  true
-        });
+        if (!sessionLeftAt || Math.abs(startTeacher - sessionLeftAt) >= 3000) {
+          tabLogs.push({
+            startTs: startTeacher, endTs: null,
+            durationMs: Math.max(0, now - startTeacher),
+            isOngoing: true
+          });
+        }
       }
 
       const totalTabAwayMs = tabLogs.reduce((s, l) => s + l.durationMs, 0);
-      return { count, tabLogs, totalTabAwayMs };
+      return { count: tabLogs.length || count, tabLogs, totalTabAwayMs };
     }
 
     // ===== セッション離脱ログの計算 =====
@@ -998,13 +993,8 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const dep = depData[sid] || null;
 
-        // ===== デバッグログ（原因調査用） =====
-        console.log(`[REPORT DEBUG] 生徒: ${name} (${sid})`);
-        console.log(`[REPORT DEBUG] d.tabAway:`, JSON.stringify(d.tabAway));
-        console.log(`[REPORT DEBUG] d.tabAwayLog:`, JSON.stringify(d.tabAwayLog));
-        const _joinTs = students[sid]?._joinTeacherTs || 0;
-        const _clockSkew = (_joinTs > 0 && d.joinedAt > 0) ? (_joinTs - d.joinedAt) : 0;
-        console.log(`[REPORT DEBUG] clockSkew: ${_clockSkew}ms (joinTeacherTs=${_joinTs}, joinedAt=${d.joinedAt})`);
+        // ===== デバッグログ =====
+        console.log(`[REPORT DEBUG] 生徒: ${name} (${sid}) tabAway:`, JSON.stringify(d.tabAway), 'tabAwayLog:', JSON.stringify(d.tabAwayLog));
         // ===== デバッグログここまで =====
 
         const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(d, sessionEndTime, sid);
@@ -1028,28 +1018,29 @@ window.endSession = async function() {
       if (processedSids.has(sid)) continue;
       if (!dep || !dep.count) continue;
 
-      // removeCard で delete students[sid] されているため students[sid] は null。
-      // removeCard 時に退避した _departedTabLogs[sid] からタブ離脱データを取得する。
       const saved = window._departedTabLogs?.[sid] || null;
-      const name = dep.name || saved?.name || '不明';
+      const name  = dep.name || saved?.name || '不明';
 
-      // calcTabAwayLogs に渡すダミーオブジェクト（退避データを含む）
+      // Firebase スナップショットから tabAwayLog を使用（最も信頼性が高い）
+      // _tabAwayTeacherLog は onChildChanged の記録タイミング依存で不安定なため使わない
       const dummyD = {
         tabAway:    saved?.tabAway  || null,
-        tabAwayLog: {},  // Firebase から取れないので空（_departedTabLogs 経由で補完）
+        tabAwayLog: saved?.tabAwayLog || {},
         joinedAt:   saved?.joinedAt || 0,
         id:         sid
       };
-      // _joinTeacherTs も退避データから復元して students[sid] に一時セットする
-      if (saved) {
+      // _joinTeacherTs を一時的に復元してclockSkew計算に使えるようにする
+      if (saved?.joinTeacherTs) {
         if (!students[sid]) students[sid] = { id: sid };
-        students[sid]._tabAwayTeacherLog = saved.tabAwayTeacherLog || [];
-        students[sid]._joinTeacherTs     = saved.joinTeacherTs     || 0;
-        students[sid]._sessionDepTeacherLog = students[sid]._sessionDepTeacherLog || [];
+        students[sid]._joinTeacherTs = saved.joinTeacherTs;
       }
+      // セッション離脱時刻（偽タブ離脱フィルタに使用）
+      const sessionLeftAt = saved?.leftAt || null;
 
-      const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(dummyD, sessionEndTime, sid);
-      const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, 0, sessionEndTime, sid);
+      const { count: tabCount, tabLogs, totalTabAwayMs } =
+        calcTabAwayLogs(dummyD, sessionEndTime, sid, sessionLeftAt);
+      const { count: depCount, sessionLogs, totalSessionAbsentMs } =
+        calcSessionDepLogs(dep, 0, sessionEndTime, sid);
 
       if (tabCount < 1 && depCount < 1) continue;
 
@@ -2539,11 +2530,13 @@ function removeCard(sid){
   if(!window._departedTabLogs) window._departedTabLogs = {};
   if(students[sid]) {
     window._departedTabLogs[sid] = {
-      tabAwayTeacherLog: students[sid]._tabAwayTeacherLog || [],
-      joinTeacherTs:     students[sid]._joinTeacherTs     || 0,
-      tabAway:           students[sid].tabAway             || null,
-      joinedAt:          students[sid].joinedAt            || 0,
-      name:              students[sid].name                || ''
+      // Firebase スナップショットから取得した tabAwayLog（最も信頼性が高い）
+      tabAwayLog:        d.tabAwayLog        || {},
+      tabAway:           d.tabAway           || null,
+      joinTeacherTs:     students[sid]._joinTeacherTs || 0,
+      joinedAt:          d.joinedAt          || 0,
+      name:              d.name              || students[sid].name || '',
+      leftAt:            nowTs,  // 教員時計でのセッション離脱時刻
     };
   }
   delete students[sid];

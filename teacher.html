@@ -829,6 +829,7 @@ window.startSession=async function(){
   document.getElementById('share-url').textContent=url;
   const dot=document.getElementById('cdot');dot.style.background='var(--green)';dot.style.animation='pulse 2s infinite';
   document.getElementById('cstatus').textContent=sessionId;
+  window._departedTabLogs = {};  // セッション開始時にリセット
   listenStudents();
   listenGroups();
   listenGroupSelectData();
@@ -870,8 +871,11 @@ window.endSession = async function() {
 
     // ===== タブ離脱ログの計算 =====
     function calcTabAwayLogs(d, now, sid) {
-      // ① 教員端末ログが存在すれば最優先で使用（セッション離脱済み生徒の場合も対応）
-      const teacherLog = students[sid]?._tabAwayTeacherLog || [];
+      // ① 教員端末ログが存在すれば最優先で使用
+      // セッション離脱済み生徒は _departedTabLogs に退避済み
+      const teacherLog = students[sid]?._tabAwayTeacherLog
+        || window._departedTabLogs?.[sid]?.tabAwayTeacherLog
+        || [];
       if (teacherLog.length > 0) {
         const tabLogs = teacherLog.map(entry => ({
           startTs:    entry.startTs,
@@ -1023,16 +1027,28 @@ window.endSession = async function() {
     for (const [sid, dep] of Object.entries(depData)) {
       if (processedSids.has(sid)) continue;
       if (!dep || !dep.count) continue;
-      const name = dep.name || students[sid]?.name || '不明';
 
-      // セッション離脱後は Firebase の students ノードが削除されているが、
-      // 教員側メモリ（students[sid]._tabAwayTeacherLog）にタブ離脱ログが残っている。
-      // students[sid] が存在する場合はそこからタブ離脱データを取得する。
-      const memStu = students[sid] || null;
-      const { count: tabCount, tabLogs, totalTabAwayMs } = memStu
-        ? calcTabAwayLogs(memStu, sessionEndTime, sid)
-        : { count: 0, tabLogs: [], totalTabAwayMs: 0 };
+      // removeCard で delete students[sid] されているため students[sid] は null。
+      // removeCard 時に退避した _departedTabLogs[sid] からタブ離脱データを取得する。
+      const saved = window._departedTabLogs?.[sid] || null;
+      const name = dep.name || saved?.name || '不明';
 
+      // calcTabAwayLogs に渡すダミーオブジェクト（退避データを含む）
+      const dummyD = {
+        tabAway:    saved?.tabAway  || null,
+        tabAwayLog: {},  // Firebase から取れないので空（_departedTabLogs 経由で補完）
+        joinedAt:   saved?.joinedAt || 0,
+        id:         sid
+      };
+      // _joinTeacherTs も退避データから復元して students[sid] に一時セットする
+      if (saved) {
+        if (!students[sid]) students[sid] = { id: sid };
+        students[sid]._tabAwayTeacherLog = saved.tabAwayTeacherLog || [];
+        students[sid]._joinTeacherTs     = saved.joinTeacherTs     || 0;
+        students[sid]._sessionDepTeacherLog = students[sid]._sessionDepTeacherLog || [];
+      }
+
+      const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(dummyD, sessionEndTime, sid);
       const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, 0, sessionEndTime, sid);
 
       if (tabCount < 1 && depCount < 1) continue;
@@ -2509,6 +2525,17 @@ function removeCard(sid){
   peerConnections[sid]?.close();delete peerConnections[sid];
   twPcs[sid]?.close();delete twPcs[sid];
   studentBcastPcs[sid]?.close();delete studentBcastPcs[sid];
+  // セッション離脱生徒のタブ離脱ログを退避する（endSessionで参照するため）
+  if(!window._departedTabLogs) window._departedTabLogs = {};
+  if(students[sid]) {
+    window._departedTabLogs[sid] = {
+      tabAwayTeacherLog: students[sid]._tabAwayTeacherLog || [],
+      joinTeacherTs:     students[sid]._joinTeacherTs     || 0,
+      tabAway:           students[sid].tabAway             || null,
+      joinedAt:          students[sid].joinedAt            || 0,
+      name:              students[sid].name                || ''
+    };
+  }
   delete students[sid];
   if(currentBroadcastId===sid)stopBcast();
   updateStats();

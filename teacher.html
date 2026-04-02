@@ -874,12 +874,13 @@ window.endSession = async function() {
     function calcTabAwayLogs(d, now, sid, sessionLeftAt) {
       const tabAway = d.tabAway || null;
 
-      // Firebase tabAwayLog を clockSkew 補正して変換
+      // clockSkew 計算
       const joinedAt      = d.joinedAt || 0;
       const joinTeacherTs = students[sid]?._joinTeacherTs || 0;
       const clockSkew     = (joinTeacherTs > 0 && joinedAt > 0) ? (joinTeacherTs - joinedAt) : 0;
       const toTeacher     = ts => ts + clockSkew;
 
+      // Firebase tabAwayLog を変換
       const rawLog = d.tabAwayLog || {};
       const logEntries = [];
       if (Array.isArray(rawLog)) {
@@ -900,37 +901,47 @@ window.endSession = async function() {
         };
       });
 
-      // 偽エントリ除去：
-      // ブラウザ閉じ直前の visibilitychange による spurious なタブ離脱を除く。
-      // 条件: endTs なし かつ (a) startTs がセッション離脱時刻と3秒以内、
-      //                   または (b) startTs > now（時計ずれで未来になっているもの）
-      tabLogs = tabLogs.filter(tab => {
-        if (!tab.isOngoing) return true; // 完了済みは必ず保持
-        if (tab.startTs > now) return false; // 未来タイムスタンプは除去
-        if (sessionLeftAt && Math.abs(tab.startTs - sessionLeftAt) < 3000) return false; // 離脱直前の偽エントリ
-        return true;
-      });
-
-      // count: 完了済みログ数 + 残った ongoing 数（Firebase count は偽エントリ込みなので使わない）
-      const count = tabLogs.length > 0 ? tabLogs.length
-        : (tabAway && tabAway.count ? tabAway.count : 0);
-
-      if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
-
-      // tabLogs が空でも tabAway.away=true（かつ偽エントリでない）ならフォールバック
-      if (tabLogs.length === 0 && tabAway?.away === true && tabAway.ts) {
-        const startTeacher = toTeacher(tabAway.ts);
-        if (!sessionLeftAt || Math.abs(startTeacher - sessionLeftAt) >= 3000) {
-          tabLogs.push({
-            startTs: startTeacher, endTs: null,
-            durationMs: Math.max(0, now - startTeacher),
-            isOngoing: true
-          });
+      // Firebase ログが空の場合、教員ログ（_tabAwayTeacherLog）を補助ソースとして使用
+      if (tabLogs.length === 0) {
+        const teacherLog = students[sid]?._tabAwayTeacherLog
+          || window._departedTabLogs?.[sid]?.tabAwayTeacherLog
+          || [];
+        if (teacherLog.length > 0) {
+          tabLogs = teacherLog.map(entry => ({
+            startTs:    entry.startTs,
+            endTs:      entry.endTs || null,
+            durationMs: Math.max(0, (entry.endTs || now) - entry.startTs),
+            isOngoing:  !entry.endTs
+          }));
         }
       }
 
+      // 偽エントリ除去
+      tabLogs = tabLogs.filter(tab => {
+        if (!tab.isOngoing) return true;
+        if (tab.startTs > now) return false;
+        if (sessionLeftAt && Math.abs(tab.startTs - sessionLeftAt) < 3000) return false;
+        return true;
+      });
+
+      if (tabLogs.length === 0) {
+        // フォールバック: tabAway.away=true かつ偽エントリでない場合
+        if (tabAway?.away === true && tabAway.ts) {
+          const startTeacher = toTeacher(tabAway.ts);
+          if (!sessionLeftAt || Math.abs(startTeacher - sessionLeftAt) >= 3000) {
+            tabLogs.push({
+              startTs: startTeacher, endTs: null,
+              durationMs: Math.max(0, now - startTeacher),
+              isOngoing: true
+            });
+          }
+        }
+      }
+
+      const count = tabLogs.length;
+      if (count === 0) return { count: 0, tabLogs: [], totalTabAwayMs: 0 };
       const totalTabAwayMs = tabLogs.reduce((s, l) => s + l.durationMs, 0);
-      return { count: tabLogs.length || count, tabLogs, totalTabAwayMs };
+      return { count, tabLogs, totalTabAwayMs };
     }
 
     // ===== セッション離脱ログの計算 =====
@@ -960,14 +971,18 @@ window.endSession = async function() {
       if (!dep) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
       const departureLogs = dep.departureLogs || {};
       const sessionLogs = [];
+      let prevLeftAt = null;
       for (let i = 1; i <= count; i++) {
         const entry = departureLogs[`log_${i}`] || {};
         const leftAt = entry.leftAt;
         if (!leftAt) continue;
+        // 直前の離脱と3秒以内なら重複（onChildRemoved 二重発火）として除外
+        if (prevLeftAt && Math.abs(leftAt - prevLeftAt) < 3000) continue;
+        prevLeftAt = leftAt;
         const returnedAt = entry.returnedAt || null;
         const absentEnd = returnedAt ? returnedAt : now;
         sessionLogs.push({
-          index: i, leftAt, returnedAt,
+          index: sessionLogs.length + 1, leftAt, returnedAt,
           absentMs: Math.max(0, absentEnd - leftAt),
           isOngoing: !returnedAt
         });
@@ -2529,15 +2544,21 @@ function removeCard(sid){
   // セッション離脱生徒のタブ離脱ログを退避する（endSessionで参照するため）
   if(!window._departedTabLogs) window._departedTabLogs = {};
   if(students[sid]) {
-    window._departedTabLogs[sid] = {
-      // Firebase スナップショットから取得した tabAwayLog（最も信頼性が高い）
-      tabAwayLog:        d.tabAwayLog        || {},
-      tabAway:           d.tabAway           || null,
-      joinTeacherTs:     students[sid]._joinTeacherTs || 0,
-      joinedAt:          d.joinedAt          || 0,
-      name:              d.name              || students[sid].name || '',
-      leftAt:            nowTs,  // 教員時計でのセッション離脱時刻
-    };
+    const prev = window._departedTabLogs[sid];
+    // 既に退避済みで leftAt が近い場合（二重 onChildRemoved）はスキップ
+    if(prev && Math.abs((prev.leftAt||0) - nowTs) < 3000) {
+      // 二重発火: removeCard だけ呼んで退避は上書きしない
+    } else {
+      window._departedTabLogs[sid] = {
+        tabAwayLog:        d.tabAwayLog         || {},  // Firebase スナップショット（主ソース）
+        tabAwayTeacherLog: students[sid]._tabAwayTeacherLog || [],  // 教員時計ログ（補助ソース）
+        tabAway:           d.tabAway            || null,
+        joinTeacherTs:     students[sid]._joinTeacherTs || 0,
+        joinedAt:          d.joinedAt           || 0,
+        name:              d.name               || students[sid].name || '',
+        leftAt:            nowTs,
+      };
+    }
   }
   delete students[sid];
   if(currentBroadcastId===sid)stopBcast();

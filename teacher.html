@@ -1728,6 +1728,16 @@ function listenStudents(){
     if(students[sid]){
       if(!students[sid]._sessionDepTeacherLog) students[sid]._sessionDepTeacherLog=[];
       students[sid]._sessionDepTeacherLog.push({ leftAt: nowTs, returnedAt: null });
+
+      // ブラウザを閉じると visibilitychange(hidden=true) が beforeunload より先に発火するため、
+      // セッション離脱直前に偽のタブ離脱が記録される。
+      // _tabAwayTeacherLog の中で startTs が nowTs と1秒以内かつ endTs がないエントリは
+      // セッション離脱時の誤記録なので削除する。
+      if(students[sid]._tabAwayTeacherLog) {
+        students[sid]._tabAwayTeacherLog = students[sid]._tabAwayTeacherLog.filter(
+          entry => !(entry.endTs === null && Math.abs(entry.startTs - nowTs) < 1500)
+        );
+      }
     }
     if(sessionId && !window._sessionEnding && name){
       const{ref:fbRef,set:fbSet,get:fbGet,update:fbUpdate}=window.FB;

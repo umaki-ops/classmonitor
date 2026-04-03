@@ -964,11 +964,19 @@ window.endSession = async function() {
           if (prev && Math.abs(entry.leftAt - prev.leftAt) < 3000) continue;
           deduped.push(entry);
         }
+        // _joinTimes: 全参加時刻（フォールバック用）
+        const joinTimes = (window._departedTabLogs?.[sid]?._joinTimes || []).sort((a,b)=>a-b);
+
         const sessionLogs = deduped.map((entry, idx) => {
           const leftAt = entry.leftAt;
           // returnedAt が leftAt と5秒以内なら誤設定（onChildAdded 誤発火）として無視
-          const returnedAt = (entry.returnedAt && (entry.returnedAt - leftAt) >= 5000)
+          let returnedAt = (entry.returnedAt && (entry.returnedAt - leftAt) >= 5000)
             ? entry.returnedAt : null;
+          // returnedAt が未設定の場合、_joinTimes から次の参加時刻を探してフォールバック
+          if (!returnedAt && leftAt) {
+            const nextJoin = joinTimes.find(t => t > leftAt + 1000);
+            if (nextJoin) returnedAt = nextJoin;
+          }
           const absentEnd = returnedAt ? returnedAt : now;
           return {
             index: idx + 1,
@@ -1128,7 +1136,9 @@ function showTabAwayReport(data) {
           return `<span style="display:block;white-space:nowrap;font-size:11px;">${idx+1}回目: ${toTime(l.startTs)}〜${l.endTs ? toTime(l.endTs) : 'セッション終了'} [${formatMs(l.durationMs)}]${ongoingBadge}</span>`;
         }).join('')
       : '−';
-    const totalTabStr = d.totalTabAwayMs > 0 ? formatMs(d.totalTabAwayMs) : '−';
+    // 合計は個別表示（floor秒）の和にして数字の一致を保証
+    const totalTabSec = d.tabLogs.reduce((s, l) => s + Math.floor(l.durationMs / 1000), 0);
+    const totalTabStr = totalTabSec > 0 ? formatMs(totalTabSec * 1000) : '−';
 
     const depCountStr = d.depCount > 0 ? `${d.depCount}回` : '−';
     const sessionLogsHtml = d.sessionLogs.length > 0
@@ -1140,7 +1150,8 @@ function showTabAwayReport(data) {
           return `<span style="display:block;white-space:nowrap;font-size:11px;">${idx+1}回目: ${timeStr} [${formatMs(l.absentMs)}]${ongoingBadge}</span>`;
         }).join('')
       : '−';
-    const totalDepStr = d.totalSessionAbsentMs > 0 ? formatMs(d.totalSessionAbsentMs) : '−';
+    const totalDepSec = d.sessionLogs.reduce((s, l) => s + Math.floor(l.absentMs / 1000), 0);
+    const totalDepStr = totalDepSec > 0 ? formatMs(totalDepSec * 1000) : '−';
 
     return `<tr${d.isDeparted ? ' style="opacity:0.8;"' : ''}>
       <td><span class="rank-badge ${rankClass}">${rank}</span></td>
@@ -1199,13 +1210,15 @@ window.downloadTabAwayCSV = function() {
           `${idx+1}回目: ${toDateTime(l.startTs)}〜${l.endTs ? toDateTime(l.endTs) : 'セッション終了'} [${formatMs(l.durationMs)}]${l.isOngoing ? '（終了時離脱中）' : ''}`
         ).join('\n')
       : '−';
-    const totalTabStr = d.totalTabAwayMs > 0 ? formatMs(d.totalTabAwayMs) : '−';
+    const totalTabStr = d.tabLogs.reduce((s,l)=>s+Math.floor(l.durationMs/1000),0) > 0
+      ? formatMs(d.tabLogs.reduce((s,l)=>s+Math.floor(l.durationMs/1000),0)*1000) : '−';
     const depDetail = d.sessionLogs.length > 0
       ? d.sessionLogs.map((l, idx) =>
           `${idx+1}回目: ${l.leftAt ? toDateTime(l.leftAt) : '不明'}〜${l.returnedAt ? toDateTime(l.returnedAt) : 'セッション終了'} [${formatMs(l.absentMs)}]${l.isOngoing ? '（未復帰）' : ''}`
         ).join('\n')
       : '−';
-    const totalDepStr = d.totalSessionAbsentMs > 0 ? formatMs(d.totalSessionAbsentMs) : '−';
+    const totalDepStr = d.sessionLogs.reduce((s,l)=>s+Math.floor(l.absentMs/1000),0) > 0
+      ? formatMs(d.sessionLogs.reduce((s,l)=>s+Math.floor(l.absentMs/1000),0)*1000) : '−';
     return [rank, d.name, d.tabCount||0, tabDetail, totalTabStr, d.depCount||0, depDetail, totalDepStr]
       .map(v => `"${String(v).replace(/"/g, '""')}"`)
       .join(',');
@@ -1609,18 +1622,21 @@ function listenStudents(){
       if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
 
       // 再参加時刻を記録（onChildRemoved との競合対策）
-      // 競合パターン①：onChildRemoved が先に来ていれば _departedTabLogs が存在 → 直接 returnedAt をセット
-      // 競合パターン②：onChildAdded が先に来ていれば _pendingReturnedAt に退避 → onChildRemoved 側で適用
       if(!window._departedTabLogs) window._departedTabLogs = {};
-      if(window._departedTabLogs[sid]) {
-        // パターン①: _departedTabLogs が既にある場合
+      // _joinTimes: 全参加時刻を記録する（returnedAt 計算のフォールバック）
+      if(!window._departedTabLogs[sid]) window._departedTabLogs[sid] = {};
+      if(!window._departedTabLogs[sid]._joinTimes) window._departedTabLogs[sid]._joinTimes = [];
+      window._departedTabLogs[sid]._joinTimes.push(students[sid]._joinTeacherTs);
+
+      if(window._departedTabLogs[sid].sessionDepTeacherLog) {
+        // _departedTabLogs が既にある場合：最後の離脱エントリに returnedAt をセット
         const prevLog = window._departedTabLogs[sid];
-        const sessionDepLog = prevLog.sessionDepTeacherLog || [];
+        const sessionDepLog = prevLog.sessionDepTeacherLog;
         const last = sessionDepLog[sessionDepLog.length - 1];
         if(last && !last.returnedAt) last.returnedAt = students[sid]._joinTeacherTs;
       } else {
-        // パターン②: _departedTabLogs がまだない場合 → _pendingReturnedAt に退避
-        window._departedTabLogs[sid] = { _pendingReturnedAt: students[sid]._joinTeacherTs };
+        // _departedTabLogs がまだない場合 → _pendingReturnedAt に退避
+        window._departedTabLogs[sid]._pendingReturnedAt = students[sid]._joinTeacherTs;
       }
 
       addCard(sid,d);

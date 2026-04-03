@@ -991,6 +991,8 @@ window.endSession = async function() {
           }
           const absentEnd = returnedAt ? returnedAt : now;
           const absentMs = Math.max(0, absentEnd - leftAt);
+          // returnedAt が leftAt と同一または1秒未満 = ネットワーク瞬断による幻の離脱として除外
+          if (returnedAt && absentMs < 1000) return null;
           return {
             index: idx + 1,
             leftAt,
@@ -1033,6 +1035,7 @@ window.endSession = async function() {
         }
         const absentEnd = returnedAt ? returnedAt : now;
         const absentMs = Math.max(0, absentEnd - leftAt);
+        if (returnedAt && absentMs < 1000) return null;
         return {
           index: idx + 1, leftAt, returnedAt,
           absentMs,
@@ -1897,6 +1900,20 @@ function listenStudents(){
           // _joinTimes は onChildAdded で追記されるので必ず引き継ぐ
           _joinTimes:          prev._joinTimes        || [],
         };
+
+        // _joinTimes を使って mergedSessionDepLog の欠損 returnedAt を補完する
+        // （onChildAdded が onChildRemoved より先に発火する競合状態の対策）
+        const allJoinTimes = (window._departedTabLogs[sid]._joinTimes || []).sort((a,b)=>a-b);
+        window._departedTabLogs[sid].sessionDepTeacherLog.forEach((entry, idx) => {
+          if (entry.returnedAt) return; // 既に設定済みはスキップ
+          const logs = window._departedTabLogs[sid].sessionDepTeacherLog;
+          const nextLeftAt = logs[idx + 1]?.leftAt || Infinity;
+          // 競合状態では t_rejoin < entry.leftAt になりうるため leftAt-5秒から探す
+          const candidate = allJoinTimes.find(t =>
+            t >= entry.leftAt - 5000 && t < nextLeftAt
+          );
+          if (candidate) entry.returnedAt = Math.max(entry.leftAt, candidate);
+        });
 
         // パターン②の競合対策: onChildAdded が先に来ていた場合の _pendingReturnedAt を適用
         const pendingReturnedAt = prev._pendingReturnedAt;

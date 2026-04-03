@@ -991,8 +991,10 @@ window.endSession = async function() {
           }
           const absentEnd = returnedAt ? returnedAt : now;
           const absentMs = Math.max(0, absentEnd - leftAt);
-          // 5秒未満で復帰している場合はネットワーク瞬断による幻の離脱として除外
-          if (absentMs < 5000 && returnedAt) return null;
+          // ネットワーク瞬断による幻の離脱を除外:
+          // leftAt と returnedAt が3秒以内 = Firebase の onDisconnect 誤発火
+          // （本物の短時間離脱との区別: 本物は必ず数秒以上かかる）
+          if (returnedAt && (returnedAt - leftAt) < 3000) return null;
           return {
             index: idx + 1,
             leftAt,
@@ -1035,7 +1037,7 @@ window.endSession = async function() {
         }
         const absentEnd = returnedAt ? returnedAt : now;
         const absentMs = Math.max(0, absentEnd - leftAt);
-        if (absentMs < 5000 && returnedAt) return null;
+        if (returnedAt && (returnedAt - leftAt) < 3000) return null;
         return {
           index: idx + 1, leftAt, returnedAt,
           absentMs,

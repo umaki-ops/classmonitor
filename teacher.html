@@ -950,9 +950,16 @@ window.endSession = async function() {
       if (count === 0) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
 
       // ① 教員端末時計のログを優先（端末間時計ずれなし）
-      const teacherLog = students[sid]?._sessionDepTeacherLog || [];
-      if (teacherLog.length > 0) {
-        const sessionLogs = teacherLog.map((entry, idx) => {
+      const rawTeacherLog = students[sid]?._sessionDepTeacherLog || [];
+      if (rawTeacherLog.length > 0) {
+        // onChildRemoved 二重発火で同じ leftAt が近接して記録される場合を除去
+        const deduped = [];
+        for (const entry of rawTeacherLog) {
+          const prev = deduped[deduped.length - 1];
+          if (prev && Math.abs(entry.leftAt - prev.leftAt) < 3000) continue;
+          deduped.push(entry);
+        }
+        const sessionLogs = deduped.map((entry, idx) => {
           const leftAt = entry.leftAt;
           const returnedAt = entry.returnedAt || null;
           const absentEnd = returnedAt ? returnedAt : now;
@@ -964,7 +971,8 @@ window.endSession = async function() {
             isOngoing: !returnedAt
           };
         });
-        return { count, sessionLogs, totalSessionAbsentMs: sessionLogs.reduce((s,l)=>s+l.absentMs,0) };
+        const realCount = sessionLogs.length;
+        return { count: realCount, sessionLogs, totalSessionAbsentMs: sessionLogs.reduce((s,l)=>s+l.absentMs,0) };
       }
 
       // ② 教員ログがない場合は Firebase の departureLogs を使用
@@ -1733,7 +1741,12 @@ function listenStudents(){
     // 教員時計でセッション離脱時刻を記録
     if(students[sid]){
       if(!students[sid]._sessionDepTeacherLog) students[sid]._sessionDepTeacherLog=[];
-      students[sid]._sessionDepTeacherLog.push({ leftAt: nowTs, returnedAt: null });
+      const depLog = students[sid]._sessionDepTeacherLog;
+      // 直前の記録と3秒以内なら重複（onChildRemoved 二重発火）としてスキップ
+      const lastDep = depLog[depLog.length - 1];
+      if (!lastDep || Math.abs(lastDep.leftAt - nowTs) >= 3000) {
+        depLog.push({ leftAt: nowTs, returnedAt: null });
+      }
 
       // ブラウザを閉じると visibilitychange(hidden=true) が beforeunload より先に発火するため、
       // セッション離脱直前に偽のタブ離脱が記録される。

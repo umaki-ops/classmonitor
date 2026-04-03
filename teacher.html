@@ -948,7 +948,13 @@ window.endSession = async function() {
 
     // ===== セッション離脱ログの計算 =====
     function calcSessionDepLogs(dep, currentJoinedAt, now, sid) {
-      const count = dep ? (dep.count || 0) : 0;
+      // dep.count が 0 や未設定の場合：
+      // onDisconnect で lastLeft/name だけ書かれて count がない場合があるため
+      // 教員メモリの sessionDepTeacherLog を count のフォールバックに使う
+      const teacherLogFallback = students[sid]?._sessionDepTeacherLog
+        || window._departedTabLogs?.[sid]?.sessionDepTeacherLog
+        || [];
+      const count = Math.max(dep ? (dep.count || 0) : 0, teacherLogFallback.length);
       if (count === 0) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
 
       // ① 教員端末時計のログを優先（端末間時計ずれなし）
@@ -987,8 +993,8 @@ window.endSession = async function() {
           }
           const absentEnd = returnedAt ? returnedAt : now;
           const absentMs = Math.max(0, absentEnd - leftAt);
-          // returnedAt が leftAt と同一または1秒未満 = ネットワーク瞬断による幻の離脱として除外
-          if (returnedAt && absentMs < 1000) return null;
+          // returnedAt が leftAt と300ms未満 = ネットワーク瞬断による幻の離脱として除外
+          if (returnedAt && absentMs < 300) return null;
           return {
             index: idx + 1,
             leftAt,
@@ -1034,7 +1040,7 @@ window.endSession = async function() {
         }
         const absentEnd = returnedAt ? returnedAt : now;
         const absentMs = Math.max(0, absentEnd - leftAt);
-        if (returnedAt && absentMs < 1000) return null;
+        if (returnedAt && absentMs < 300) return null;
         return {
           index: idx + 1, leftAt, returnedAt,
           absentMs,
@@ -1836,11 +1842,11 @@ function listenStudents(){
 
       // ブラウザを閉じると visibilitychange(hidden=true) が beforeunload より先に発火するため、
       // セッション離脱直前に偽のタブ離脱が記録される。
-      // _tabAwayTeacherLog の中で startTs が nowTs と1秒以内かつ endTs がないエントリは
-      // セッション離脱時の誤記録なので削除する。
+      // 真の「離脱直前の偽エントリ」はvisibilitychange→closeが300ms以内に連続する。
+      // 意図的なタブ離脱（その後にclose）は必ずこれより長いため300ms閾値を使用。
       if(students[sid]._tabAwayTeacherLog) {
         students[sid]._tabAwayTeacherLog = students[sid]._tabAwayTeacherLog.filter(
-          entry => !(entry.endTs === null && Math.abs(entry.startTs - nowTs) < 1500)
+          entry => !(entry.endTs === null && Math.abs(entry.startTs - nowTs) < 300)
         );
       }
     }

@@ -1607,15 +1607,22 @@ function listenStudents(){
       students[sid]._joinTeacherTs  = Date.now();
       students[sid]._lastStatus     = d.status;
       if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
-      // 再参加検知：_departedTabLogs に前回の離脱記録があれば returnedAt をセット
-      if(window._departedTabLogs?.[sid]) {
+
+      // 再参加時刻を記録（onChildRemoved との競合対策）
+      // 競合パターン①：onChildRemoved が先に来ていれば _departedTabLogs が存在 → 直接 returnedAt をセット
+      // 競合パターン②：onChildAdded が先に来ていれば _pendingReturnedAt に退避 → onChildRemoved 側で適用
+      if(!window._departedTabLogs) window._departedTabLogs = {};
+      if(window._departedTabLogs[sid]) {
+        // パターン①: _departedTabLogs が既にある場合
         const prevLog = window._departedTabLogs[sid];
         const sessionDepLog = prevLog.sessionDepTeacherLog || [];
         const last = sessionDepLog[sessionDepLog.length - 1];
-        if(last && !last.returnedAt) {
-          last.returnedAt = students[sid]._joinTeacherTs;
-        }
+        if(last && !last.returnedAt) last.returnedAt = students[sid]._joinTeacherTs;
+      } else {
+        // パターン②: _departedTabLogs がまだない場合 → _pendingReturnedAt に退避
+        window._departedTabLogs[sid] = { _pendingReturnedAt: students[sid]._joinTeacherTs };
       }
+
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
     } else {
@@ -1836,6 +1843,16 @@ function listenStudents(){
           name:                d.name || students[sid].name || prev.name || '',
           leftAt:              nowTs,
         };
+
+        // パターン②の競合対策: onChildAdded が先に来ていた場合の _pendingReturnedAt を適用
+        const pendingReturnedAt = prev._pendingReturnedAt;
+        if(pendingReturnedAt) {
+          const log = window._departedTabLogs[sid].sessionDepTeacherLog;
+          const last = log[log.length - 1];
+          if(last && !last.returnedAt && pendingReturnedAt > last.leftAt) {
+            last.returnedAt = pendingReturnedAt;
+          }
+        }
       }
     }
     removeCard(sid);

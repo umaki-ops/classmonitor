@@ -961,7 +961,9 @@ window.endSession = async function() {
         }
         const sessionLogs = deduped.map((entry, idx) => {
           const leftAt = entry.leftAt;
-          const returnedAt = entry.returnedAt || null;
+          // returnedAt が leftAt と5秒以内なら誤設定（onChildAdded 誤発火）として無視
+          const returnedAt = (entry.returnedAt && (entry.returnedAt - leftAt) >= 5000)
+            ? entry.returnedAt : null;
           const absentEnd = returnedAt ? returnedAt : now;
           return {
             index: idx + 1,
@@ -987,7 +989,9 @@ window.endSession = async function() {
         // 直前の離脱と3秒以内なら重複（onChildRemoved 二重発火）として除外
         if (prevLeftAt && Math.abs(leftAt - prevLeftAt) < 3000) continue;
         prevLeftAt = leftAt;
-        const returnedAt = entry.returnedAt || null;
+        // returnedAt が leftAt と5秒以内なら誤設定として無視
+        const returnedAt = (entry.returnedAt && (entry.returnedAt - leftAt) >= 5000)
+          ? entry.returnedAt : null;
         const absentEnd = returnedAt ? returnedAt : now;
         sessionLogs.push({
           index: sessionLogs.length + 1, leftAt, returnedAt,
@@ -1595,7 +1599,7 @@ function listenStudents(){
     if(!students[sid]){
       students[sid]={...d,id:sid};
       students[sid]._joinTeacherTs  = Date.now();
-      students[sid]._lastStatus     = d.status;  // 初期statusを記録
+      students[sid]._lastStatus     = d.status;
       if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
@@ -1605,7 +1609,11 @@ function listenStudents(){
       if(!students[sid]._sessionDepTeacherLog) students[sid]._sessionDepTeacherLog=[];
       const log = students[sid]._sessionDepTeacherLog;
       const last = log.length > 0 ? log[log.length-1] : null;
-      if(last && !last.returnedAt) last.returnedAt = returnedAt;
+      // leftAt から5秒以上経過している場合のみ returnedAt をセット
+      // （直後の onChildAdded 再発火による誤設定を防ぐ）
+      if(last && !last.returnedAt && (returnedAt - last.leftAt) >= 5000) {
+        last.returnedAt = returnedAt;
+      }
       // プライベートフィールドを保持しつつ更新
       const _tabAwayTeacherLog    = students[sid]._tabAwayTeacherLog;
       const _sessionDepTeacherLog = students[sid]._sessionDepTeacherLog;
@@ -1616,7 +1624,7 @@ function listenStudents(){
       if(_sessionDepTeacherLog) students[sid]._sessionDepTeacherLog = _sessionDepTeacherLog;
       if(_lastTabAwayState)     students[sid]._lastTabAwayState     = _lastTabAwayState;
       if(_joinTeacherTs)        students[sid]._joinTeacherTs        = _joinTeacherTs;
-      students[sid]._lastStatus = d.status;  // 復帰時のstatusを記録
+      students[sid]._lastStatus = d.status;
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
     }
@@ -1701,22 +1709,24 @@ function listenStudents(){
       const existingState = existingPc?.connectionState;
       if (!window._setupPcTimers) window._setupPcTimers = {};
       if (!existingPc || existingState === 'failed' || existingState === 'closed') {
-        console.log('[sharing] no valid PC (state:', existingState, ') → setupPC (debounced)');
-        clearTimeout(window._setupPcTimers[sid]);
-        window._setupPcTimers[sid] = setTimeout(() => {
-          const pc2 = peerConnections[sid];
-          if (!pc2 || pc2.connectionState === 'failed' || pc2.connectionState === 'closed') {
-            setupPC(sid);
-          }
-        }, 500);
+        // PCがない or 失敗/閉鎖済み → status が変化したときのみ setupPC
+        // （他フィールド更新による再発火ではタイマーをリセットしない）
+        if(statusChanged) {
+          console.log('[sharing] no valid PC (state:', existingState, ') → setupPC (debounced)');
+          clearTimeout(window._setupPcTimers[sid]);
+          window._setupPcTimers[sid] = setTimeout(() => {
+            const pc2 = peerConnections[sid];
+            if (!pc2 || pc2.connectionState === 'failed' || pc2.connectionState === 'closed') {
+              setupPC(sid);
+            }
+          }, 500);
+        }
       } else if (existingState === 'connected') {
-        // PC接続済み → status が sharing に変化したときだけリネゴシエーション待ち
-        // 他フィールド更新による重複発火時はスキップ
         if(statusChanged) {
           console.log('[sharing] PC connected → waiting for renegotiation offer from student');
         }
-      } else {
-        // new / connecting / disconnected → デバウンスしてsetupPC
+      } else if (statusChanged) {
+        // new / connecting / disconnected かつ status が実際に変化した場合のみ setupPC
         console.log('[sharing] PC not yet connected (state:', existingState, ') → setupPC (debounced)');
         clearTimeout(window._setupPcTimers[sid]);
         window._setupPcTimers[sid] = setTimeout(() => {

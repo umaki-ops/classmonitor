@@ -1345,7 +1345,13 @@
     window.stopShare = function() {
       window._shareActive = false;
       if (localStream) { localStream.getTracks().forEach(t=>t.stop()); localStream = null; }
-      if (pc) { pc.close(); pc = null; }
+      // PCは閉じない：再共有時に既存PCを使えるようにしておく
+      // トラックのみ停止してstatus=waitingにする
+      if (pc) {
+        pc.getSenders().forEach(sender => {
+          try { pc.removeTrack(sender); } catch(e) {}
+        });
+      }
       showState('connected');
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'waiting');
     };

@@ -892,10 +892,12 @@ window.endSession = async function() {
 
       let tabLogs = logEntries.map(log => {
         const startTeacher = toTeacher(log.startTs);
-        const endTeacher   = log.endTs ? Math.min(toTeacher(log.endTs), now) : now;
+        const rawEnd       = log.endTs ? toTeacher(log.endTs) : now;
+        // clockSkew補正後に endTs < startTs になる場合は startTs に揃える
+        const endTeacher   = log.endTs ? Math.max(startTeacher, Math.min(rawEnd, now)) : now;
         return {
           startTs:    startTeacher,
-          endTs:      log.endTs ? toTeacher(log.endTs) : null,
+          endTs:      log.endTs ? endTeacher : null,
           durationMs: Math.max(0, endTeacher - startTeacher),
           isOngoing:  !log.endTs
         };
@@ -1794,6 +1796,22 @@ function listenStudents(){
         });
       });
     }
+    // セッション離脱生徒のタブ離脱ログを退避（endSessionで参照するため、removeCard前に実施）
+    if(!window._departedTabLogs) window._departedTabLogs = {};
+    if(students[sid]) {
+      const prev = window._departedTabLogs[sid];
+      if(!prev || Math.abs((prev.leftAt||0) - nowTs) >= 3000) {
+        window._departedTabLogs[sid] = {
+          tabAwayLog:        d.tabAwayLog                          || {},
+          tabAwayTeacherLog: students[sid]._tabAwayTeacherLog      || [],
+          tabAway:           d.tabAway                             || null,
+          joinTeacherTs:     students[sid]._joinTeacherTs          || 0,
+          joinedAt:          d.joinedAt                            || 0,
+          name:              d.name || students[sid].name          || '',
+          leftAt:            nowTs,
+        };
+      }
+    }
     removeCard(sid);
   });
   const _listenStartTs = Date.now();
@@ -2564,25 +2582,6 @@ function removeCard(sid){
   peerConnections[sid]?.close();delete peerConnections[sid];
   twPcs[sid]?.close();delete twPcs[sid];
   studentBcastPcs[sid]?.close();delete studentBcastPcs[sid];
-  // セッション離脱生徒のタブ離脱ログを退避する（endSessionで参照するため）
-  if(!window._departedTabLogs) window._departedTabLogs = {};
-  if(students[sid]) {
-    const prev = window._departedTabLogs[sid];
-    // 既に退避済みで leftAt が近い場合（二重 onChildRemoved）はスキップ
-    if(prev && Math.abs((prev.leftAt||0) - nowTs) < 3000) {
-      // 二重発火: removeCard だけ呼んで退避は上書きしない
-    } else {
-      window._departedTabLogs[sid] = {
-        tabAwayLog:        d.tabAwayLog         || {},  // Firebase スナップショット（主ソース）
-        tabAwayTeacherLog: students[sid]._tabAwayTeacherLog || [],  // 教員時計ログ（補助ソース）
-        tabAway:           d.tabAway            || null,
-        joinTeacherTs:     students[sid]._joinTeacherTs || 0,
-        joinedAt:          d.joinedAt           || 0,
-        name:              d.name               || students[sid].name || '',
-        leftAt:            nowTs,
-      };
-    }
-  }
   delete students[sid];
   if(currentBroadcastId===sid)stopBcast();
   updateStats();

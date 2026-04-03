@@ -969,13 +969,25 @@ window.endSession = async function() {
 
         const sessionLogs = deduped.map((entry, idx) => {
           const leftAt = entry.leftAt;
-          // returnedAt が leftAt と5秒以内なら誤設定（onChildAdded 誤発火）として無視
-          let returnedAt = (entry.returnedAt && (entry.returnedAt - leftAt) >= 5000)
-            ? entry.returnedAt : null;
-          // returnedAt が未設定の場合、_joinTimes から次の参加時刻を探してフォールバック
+          const nextEntry = deduped[idx + 1];
+          const nextLeftAt = nextEntry?.leftAt || null;
+
+          // returnedAt の妥当性チェック:
+          //   - leftAt より後であること
+          //   - 次の離脱 (nextLeftAt) より前であること（または次の離脱がない場合は任意）
+          let returnedAt = null;
+          if (entry.returnedAt && entry.returnedAt > leftAt) {
+            if (!nextLeftAt || entry.returnedAt < nextLeftAt) {
+              returnedAt = entry.returnedAt;
+            }
+          }
+          // returnedAt が未設定の場合、_joinTimes から次の参加時刻をフォールバック
           if (!returnedAt && leftAt) {
-            const nextJoin = joinTimes.find(t => t > leftAt + 1000);
-            if (nextJoin) returnedAt = nextJoin;
+            const candidates = joinTimes.filter(t =>
+              t > leftAt &&
+              (!nextLeftAt || t < nextLeftAt)
+            );
+            if (candidates.length > 0) returnedAt = candidates[0];
           }
           const absentEnd = returnedAt ? returnedAt : now;
           return {
@@ -993,25 +1005,36 @@ window.endSession = async function() {
       // ② 教員ログがない場合は Firebase の departureLogs を使用
       if (!dep) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
       const departureLogs = dep.departureLogs || {};
-      const sessionLogs = [];
-      let prevLeftAt = null;
+      const joinTimes2 = (window._departedTabLogs?.[sid]?._joinTimes || []).sort((a,b)=>a-b);
+      // まず全エントリを重複除去してリスト化
+      const rawEntries = [];
+      let prevLeftAt2 = null;
       for (let i = 1; i <= count; i++) {
         const entry = departureLogs[`log_${i}`] || {};
         const leftAt = entry.leftAt;
         if (!leftAt) continue;
-        // 直前の離脱と3秒以内なら重複（onChildRemoved 二重発火）として除外
-        if (prevLeftAt && Math.abs(leftAt - prevLeftAt) < 3000) continue;
-        prevLeftAt = leftAt;
-        // returnedAt が leftAt と5秒以内なら誤設定として無視
-        const returnedAt = (entry.returnedAt && (entry.returnedAt - leftAt) >= 5000)
-          ? entry.returnedAt : null;
+        if (prevLeftAt2 && Math.abs(leftAt - prevLeftAt2) < 3000) continue;
+        prevLeftAt2 = leftAt;
+        rawEntries.push(entry);
+      }
+      const sessionLogs = rawEntries.map((entry, idx) => {
+        const leftAt = entry.leftAt;
+        const nextLeftAt = rawEntries[idx + 1]?.leftAt || null;
+        let returnedAt = null;
+        if (entry.returnedAt && entry.returnedAt > leftAt) {
+          if (!nextLeftAt || entry.returnedAt < nextLeftAt) returnedAt = entry.returnedAt;
+        }
+        if (!returnedAt) {
+          const candidates = joinTimes2.filter(t => t > leftAt && (!nextLeftAt || t < nextLeftAt));
+          if (candidates.length > 0) returnedAt = candidates[0];
+        }
         const absentEnd = returnedAt ? returnedAt : now;
-        sessionLogs.push({
-          index: sessionLogs.length + 1, leftAt, returnedAt,
+        return {
+          index: idx + 1, leftAt, returnedAt,
           absentMs: Math.max(0, absentEnd - leftAt),
           isOngoing: !returnedAt
-        });
-      }
+        };
+      });
 
       // ③ それもなければ totalConnectedMs から推定
       if (sessionLogs.length === 0 && count > 0) {
@@ -1858,6 +1881,8 @@ function listenStudents(){
           joinedAt:            d.joinedAt             || 0,
           name:                d.name || students[sid].name || prev.name || '',
           leftAt:              nowTs,
+          // _joinTimes は onChildAdded で追記されるので必ず引き継ぐ
+          _joinTimes:          prev._joinTimes        || [],
         };
 
         // パターン②の競合対策: onChildAdded が先に来ていた場合の _pendingReturnedAt を適用

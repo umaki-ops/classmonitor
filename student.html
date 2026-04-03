@@ -771,6 +771,7 @@
         console.log('[SIG-MATCH]', signal.type);
         if (signal.type === 'offer') setTimeout(() => handleOffer(signal.sdp), 0);
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
+        else if (signal.type === 'answer') handleTeacherAnswer(signal.sdp);
         else if (signal.type === 'watch-offer') setTimeout(() => handleWatchOffer(signal.from, signal.sdp, signal.sourceName), 0);
         else if (signal.type === 'watch-ice') handleWatchIce(signal.candidate);
         // P2P配信: 受信側(生徒B)が送信側(生徒A)からのICE候補を受け取る → watchPcに追加
@@ -1022,6 +1023,22 @@
     // ===== WebRTC =====
     // handleOffer を直列化するキュー（並列実行による signalingState 競合を防ぐ）
     let _offerQueue = Promise.resolve();
+    // 教員からのリネゴシエーション answer を処理する
+    // （生徒がstartShareでrenegotiation offerを送った後、教員がanswerを返してくる）
+    async function handleTeacherAnswer(sdp) {
+      if (!pc) { console.warn('[handleTeacherAnswer] no pc'); return; }
+      if (pc.signalingState !== 'have-local-offer') {
+        console.warn('[handleTeacherAnswer] unexpected signalingState:', pc.signalingState);
+        return;
+      }
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        console.log('[handleTeacherAnswer] renegotiation complete');
+      } catch(e) {
+        console.warn('[handleTeacherAnswer] error:', e);
+      }
+    }
+
     function handleOffer(sdp) {
       _offerQueue = _offerQueue.then(() => _handleOfferInner(sdp)).catch(e => {
         console.warn('[handleOffer queue] error:', e);

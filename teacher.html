@@ -952,7 +952,10 @@ window.endSession = async function() {
       if (count === 0) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
 
       // ① 教員端末時計のログを優先（端末間時計ずれなし）
-      const rawTeacherLog = students[sid]?._sessionDepTeacherLog || [];
+      // セッション離脱済み生徒は _departedTabLogs.sessionDepTeacherLog に退避済み
+      const rawTeacherLog = students[sid]?._sessionDepTeacherLog
+        || window._departedTabLogs?.[sid]?.sessionDepTeacherLog
+        || [];
       if (rawTeacherLog.length > 0) {
         // onChildRemoved 二重発火で同じ leftAt が近接して記録される場合を除去
         const deduped = [];
@@ -1058,10 +1061,11 @@ window.endSession = async function() {
         joinedAt:   saved?.joinedAt || 0,
         id:         sid
       };
-      // _joinTeacherTs を一時的に復元してclockSkew計算に使えるようにする
-      if (saved?.joinTeacherTs) {
+      // _joinTeacherTs と sessionDepTeacherLog を一時的に復元
+      if (saved) {
         if (!students[sid]) students[sid] = { id: sid };
-        students[sid]._joinTeacherTs = saved.joinTeacherTs;
+        if (saved.joinTeacherTs)        students[sid]._joinTeacherTs        = saved.joinTeacherTs;
+        if (saved.sessionDepTeacherLog) students[sid]._sessionDepTeacherLog = saved.sessionDepTeacherLog;
       }
       // セッション離脱時刻（偽タブ離脱フィルタに使用）
       const sessionLeftAt = saved?.leftAt || null;
@@ -1603,6 +1607,15 @@ function listenStudents(){
       students[sid]._joinTeacherTs  = Date.now();
       students[sid]._lastStatus     = d.status;
       if(d.tabAway) students[sid]._lastTabAwayState = { away: d.tabAway.away, count: d.tabAway.count };
+      // 再参加検知：_departedTabLogs に前回の離脱記録があれば returnedAt をセット
+      if(window._departedTabLogs?.[sid]) {
+        const prevLog = window._departedTabLogs[sid];
+        const sessionDepLog = prevLog.sessionDepTeacherLog || [];
+        const last = sessionDepLog[sessionDepLog.length - 1];
+        if(last && !last.returnedAt) {
+          last.returnedAt = students[sid]._joinTeacherTs;
+        }
+      }
       addCard(sid,d);
       if(d.status==='sharing') setupPC(sid);
     } else {
@@ -1799,16 +1812,29 @@ function listenStudents(){
     // セッション離脱生徒のタブ離脱ログを退避（endSessionで参照するため、removeCard前に実施）
     if(!window._departedTabLogs) window._departedTabLogs = {};
     if(students[sid]) {
-      const prev = window._departedTabLogs[sid];
-      if(!prev || Math.abs((prev.leftAt||0) - nowTs) >= 3000) {
+      const prev = window._departedTabLogs[sid] || {};
+      // 二重発火チェック（3秒以内の同一離脱は無視）
+      if(!prev.leftAt || Math.abs(prev.leftAt - nowTs) >= 3000) {
+        // tabAwayLog：複数セッションにまたがる場合はマージ（上書きしない）
+        const mergedTabAwayLog = { ...(prev.tabAwayLog || {}), ...(d.tabAwayLog || {}) };
+        // sessionDepTeacherLog：前回退避分 + 今回分をマージ
+        const prevSessionDepLog = prev.sessionDepTeacherLog || [];
+        const currSessionDepLog = students[sid]._sessionDepTeacherLog || [];
+        const mergedSessionDepLog = [...prevSessionDepLog, ...currSessionDepLog];
+        // tabAwayTeacherLog：前回退避分 + 今回分をマージ
+        const prevTeacherLog = prev.tabAwayTeacherLog || [];
+        const currTeacherLog = students[sid]._tabAwayTeacherLog || [];
+        const mergedTeacherLog = [...prevTeacherLog, ...currTeacherLog];
+
         window._departedTabLogs[sid] = {
-          tabAwayLog:        d.tabAwayLog                          || {},
-          tabAwayTeacherLog: students[sid]._tabAwayTeacherLog      || [],
-          tabAway:           d.tabAway                             || null,
-          joinTeacherTs:     students[sid]._joinTeacherTs          || 0,
-          joinedAt:          d.joinedAt                            || 0,
-          name:              d.name || students[sid].name          || '',
-          leftAt:            nowTs,
+          tabAwayLog:          mergedTabAwayLog,
+          tabAwayTeacherLog:   mergedTeacherLog,
+          sessionDepTeacherLog: mergedSessionDepLog,
+          tabAway:             d.tabAway             || null,
+          joinTeacherTs:       students[sid]._joinTeacherTs || prev.joinTeacherTs || 0,
+          joinedAt:            d.joinedAt             || 0,
+          name:                d.name || students[sid].name || prev.name || '',
+          leftAt:              nowTs,
         };
       }
     }

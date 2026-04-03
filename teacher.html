@@ -990,14 +990,19 @@ window.endSession = async function() {
             if (candidates.length > 0) returnedAt = candidates[0];
           }
           const absentEnd = returnedAt ? returnedAt : now;
+          const absentMs = Math.max(0, absentEnd - leftAt);
+          // 5秒未満で復帰している場合はネットワーク瞬断による幻の離脱として除外
+          if (absentMs < 5000 && returnedAt) return null;
           return {
             index: idx + 1,
             leftAt,
             returnedAt,
-            absentMs: Math.max(0, absentEnd - leftAt),
+            absentMs,
             isOngoing: !returnedAt
           };
-        });
+        }).filter(Boolean);
+        // index を振り直す
+        sessionLogs.forEach((l, i) => { l.index = i + 1; });
         const realCount = sessionLogs.length;
         return { count: realCount, sessionLogs, totalSessionAbsentMs: sessionLogs.reduce((s,l)=>s+l.absentMs,0) };
       }
@@ -1029,12 +1034,15 @@ window.endSession = async function() {
           if (candidates.length > 0) returnedAt = candidates[0];
         }
         const absentEnd = returnedAt ? returnedAt : now;
+        const absentMs = Math.max(0, absentEnd - leftAt);
+        if (absentMs < 5000 && returnedAt) return null;
         return {
           index: idx + 1, leftAt, returnedAt,
-          absentMs: Math.max(0, absentEnd - leftAt),
+          absentMs,
           isOngoing: !returnedAt
         };
-      });
+      }).filter(Boolean);
+      sessionLogs.forEach((l, i) => { l.index = i + 1; });
 
       // ③ それもなければ totalConnectedMs から推定
       if (sessionLogs.length === 0 && count > 0) {
@@ -1044,7 +1052,7 @@ window.endSession = async function() {
         if (absentMs > 0) sessionLogs.push({ index:1, leftAt:null, returnedAt:null, absentMs, isOngoing:false });
       }
 
-      return { count, sessionLogs, totalSessionAbsentMs: sessionLogs.reduce((s,l)=>s+l.absentMs,0) };
+      return { count: sessionLogs.length || count, sessionLogs, totalSessionAbsentMs: sessionLogs.reduce((s,l)=>s+l.absentMs,0) };
     }
 
     // ===== 現在セッション中の生徒 =====

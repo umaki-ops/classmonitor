@@ -1055,6 +1055,16 @@
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
         };
+        // 生徒が既に共有中であればトラックを追加してから answer を作成する
+        // （再参加後に PC が new 状態で teacher の offer が届いた場合）
+        if (window._shareActive && localStream) {
+          localStream.getTracks().forEach(track => {
+            if (!pc.getSenders().find(s => s.track?.kind === track.kind)) {
+              pc.addTrack(track, localStream);
+              console.log('[handleOffer] added pending localStream track:', track.kind);
+            }
+          });
+        }
       }
       // signalingState が have-local-offer なら rollback してから受け取る（glare解消）
       if (pc.signalingState === 'have-local-offer') {
@@ -1322,8 +1332,9 @@
       localStream.getVideoTracks()[0].onended = () => window.stopShare();
 
       // 既存PCにトラックを追加してからstatus=sharingをセット
-      // → 教員はsharingを受け取った時点で既にトラックが届く状態になる
-      if (pc && pc.connectionState !== 'failed' && pc.connectionState !== 'closed') {
+      // PCが connected 状態のときだけリネゴシエーション
+      // new/connecting 状態のときは教員の setupPC に任せる（glare防止）
+      if (pc && pc.connectionState === 'connected') {
         const senders = pc.getSenders();
         let trackAdded = false;
         localStream.getTracks().forEach(track => {
@@ -1333,8 +1344,6 @@
           console.log('[startShare] addTrack to existing pc, connectionState:', pc.connectionState);
         });
         if (trackAdded) {
-          // signalingState が stable になるまで最大2000ms待ってからoffer送信
-          // （学校ネットワーク等の遅延環境でも確実にstableを待つ）
           const waitForStable = () => new Promise(resolve => {
             if (pc.signalingState === 'stable') { resolve(); return; }
             const check = setInterval(() => {
@@ -1349,8 +1358,6 @@
             if (pc && pc.signalingState === 'stable') {
               const offer = await pc.createOffer();
               await pc.setLocalDescription(offer);
-              // status=sharing より先にofferをFirebaseへ書き込む（awaitで確実に）
-              // → 教員がsharingを受け取った時点でofferが届いており setupPC不要と判断できる
               await set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
                 type: 'offer', from: studentId, to: 'teacher',
                 sdp: { type: offer.type, sdp: offer.sdp }
@@ -1361,6 +1368,10 @@
             console.warn('[startShare] renegotiation failed:', e);
           }
         }
+      } else if (pc && (pc.connectionState === 'new' || pc.connectionState === 'connecting')) {
+        // PC はあるが未接続 → 教員の setupPC が offer を送ってくるのを待つ
+        // _handleOfferInner でトラックを追加するため localStream をセットするだけでよい
+        console.log('[startShare] PC not yet connected (state:', pc.connectionState, '), waiting for teacher offer');
       }
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
     };

@@ -991,10 +991,6 @@ window.endSession = async function() {
           }
           const absentEnd = returnedAt ? returnedAt : now;
           const absentMs = Math.max(0, absentEnd - leftAt);
-          // ネットワーク瞬断による幻の離脱を除外:
-          // leftAt と returnedAt が3秒以内 = Firebase の onDisconnect 誤発火
-          // （本物の短時間離脱との区別: 本物は必ず数秒以上かかる）
-          if (returnedAt && (returnedAt - leftAt) < 3000) return null;
           return {
             index: idx + 1,
             leftAt,
@@ -1037,7 +1033,6 @@ window.endSession = async function() {
         }
         const absentEnd = returnedAt ? returnedAt : now;
         const absentMs = Math.max(0, absentEnd - leftAt);
-        if (returnedAt && (returnedAt - leftAt) < 3000) return null;
         return {
           index: idx + 1, leftAt, returnedAt,
           absentMs,
@@ -1677,13 +1672,21 @@ function listenStudents(){
     } else {
       // 再参加（セッション復帰）
       const returnedAt = Date.now();
+      // _joinTimes にも記録
+      if(!window._departedTabLogs) window._departedTabLogs = {};
+      if(!window._departedTabLogs[sid]) window._departedTabLogs[sid] = {};
+      if(!window._departedTabLogs[sid]._joinTimes) window._departedTabLogs[sid]._joinTimes = [];
+      window._departedTabLogs[sid]._joinTimes.push(returnedAt);
+      if(window._departedTabLogs[sid].sessionDepTeacherLog) {
+        const sessionDepLog = window._departedTabLogs[sid].sessionDepTeacherLog;
+        const last = sessionDepLog[sessionDepLog.length - 1];
+        if(last && !last.returnedAt) last.returnedAt = returnedAt;
+      }
       if(!students[sid]._sessionDepTeacherLog) students[sid]._sessionDepTeacherLog=[];
       const log = students[sid]._sessionDepTeacherLog;
-      const last = log.length > 0 ? log[log.length-1] : null;
-      // leftAt から5秒以上経過している場合のみ returnedAt をセット
-      // （直後の onChildAdded 再発火による誤設定を防ぐ）
-      if(last && !last.returnedAt && (returnedAt - last.leftAt) >= 5000) {
-        last.returnedAt = returnedAt;
+      const last2 = log.length > 0 ? log[log.length-1] : null;
+      if(last2 && !last2.returnedAt && (returnedAt - last2.leftAt) >= 5000) {
+        last2.returnedAt = returnedAt;
       }
       // プライベートフィールドを保持しつつ更新
       const _tabAwayTeacherLog    = students[sid]._tabAwayTeacherLog;

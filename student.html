@@ -764,10 +764,11 @@
         const signal = snap.val();
         console.log('[SIG-IN]', signal?.type, 'to:', signal?.to, 'myId:', studentId);
         if (!signal || signal.to !== studentId) return;
-        // 30秒以上前のシグナルは無視（Firebase onChildAdded は既存データを初回一括配信するため）
+        // リスナー登録より1秒以上前のシグナルは無視
+        // 教員がofferを送るのは必ず生徒のFirebase登録後なので、それ以前のシグナルは前セッションの残骸
         const sigKey = snap.key || '';
         const keyTs = parseInt(sigKey.split('_').pop(), 10);
-        if (keyTs && keyTs < _sigListenStartTs - 30000) return;
+        if (keyTs && keyTs < _sigListenStartTs - 1000) return;
         console.log('[SIG-MATCH]', signal.type);
         if (signal.type === 'offer') setTimeout(() => handleOffer(signal.sdp), 0);
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);
@@ -1067,10 +1068,7 @@
                 });
                 console.log('[ICE restart] disconnected → restart offer sent');
               } catch(e) { console.warn('[ICE restart] failed:', e); }
-            }, 2000);
-          }
-        };
-        // 生徒が既に共有中であればトラックを追加してから answer を作成する
+            }, 1000);
         // （再参加後に PC が new 状態で teacher の offer が届いた場合）
         if (window._shareActive && localStream) {
           localStream.getTracks().forEach(track => {
@@ -1080,6 +1078,19 @@
             }
           });
         }
+      }
+      // PCが既存の場合も含め、共有中ならtrackが確実に追加されているか確認する
+      // （PCを再利用する際にtrackが欠けるケースの安全策）
+      if (window._shareActive && localStream && pc) {
+        const senders = pc.getSenders();
+        localStream.getTracks().forEach(track => {
+          if (!senders.find(s => s.track && s.track.kind === track.kind)) {
+            try {
+              pc.addTrack(track, localStream);
+              console.log('[handleOffer] track added to existing pc:', track.kind);
+            } catch(e) { /* ignore duplicate track errors */ }
+          }
+        });
       }
       // signalingState が have-local-offer なら rollback してから受け取る（glare解消）
       if (pc.signalingState === 'have-local-offer') {

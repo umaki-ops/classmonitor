@@ -1369,9 +1369,41 @@
           }
         }
       } else if (pc && (pc.connectionState === 'new' || pc.connectionState === 'connecting')) {
-        // PC はあるが未接続 → 教員の setupPC が offer を送ってくるのを待つ
-        // _handleOfferInner でトラックを追加するため localStream をセットするだけでよい
-        console.log('[startShare] PC not yet connected (state:', pc.connectionState, '), waiting for teacher offer');
+        // PCは接続中 → 今すぐトラックを追加し、接続完了後にリネゴシエーションを送る
+        // （offerが先に届いてトラックなしで接続されるレースコンディション対策）
+        const senders = pc.getSenders();
+        let trackAdded = false;
+        localStream.getTracks().forEach(track => {
+          if (!senders.find(s => s.track?.kind === track.kind)) {
+            pc.addTrack(track, localStream);
+            trackAdded = true;
+            console.log('[startShare] pre-addTrack (state:', pc.connectionState, ')');
+          }
+        });
+        if (trackAdded) {
+          const sendAfterConnected = async () => {
+            if (!pc) return;
+            if (pc.connectionState === 'connected') {
+              pc.removeEventListener('connectionstatechange', sendAfterConnected);
+              try {
+                if (pc.signalingState === 'stable') {
+                  const offer = await pc.createOffer();
+                  await pc.setLocalDescription(offer);
+                  await set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_renegotiate`), {
+                    type: 'offer', from: studentId, to: 'teacher',
+                    sdp: { type: offer.type, sdp: offer.sdp }
+                  });
+                  console.log('[startShare] renegotiation sent after connected');
+                }
+              } catch(e) {
+                console.warn('[startShare] renegotiation after connect failed:', e);
+              }
+            } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+              pc.removeEventListener('connectionstatechange', sendAfterConnected);
+            }
+          };
+          pc.addEventListener('connectionstatechange', sendAfterConnected);
+        }
       }
       set(ref(db, `sessions/${sessionId}/students/${studentId}/status`), 'sharing');
     };

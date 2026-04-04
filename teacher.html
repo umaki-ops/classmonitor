@@ -835,6 +835,7 @@ window.startSession=async function(){
   listenStudents();
   listenGroups();
   listenGroupSelectData();
+  startSignalCleanupTimer();  // ⑨ シグナルの定期クリーンアップ開始
   toast('✅ セッション開始！URLを生徒に送ってください');
 };
 
@@ -854,11 +855,38 @@ window.endSession = async function() {
   try {
     const { ref, get } = window.FB;
 
-    const [sessionSnap, snap, depSnap] = await Promise.all([
+    const [sessionSnap, snap, depSnap, teacherLogsSnap] = await Promise.all([
       get(ref(db, `sessions/${sessionId}/createdAt`)),
       get(ref(db, `sessions/${sessionId}/students`)),
-      get(ref(db, `sessions/${sessionId}/departures`))
+      get(ref(db, `sessions/${sessionId}/departures`)),
+      get(ref(db, `sessions/${sessionId}/teacherLogs`)),  // ⑤ 永続化された教員ログ
     ]);
+
+    // ⑤ Firebase teacherLogs でメモリの _departedTabLogs を補完
+    if (teacherLogsSnap.exists()) {
+      if (!window._departedTabLogs) window._departedTabLogs = {};
+      teacherLogsSnap.forEach(child => {
+        const sid = child.key;
+        const tl = child.val();
+        if (!tl) return;
+        const mem = window._departedTabLogs[sid] || {};
+        // メモリになければFirebaseの値で補完
+        if (!mem.sessionDepTeacherLog?.length && tl.sessionDepTeacherLog?.length) {
+          mem.sessionDepTeacherLog = tl.sessionDepTeacherLog;
+        }
+        if (!mem.tabAwayTeacherLog?.length && tl.tabAwayTeacherLog?.length) {
+          mem.tabAwayTeacherLog = tl.tabAwayTeacherLog;
+        }
+        if (!mem._joinTimes?.length && tl.joinTimes?.length) {
+          mem._joinTimes = tl.joinTimes;
+        }
+        if (!mem.joinTeacherTs && tl.joinTeacherTs) mem.joinTeacherTs = tl.joinTeacherTs;
+        if (!mem.joinedAt && tl.joinedAt) mem.joinedAt = tl.joinedAt;
+        if (!mem.name && tl.name) mem.name = tl.name;
+        if (!mem.leftAt && tl.leftAt) mem.leftAt = tl.leftAt;
+        window._departedTabLogs[sid] = mem;
+      });
+    }
 
     // データ取得完了後の教員時計をセッション終了時刻とする
     const sessionEndTime = Date.now();
@@ -1952,6 +1980,20 @@ function listenStudents(){
             last.returnedAt = pendingReturnedAt;
           }
         }
+
+        // ⑤ Firebase に teacherLogs として永続化（ページリロード時のデータ消失対策）
+        if(sessionId) {
+          const {ref: tlRef, set: tlSet} = window.FB;
+          tlSet(tlRef(db, `sessions/${sessionId}/teacherLogs/${sid}`), {
+            tabAwayTeacherLog:   mergedTeacherLog,
+            sessionDepTeacherLog: window._departedTabLogs[sid].sessionDepTeacherLog,
+            joinTeacherTs:       window._departedTabLogs[sid].joinTeacherTs,
+            joinedAt:            window._departedTabLogs[sid].joinedAt,
+            name:                window._departedTabLogs[sid].name,
+            leftAt:              nowTs,
+            joinTimes:           window._departedTabLogs[sid]._joinTimes,
+          }).catch(()=>{});
+        }
       }
     }
     removeCard(sid);
@@ -2021,8 +2063,8 @@ let reconnectTimers={};
 
 async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // 自分宛のシグナルのみ削除（全削除すると他の生徒のシグナリングが破壊される）
-  // signals は onChildAdded でリアルタイム処理されるため削除不要
+  // ② 古いシグナルを事前に削除（古いanswerが新PCに届くのを防ぐ）
+  cleanupSignals(sid);
   const{ref,remove}=window.FB;
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
@@ -2632,6 +2674,54 @@ window.setQM=function(t){document.getElementById('minput').value=t;document.getE
 window.sendMessage=function(){const text=document.getElementById('minput').value.trim();if(!text){toast('⚠️ メッセージを入力してください');return;}cmd(msgTargetId||'all','message',{text});closeMsgModal();toast('💬 送信しました');};
 
 function sig(to,data){const{ref,set}=window.FB;set(ref(db,`sessions/${sessionId}/signals/${data.from}_${to}_${Date.now()}`),data);}
+
+// ② シグナル掃除：setupPC前に当該生徒の古いシグナルを削除
+// ⑨ シグナルTTL：120秒以上前の全シグナルも一括削除
+async function cleanupSignals(sid) {
+  try {
+    const {ref: fbRef, get: fbGet, remove: fbRemove} = window.FB;
+    const snap = await fbGet(fbRef(db, `sessions/${sessionId}/signals`));
+    if (!snap.exists()) return;
+    const now = Date.now();
+    const removes = [];
+    snap.forEach(child => {
+      const key = child.key;
+      const keyTs = parseInt(key.split('_').pop(), 10);
+      if (!keyTs) return;
+      const age = now - keyTs;
+      // 当該生徒のシグナルで10秒以上前のもの
+      const val = child.val();
+      if ((val?.to === sid || val?.from === sid) && age > 10000) {
+        removes.push(fbRemove(fbRef(db, `sessions/${sessionId}/signals/${key}`)));
+      // 全生徒共通：120秒以上前のシグナルを一括削除
+      } else if (age > 120000) {
+        removes.push(fbRemove(fbRef(db, `sessions/${sessionId}/signals/${key}`)));
+      }
+    });
+    if (removes.length > 0) await Promise.all(removes);
+  } catch(e) { /* cleanup失敗は無視 */ }
+}
+
+// ⑨ 定期クリーンアップ（60秒ごとに120秒以上前のシグナルを削除）
+function startSignalCleanupTimer() {
+  setInterval(async () => {
+    if (!sessionId) return;
+    try {
+      const {ref: fbRef, get: fbGet, remove: fbRemove} = window.FB;
+      const snap = await fbGet(fbRef(db, `sessions/${sessionId}/signals`));
+      if (!snap.exists()) return;
+      const now = Date.now();
+      const removes = [];
+      snap.forEach(child => {
+        const keyTs = parseInt(child.key.split('_').pop(), 10);
+        if (keyTs && now - keyTs > 120000) {
+          removes.push(fbRemove(fbRef(db, `sessions/${sessionId}/signals/${child.key}`)));
+        }
+      });
+      if (removes.length > 0) await Promise.all(removes);
+    } catch(e) {}
+  }, 60000);
+}
 function cmd(target,command,extra={}){const{ref,set,push}=window.FB;const k=Date.now()+'_'+Math.random().toString(36).slice(2,6);set(ref(db,`sessions/${sessionId}/cmds/${target}/${k}`),{command,...extra,ts:Date.now()});}
 function sendMsg(target) {
   const msg = prompt(target === 'all' ? '全員へのメッセージ:' : `${students[target]?.name || target} へのメッセージ:`);
@@ -2693,7 +2783,8 @@ function updateCardContent(sid){
       <button class="icon-btn" onclick="broadcastStudentScreen('${sid}')" title="この生徒の画面を全員に共有">📡</button>
       <button class="icon-btn" onclick="stopBroadcastScreen()" title="画面共有を停止">⏹</button>
       <button class="icon-btn" onclick="openMsgModal('${sid}')" title="メッセージを送る">💬</button>
-      <button class="icon-btn" onclick="openFullscreen('${sid}')" title="拡大表示">⛶</button>`;
+      <button class="icon-btn" onclick="openFullscreen('${sid}')" title="拡大表示">⛶</button>
+      <button class="icon-btn" onclick="setupPC('${sid}')" title="WebRTC再接続">🔄</button>`;
     // ビュー切替後に既存ストリームを新しいvideo要素に再アタッチ
     const pc=peerConnections[sid];
     if(pc){

@@ -1999,6 +1999,7 @@ function listenStudents(){
     removeCard(sid);
   });
   const _listenStartTs = Date.now();
+  const _processedSignals = new Set();  // 同一シグナルの重複処理を防ぐ
   window.FB.onChildAdded(ref(db,`sessions/${sessionId}/signals`),snap=>{
     const sig=snap.val();
     if(!sig||sig.to!=='teacher')return;
@@ -2007,6 +2008,9 @@ function listenStudents(){
     const sigKey = snap.key || '';
     const keyTs = parseInt(sigKey.split('_').pop(), 10);
     if (keyTs && keyTs < _listenStartTs - 30000) return;
+    // 同一シグナルを2回処理しない（setupPC後に古いanswerが再び届くケース対策）
+    if (_processedSignals.has(sigKey)) return;
+    _processedSignals.add(sigKey);
     if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
     else if(sig.type==='offer')setTimeout(()=>handleStudentOffer(sig.from,sig.sdp),0); // 生徒からのリネゴシエーション
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);
@@ -2061,10 +2065,10 @@ async function forceKeyframe(sid){
 // ===== WebRTC Monitoring =====
 let reconnectTimers={};
 
-async function setupPC(sid){
+window.setupPC = async function setupPC(sid){
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // ② 古いシグナルを事前に削除（古いanswerが新PCに届くのを防ぐ）
-  cleanupSignals(sid);
+  // ② 古いシグナルを事前に削除してから新PCを作成（await で完了を待つ）
+  await cleanupSignals(sid);
   const{ref,remove}=window.FB;
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 

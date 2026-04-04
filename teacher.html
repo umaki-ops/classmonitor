@@ -511,6 +511,7 @@
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupWb()">📋 全班WB回収</button>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupImg()">🖼 全班画像配布</button>
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupImg()">🖼 全班画像回収</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#7c3aed;color:#fff;border-color:#7c3aed;" onclick="clearAllGroupDrawings()">🗑️ 全班消去</button>
       </div>
     </div>
     <!-- 班カードグリッド -->
@@ -552,6 +553,7 @@
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="closeAllGroupSelectWb()">📋 全班WB回収</button>
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="sendAllGroupSelectImg()">🖼 全班画像配布</button>
         <button class="btn" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444;" onclick="collectAllGroupSelectImg()">🖼 全班画像回収</button>
+        <button class="btn" style="padding:5px 10px;font-size:12px;background:#7c3aed;color:#fff;border-color:#7c3aed;" onclick="clearAllGroupSelectDrawings()">🗑️ 全班消去</button>
       </div>
     </div>
     <!-- 班カードグリッド -->
@@ -2979,6 +2981,24 @@ window.clearGroupDistImg = async function(gid) {
   toast(`🗑️ ${gname} の画像書き込みを消去しました`);
 };
 
+// 全班一括消去（教員作成）
+window.clearAllGroupDrawings = async function() {
+  if (!groupDefs || Object.keys(groupDefs).length === 0) {
+    toast('⚠️ 班が設定されていません'); return;
+  }
+  if (!confirm('全班のWB・画像への書き込みとテキストをすべて消去しますか？')) return;
+  const {ref, remove, set} = window.FB;
+  const gids = Object.keys(groupDefs);
+  await Promise.all(gids.flatMap(gid => [
+    remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/strokes`)),
+    remove(ref(db, `sessions/${sessionId}/groups/${gid}/wb/texts`)),
+    remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/strokes`)),
+    remove(ref(db, `sessions/${sessionId}/groups/${gid}/distImg/texts`)),
+    set(ref(db, `sessions/${sessionId}/groups/${gid}/wb/resetTs`), Date.now()),
+  ]));
+  toast('🗑️ 全班の書き込みを消去しました');
+};
+
 window.clearGroups = async function() {
   if (!confirm('班を解散します。よろしいですか？')) return;
   const { ref, set } = window.FB;
@@ -4193,6 +4213,23 @@ window.clearGroupSelectDrawings = async function(gid) {
   } else {
     toast('⚠️ 現在配布中のコンテンツがありません');
   }
+};
+
+// 全班一括消去（番号選択）
+window.clearAllGroupSelectDrawings = async function() {
+  if (!groupSelectDefs || Object.keys(groupSelectDefs).length === 0) {
+    toast('⚠️ 班が設定されていません'); return;
+  }
+  if (!confirm('全班のWB・画像への書き込みとテキストをすべて消去しますか？')) return;
+  const {ref, remove} = window.FB;
+  const gids = Object.keys(groupSelectDefs);
+  await Promise.all(gids.flatMap(gid => [
+    remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/strokes`)),
+    remove(ref(db, `sessions/${sessionId}/groupSelectWB/${gid}/texts`)),
+    remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}/strokes`)),
+    remove(ref(db, `sessions/${sessionId}/groupSelectImg/${gid}/texts`)),
+  ]));
+  toast('🗑️ 全班の書き込みを消去しました');
 };
 
 window.sendAllGroupSelectImg = async function() {

@@ -2070,12 +2070,7 @@ async function setupPC(sid){
         });
       }catch(e){}
     }
-    // failedのみ即再接続。disconnectedは一時的な場合が多いためICE再起動で様子見
-    if(state==='failed'){
-      clearTimeout(reconnectTimers[sid]);
-      setBadge(sid,'waiting');updateStats();
-      setTimeout(()=>{if(students[sid]&&peerConnections[sid]===pc)setupPC(sid);},800);
-    }
+    // failed は oniceconnectionstatechange の ICE restart → fallback で処理するためここでは何もしない
     if(state==='closed'){setBadge(sid,'waiting');updateStats();}
   };
 
@@ -2103,7 +2098,28 @@ async function setupPC(sid){
     }
     if(iceState==='failed'){
       clearTimeout(reconnectTimers[sid]);
-      if(students[sid]&&peerConnections[sid]===pc)setupPC(sid);
+      // まず ICE restart を試みる（PC再利用でシグナリング競合を避ける）
+      // failed 直後は signalingState が stable のはずなのでそのまま createOffer できる
+      ;(async()=>{
+        try{
+          if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
+          const offer=await pc.createOffer({iceRestart:true,offerToReceiveVideo:true,offerToReceiveAudio:false});
+          await pc.setLocalDescription(offer);
+          sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+          console.log('[ICE restart] iceState=failed → restart offer sent to',sid);
+          // ICE restart 後も 3秒で改善しなければ setupPC にフォールバック
+          reconnectTimers[sid]=setTimeout(()=>{
+            if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
+            if(pc.iceConnectionState==='failed'||pc.iceConnectionState==='disconnected'){
+              console.log('[ICE restart] fallback to setupPC for',sid);
+              setupPC(sid);
+            }
+          },3000);
+        }catch(e){
+          console.warn('[ICE restart] failed, setupPC:',e);
+          if(students[sid]&&peerConnections[sid]===pc)setupPC(sid);
+        }
+      })();
     }
   };
 

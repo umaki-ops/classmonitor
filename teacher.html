@@ -1128,15 +1128,15 @@ window.endSession = async function() {
       // _tabAwayTeacherLog は onChildChanged の記録タイミング依存で不安定なため使わない
       const dummyD = {
         tabAway:    saved?.tabAway  || null,
-        tabAwayLog: saved?.tabAwayLog || {},
+        tabAwayLog: {},  // calcTabAwayLogs が _departedTabLogs からマージするため空でよい
         joinedAt:   saved?.joinedAt || 0,
         id:         sid
       };
-      // _joinTeacherTs と sessionDepTeacherLog を一時的に復元
+      // _joinTeacherTs のみ復元（_sessionDepTeacherLog は calcSessionDepLogs が _departedTabLogs から直接マージするため不要）
       if (saved) {
         if (!students[sid]) students[sid] = { id: sid };
-        if (saved.joinTeacherTs)        students[sid]._joinTeacherTs        = saved.joinTeacherTs;
-        if (saved.sessionDepTeacherLog) students[sid]._sessionDepTeacherLog = saved.sessionDepTeacherLog;
+        if (saved.joinTeacherTs) students[sid]._joinTeacherTs = saved.joinTeacherTs;
+        // _sessionDepTeacherLog はここで復元しない（calcSessionDepLogs で二重計上になるため）
       }
       // セッション離脱時刻（偽タブ離脱フィルタに使用）
       const sessionLeftAt = saved?.leftAt || null;

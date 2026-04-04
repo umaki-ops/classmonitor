@@ -892,16 +892,33 @@ window.endSession = async function() {
       }
       logEntries.sort((a, b) => a.startTs - b.startTs);
 
+      // _joinTimes: 再参加時刻リスト（セッション離脱→再参加時のタブ離脱終了時刻推定に使用）
+      const joinTimesForTab = (window._departedTabLogs?.[sid]?._joinTimes || []).sort((a,b)=>a-b);
+
       let tabLogs = logEntries.map(log => {
         const startTeacher = toTeacher(log.startTs);
         const rawEnd       = log.endTs ? toTeacher(log.endTs) : now;
-        // clockSkew補正後に endTs < startTs になる場合は startTs に揃える
         const endTeacher   = log.endTs ? Math.max(startTeacher, Math.min(rawEnd, now)) : now;
+
+        // endTs がない（タブ離脱中のままセッション離脱した）場合:
+        // 生徒が後で再参加していれば、その参加時刻（_joinTimes から探す）を上限にする
+        // 例: B（タブ離脱）→C（セッション離脱）→D（再参加）→F（終了）
+        //     endTs=null のまま残るが、D 時点で実質的に復帰済みなので B→D を計上
+        let effectiveEnd = endTeacher;
+        let isOngoing = !log.endTs;
+        if (!log.endTs) {
+          const nextJoin = joinTimesForTab.find(t => t > startTeacher + 1000 && t < now);
+          if (nextJoin) {
+            effectiveEnd = nextJoin;
+            isOngoing = false;  // 再参加が確認できるので終了済み扱い
+          }
+        }
+
         return {
           startTs:    startTeacher,
-          endTs:      log.endTs ? endTeacher : null,
-          durationMs: Math.max(0, endTeacher - startTeacher),
-          isOngoing:  !log.endTs
+          endTs:      log.endTs ? endTeacher : (isOngoing ? null : effectiveEnd),
+          durationMs: Math.max(0, effectiveEnd - startTeacher),
+          isOngoing
         };
       });
 
@@ -911,12 +928,20 @@ window.endSession = async function() {
           || window._departedTabLogs?.[sid]?.tabAwayTeacherLog
           || [];
         if (teacherLog.length > 0) {
-          tabLogs = teacherLog.map(entry => ({
-            startTs:    entry.startTs,
-            endTs:      entry.endTs || null,
-            durationMs: Math.max(0, (entry.endTs || now) - entry.startTs),
-            isOngoing:  !entry.endTs
-          }));
+          tabLogs = teacherLog.map(entry => {
+            let effectiveEnd = entry.endTs || now;
+            let isOngoing = !entry.endTs;
+            if (!entry.endTs) {
+              const nextJoin = joinTimesForTab.find(t => t > entry.startTs + 1000 && t < now);
+              if (nextJoin) { effectiveEnd = nextJoin; isOngoing = false; }
+            }
+            return {
+              startTs:    entry.startTs,
+              endTs:      entry.endTs || (isOngoing ? null : effectiveEnd),
+              durationMs: Math.max(0, effectiveEnd - entry.startTs),
+              isOngoing
+            };
+          });
         }
       }
 

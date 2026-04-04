@@ -1054,6 +1054,21 @@
         };
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed') { pc.close(); pc = null; }
+          // disconnected（一時的な切断）時は ICE restart を試みて再接続を高速化
+          if (pc.connectionState === 'disconnected') {
+            setTimeout(async () => {
+              if (!pc || pc.connectionState !== 'disconnected') return;
+              try {
+                const offer = await pc.createOffer({ iceRestart: true });
+                await pc.setLocalDescription(offer);
+                set(ref(db, `sessions/${sessionId}/signals/${Date.now()}_icerestart`), {
+                  type: 'offer', from: studentId, to: 'teacher',
+                  sdp: { type: offer.type, sdp: offer.sdp }
+                });
+                console.log('[ICE restart] disconnected → restart offer sent');
+              } catch(e) { console.warn('[ICE restart] failed:', e); }
+            }, 2000);
+          }
         };
         // 生徒が既に共有中であればトラックを追加してから answer を作成する
         // （再参加後に PC が new 状態で teacher の offer が届いた場合）

@@ -1731,7 +1731,7 @@ function listenStudents(){
       }
 
       addCard(sid,d);
-      if(d.status==='sharing') setupPC(sid);
+      if(d.status==='sharing') window.setupPC(sid);
     } else {
       // 再参加（セッション復帰）
       const returnedAt = Date.now();
@@ -1763,7 +1763,7 @@ function listenStudents(){
       if(_joinTeacherTs)        students[sid]._joinTeacherTs        = _joinTeacherTs;
       students[sid]._lastStatus = d.status;
       addCard(sid,d);
-      if(d.status==='sharing') setupPC(sid);
+      if(d.status==='sharing') window.setupPC(sid);
     }
   });
   onChildChanged(ref(db,`sessions/${sessionId}/students`),snap=>{
@@ -1854,7 +1854,7 @@ function listenStudents(){
           window._setupPcTimers[sid] = setTimeout(() => {
             const pc2 = peerConnections[sid];
             if (!pc2 || pc2.connectionState === 'failed' || pc2.connectionState === 'closed') {
-              setupPC(sid);
+              window.setupPC(sid);
             }
           }, 500);
         }
@@ -1863,14 +1863,15 @@ function listenStudents(){
           console.log('[sharing] PC connected → waiting for renegotiation offer from student');
         }
       } else if (statusChanged) {
-        // new / connecting / disconnected かつ status が実際に変化した場合のみ setupPC
+        // PC がない・失敗・閉鎖済みの場合のみ setupPC（接続中は待機）
         console.log('[sharing] PC not yet connected (state:', existingState, ') → setupPC (debounced)');
         clearTimeout(window._setupPcTimers[sid]);
         window._setupPcTimers[sid] = setTimeout(() => {
           const pc2 = peerConnections[sid];
           const st2 = pc2?.connectionState;
-          if (!pc2 || st2 === 'failed' || st2 === 'closed' || st2 === 'new' || st2 === 'connecting') {
-            setupPC(sid);
+          // connecting/new は接続が進行中のため待機する（setupPC しない）
+          if (!pc2 || st2 === 'failed' || st2 === 'closed') {
+            window.setupPC(sid);
           }
         }, 500);
       }
@@ -2114,18 +2115,23 @@ window.setupPC = async function setupPC(sid){
     if(state==='connected'){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
-      // 受信バッファを最小化してcaptureStream経由の遅延を削減
       try{
         pc.getReceivers().forEach(r=>{
           if(r.track&&r.track.kind==='video'){
-            // jitterBufferDelayHint: 0 で再生バッファを最小化
             if('jitterBufferDelayHint' in r) r.jitterBufferDelayHint=0;
             if('jitterBufferTarget' in r) r.jitterBufferTarget=0;
           }
         });
       }catch(e){}
     }
-    // failed は oniceconnectionstatechange の ICE restart → fallback で処理するためここでは何もしない
+    // connectionState=failed：mutex強制解除してsetupPC
+    if(state==='failed'){
+      clearTimeout(reconnectTimers[sid]);
+      setBadge(sid,'waiting');updateStats();
+      // mutex強制解除（前のsetupPCが詰まっていても再試行できるように）
+      if(window._setupPcLock) window._setupPcLock[sid] = false;
+      if(students[sid]&&peerConnections[sid]===pc) window.setupPC(sid);
+    }
     if(state==='closed'){setBadge(sid,'waiting');updateStats();}
   };
 
@@ -2136,7 +2142,7 @@ window.setupPC = async function setupPC(sid){
       const v=document.getElementById('v-'+sid);if(v&&v.srcObject)v.play().catch(()=>{});
       setBadge(sid,'live');updateStats();
     }
-    // disconnected: 共有元なら即座にICE restart、それ以外は30秒
+    // disconnected: ICE restart を試みる
     if(iceState==='disconnected'){
       const timeout = (sid === currentBroadcastId) ? 200 : 30000;
       reconnectTimers[sid]=setTimeout(async()=>{
@@ -2146,36 +2152,12 @@ window.setupPC = async function setupPC(sid){
           const offer=await pc.createOffer({iceRestart:true,offerToReceiveVideo:true,offerToReceiveAudio:false});
           await pc.setLocalDescription(offer);
           sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-        }catch(e){if(students[sid])setupPC(sid);}
+        }catch(e){if(students[sid]) window.setupPC(sid);}
       },timeout);
     } else {
       clearTimeout(reconnectTimers[sid]);
     }
-    if(iceState==='failed'){
-      clearTimeout(reconnectTimers[sid]);
-      // まず ICE restart を試みる（PC再利用でシグナリング競合を避ける）
-      // failed 直後は signalingState が stable のはずなのでそのまま createOffer できる
-      ;(async()=>{
-        try{
-          if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
-          const offer=await pc.createOffer({iceRestart:true,offerToReceiveVideo:true,offerToReceiveAudio:false});
-          await pc.setLocalDescription(offer);
-          sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
-          console.log('[ICE restart] iceState=failed → restart offer sent to',sid);
-          // ICE restart 後も 3秒で改善しなければ setupPC にフォールバック
-          reconnectTimers[sid]=setTimeout(()=>{
-            if(!peerConnections[sid]||peerConnections[sid]!==pc)return;
-            if(pc.iceConnectionState==='failed'||pc.iceConnectionState==='disconnected'){
-              console.log('[ICE restart] fallback to setupPC for',sid);
-              setupPC(sid);
-            }
-          },3000);
-        }catch(e){
-          console.warn('[ICE restart] failed, setupPC:',e);
-          if(students[sid]&&peerConnections[sid]===pc)setupPC(sid);
-        }
-      })();
-    }
+    // iceState=failed は connectionState=failed から setupPC で処理（ICE restartは行わない）
   };
 
   const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});

@@ -1053,9 +1053,11 @@
           });
         };
         pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'failed') { pc.close(); pc = null; }
+          if (!pc) return;  // pc=null後の発火を防ぐ
+          const connState = pc.connectionState;
+          if (connState === 'failed') { pc.close(); pc = null; return; }
           // disconnected（一時的な切断）時は ICE restart を試みて再接続を高速化
-          if (pc.connectionState === 'disconnected') {
+          if (connState === 'disconnected') {
             setTimeout(async () => {
               if (!pc || pc.connectionState !== 'disconnected') return;
               try {

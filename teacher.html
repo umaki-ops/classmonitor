@@ -1067,14 +1067,8 @@ window.endSession = async function() {
         const name = d.name || '不明';
         const dep = depData[sid] || null;
 
-        // ===== デバッグログ =====
-        console.log(`[REPORT DEBUG] 生徒: ${name} (${sid}) tabAway:`, JSON.stringify(d.tabAway), 'tabAwayLog:', JSON.stringify(d.tabAwayLog));
-        // ===== デバッグログここまで =====
-
         const { count: tabCount, tabLogs, totalTabAwayMs } = calcTabAwayLogs(d, sessionEndTime, sid);
         const { count: depCount, sessionLogs, totalSessionAbsentMs } = calcSessionDepLogs(dep, d.joinedAt || 0, sessionEndTime, sid);
-
-        console.log(`[REPORT DEBUG] tabCount:${tabCount} tabLogs:`, JSON.stringify(tabLogs), `totalTabAwayMs:${totalTabAwayMs}`);
 
         if (tabCount < 1 && depCount < 1) return;
 
@@ -1116,13 +1110,6 @@ window.endSession = async function() {
       }
       // セッション離脱時刻（偽タブ離脱フィルタに使用）
       const sessionLeftAt = saved?.leftAt || null;
-
-      // ===== デバッグログ（離脱済み生徒）=====
-      console.log(`[DEP DEBUG] ${name}(${sid}) dep.count:${dep?.count} saved.sessionDepTeacherLog:`, JSON.stringify(saved?.sessionDepTeacherLog));
-      console.log(`[DEP DEBUG] saved.tabAwayLog:`, JSON.stringify(saved?.tabAwayLog));
-      console.log(`[DEP DEBUG] saved.tabAwayTeacherLog:`, JSON.stringify(saved?.tabAwayTeacherLog));
-      console.log(`[DEP DEBUG] _joinTimes:`, JSON.stringify(saved?._joinTimes));
-      // ===========================
 
       const { count: tabCount, tabLogs, totalTabAwayMs } =
         calcTabAwayLogs(dummyD, sessionEndTime, sid, sessionLeftAt);

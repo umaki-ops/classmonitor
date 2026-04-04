@@ -979,17 +979,16 @@ window.endSession = async function() {
           const nextLeftAt = nextEntry?.leftAt || null;
 
           let returnedAt = null;
-          if (entry.returnedAt && entry.returnedAt > leftAt) {
+          // 既存のreturnedAt検証: leftAt+1秒以上後かつ次の離脱より前であること
+          if (entry.returnedAt && entry.returnedAt > leftAt + 1000) {
             if (!nextLeftAt || entry.returnedAt < nextLeftAt) {
               returnedAt = entry.returnedAt;
             }
           }
-          // returnedAt が未設定: _joinTimes[idx+1] を使う（idx番目の離脱の復帰はjoinTimes[idx+1]）
+          // フォールバック: time-range で _joinTimes から候補を探す
           if (!returnedAt) {
-            const correspondingJoin = joinTimes[idx + 1];
-            if (correspondingJoin && (!nextLeftAt || correspondingJoin < nextLeftAt)) {
-              returnedAt = Math.max(leftAt, correspondingJoin);
-            }
+            const candidate = joinTimes.find(t => t > leftAt + 1000 && (!nextLeftAt || t < nextLeftAt));
+            if (candidate) returnedAt = candidate;
           }
           const absentEnd = returnedAt ? returnedAt : now;
           const absentMs = Math.max(0, absentEnd - leftAt);
@@ -1028,15 +1027,14 @@ window.endSession = async function() {
         const leftAt = entry.leftAt;
         const nextLeftAt = rawEntries[idx + 1]?.leftAt || null;
         let returnedAt = null;
-        if (entry.returnedAt && entry.returnedAt > leftAt) {
+        // 既存のreturnedAt検証: leftAt+1秒以上後かつ次の離脱より前であること
+        if (entry.returnedAt && entry.returnedAt > leftAt + 1000) {
           if (!nextLeftAt || entry.returnedAt < nextLeftAt) returnedAt = entry.returnedAt;
         }
-        // _joinTimes[idx+1] = idx番目の離脱からの復帰時刻
+        // フォールバック: time-range で _joinTimes から候補を探す
         if (!returnedAt) {
-          const correspondingJoin = joinTimes2[idx + 1];
-          if (correspondingJoin && (!nextLeftAt || correspondingJoin < nextLeftAt)) {
-            returnedAt = Math.max(leftAt, correspondingJoin);
-          }
+          const candidate = joinTimes2.find(t => t > leftAt + 1000 && (!nextLeftAt || t < nextLeftAt));
+          if (candidate) returnedAt = candidate;
         }
         const absentEnd = returnedAt ? returnedAt : now;
         const absentMs = Math.max(0, absentEnd - leftAt);
@@ -1918,18 +1916,14 @@ function listenStudents(){
           _joinTimes:          prev._joinTimes        || [],
         };
 
-        // _joinTimes を使って mergedSessionDepLog の欠損 returnedAt を補完する
-        // _joinTimes[0] = 初回参加, _joinTimes[1] = 1回目離脱からの復帰, ...
-        // N回目の離脱(idx=N-1)の returnedAt は _joinTimes[N] に対応する
-        const allJoinTimes = (window._departedTabLogs[sid]._joinTimes || []).sort((a,b)=>a-b);
+        // _joinTimes を使って sessionDepTeacherLog の returnedAt を補完する
+        // インデックスベースは幻の参加時刻でずれるため「leftAt の1秒以上後かつ次の離脱より前」で判定
+        const sortedJoinTimes = (window._departedTabLogs[sid]._joinTimes || []).sort((a,b)=>a-b);
         window._departedTabLogs[sid].sessionDepTeacherLog.forEach((entry, idx) => {
-          if (entry.returnedAt) return;
-          // idx番目の離脱 → _joinTimes[idx+1] が対応する復帰時刻
-          const correspondingJoin = allJoinTimes[idx + 1];
-          if (correspondingJoin) {
-            // 復帰時刻が離脱時刻より前の場合（競合状態）も採用し、leftAt に揃える
-            entry.returnedAt = Math.max(entry.leftAt, correspondingJoin);
-          }
+          const logs = window._departedTabLogs[sid].sessionDepTeacherLog;
+          const nextLeftAt = logs[idx + 1]?.leftAt || Infinity;
+          const candidate = sortedJoinTimes.find(t => t > entry.leftAt + 1000 && t < nextLeftAt);
+          entry.returnedAt = candidate || null;
         });
 
         // パターン②の競合対策: onChildAdded が先に来ていた場合の _pendingReturnedAt を適用

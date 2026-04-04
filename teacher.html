@@ -2066,9 +2066,18 @@ async function forceKeyframe(sid){
 let reconnectTimers={};
 
 window.setupPC = async function setupPC(sid){
+  // 二重呼び出し防止（mutex）
+  if (!window._setupPcLock) window._setupPcLock = {};
+  if (window._setupPcLock[sid]) return;
+  window._setupPcLock[sid] = true;
+
   if(peerConnections[sid]){try{peerConnections[sid].close();}catch(e){}}
-  // ② 古いシグナルを事前に削除してから新PCを作成（await で完了を待つ）
-  await cleanupSignals(sid);
+  peerConnections[sid] = null;  // 即座にクリアして onChildChanged の再トリガーを防ぐ
+
+  // ② 古いシグナルを非同期で削除（await しない：PCの作成を遅らせない）
+  cleanupSignals(sid);
+
+  try {
   const{ref,remove}=window.FB;
   const pc=new RTCPeerConnection(ICE);peerConnections[sid]=pc;
 
@@ -2175,6 +2184,12 @@ window.setupPC = async function setupPC(sid){
   delete _negResolvers[sid];
   delete _negQueues[sid];
   sig(sid,{type:'offer',from:'teacher',to:sid,sdp:{type:offer.type,sdp:offer.sdp}});
+  } catch(e) {
+    console.error('[setupPC] error:', e);
+  } finally {
+    // mutex解除（成功・失敗どちらでも）
+    if (window._setupPcLock) window._setupPcLock[sid] = false;
+  }
 }
 async function handleAnswer(sid,sdp){
   const pc=peerConnections[sid];if(!pc)return;

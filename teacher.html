@@ -1092,10 +1092,15 @@ window.endSession = async function() {
     // ===== セッション離脱中のまま（studentsにいない）生徒 =====
     for (const [sid, dep] of Object.entries(depData)) {
       if (processedSids.has(sid)) continue;
-      if (!dep || !dep.count) continue;
 
       const saved = window._departedTabLogs?.[sid] || null;
-      const name  = dep.name || saved?.name || '不明';
+      // dep.count が 0 でも _departedTabLogs に記録があれば処理する
+      // （Firebase の非同期書き込みが endSession より遅れる場合がある）
+      const hasDepRecord = (dep && dep.count > 0)
+        || (saved?.sessionDepTeacherLog?.length > 0);
+      if (!hasDepRecord) continue;
+
+      const name = dep?.name || saved?.name || '不明';
 
       // Firebase スナップショットから tabAwayLog を使用（最も信頼性が高い）
       // _tabAwayTeacherLog は onChildChanged の記録タイミング依存で不安定なため使わない
@@ -1113,6 +1118,13 @@ window.endSession = async function() {
       }
       // セッション離脱時刻（偽タブ離脱フィルタに使用）
       const sessionLeftAt = saved?.leftAt || null;
+
+      // ===== デバッグログ（離脱済み生徒）=====
+      console.log(`[DEP DEBUG] ${name}(${sid}) dep.count:${dep?.count} saved.sessionDepTeacherLog:`, JSON.stringify(saved?.sessionDepTeacherLog));
+      console.log(`[DEP DEBUG] saved.tabAwayLog:`, JSON.stringify(saved?.tabAwayLog));
+      console.log(`[DEP DEBUG] saved.tabAwayTeacherLog:`, JSON.stringify(saved?.tabAwayTeacherLog));
+      console.log(`[DEP DEBUG] _joinTimes:`, JSON.stringify(saved?._joinTimes));
+      // ===========================
 
       const { count: tabCount, tabLogs, totalTabAwayMs } =
         calcTabAwayLogs(dummyD, sessionEndTime, sid, sessionLeftAt);

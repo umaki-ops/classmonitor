@@ -1961,7 +1961,7 @@ function listenStudents(){
     // onChildAddedは既存データも初回一括配信するため、セッション開始30秒以上前の古いシグナルは無視する
     const sigKey = snap.key || '';
     const keyTs = parseInt(sigKey.split('_').pop(), 10);
-    if (keyTs && keyTs < _listenStartTs - 1000) return;
+    if (keyTs && keyTs < _listenStartTs - 30000) return;
     if(sig.type==='answer')handleAnswer(sig.from,sig.sdp);
     else if(sig.type==='offer')setTimeout(()=>handleStudentOffer(sig.from,sig.sdp),0); // 生徒からのリネゴシエーション
     else if(sig.type==='ice')handleRIce(sig.from,sig.candidate);

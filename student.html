@@ -764,11 +764,10 @@
         const signal = snap.val();
         console.log('[SIG-IN]', signal?.type, 'to:', signal?.to, 'myId:', studentId);
         if (!signal || signal.to !== studentId) return;
-        // リスナー登録より1秒以上前のシグナルは無視
-        // 教員がofferを送るのは必ず生徒のFirebase登録後なので、それ以前のシグナルは前セッションの残骸
+        // 30秒以上前のシグナルは無視（前セッションの残骸対策・clockSkewを考慮して余裕を持たせる）
         const sigKey = snap.key || '';
         const keyTs = parseInt(sigKey.split('_').pop(), 10);
-        if (keyTs && keyTs < _sigListenStartTs - 1000) return;
+        if (keyTs && keyTs < _sigListenStartTs - 30000) return;
         console.log('[SIG-MATCH]', signal.type);
         if (signal.type === 'offer') setTimeout(() => handleOffer(signal.sdp), 0);
         else if (signal.type === 'ice') handleTeacherIce(signal.candidate);

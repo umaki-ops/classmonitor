@@ -882,8 +882,10 @@ window.endSession = async function() {
       const clockSkew     = (joinTeacherTs > 0 && joinedAt > 0) ? (joinTeacherTs - joinedAt) : 0;
       const toTeacher     = ts => ts + clockSkew;
 
-      // Firebase tabAwayLog を変換
-      const rawLog = d.tabAwayLog || {};
+      // Firebase tabAwayLog を変換（過去セッション分 + 現セッション分をマージ）
+      const prevDep = window._departedTabLogs?.[sid] || null;
+      const prevTabAwayLog = prevDep?.tabAwayLog || {};
+      const rawLog = { ...prevTabAwayLog, ...(d.tabAwayLog || {}) };
       const logEntries = [];
       if (Array.isArray(rawLog)) {
         rawLog.forEach(v => { if (v && v.startTs) logEntries.push(v); });
@@ -923,10 +925,11 @@ window.endSession = async function() {
       });
 
       // Firebase ログが空の場合、教員ログ（_tabAwayTeacherLog）を補助ソースとして使用
+      // 過去セッション分（_departedTabLogs）+ 現セッション分をマージ
       if (tabLogs.length === 0) {
-        const teacherLog = students[sid]?._tabAwayTeacherLog
-          || window._departedTabLogs?.[sid]?.tabAwayTeacherLog
-          || [];
+        const prevTeacherLog = prevDep?.tabAwayTeacherLog || [];
+        const currTeacherLog = students[sid]?._tabAwayTeacherLog || [];
+        const teacherLog = [...prevTeacherLog, ...currTeacherLog];
         if (teacherLog.length > 0) {
           tabLogs = teacherLog.map(entry => {
             let effectiveEnd = entry.endTs || now;
@@ -977,18 +980,18 @@ window.endSession = async function() {
     function calcSessionDepLogs(dep, currentJoinedAt, now, sid) {
       // dep.count が 0 や未設定の場合：
       // onDisconnect で lastLeft/name だけ書かれて count がない場合があるため
-      // 教員メモリの sessionDepTeacherLog を count のフォールバックに使う
-      const teacherLogFallback = students[sid]?._sessionDepTeacherLog
-        || window._departedTabLogs?.[sid]?.sessionDepTeacherLog
-        || [];
-      const count = Math.max(dep ? (dep.count || 0) : 0, teacherLogFallback.length);
+      // 過去セッション + 現セッションの教員ログ件数をフォールバックに使う
+      const prevDepLog = window._departedTabLogs?.[sid]?.sessionDepTeacherLog || [];
+      const currDepLog = students[sid]?._sessionDepTeacherLog || [];
+      const mergedDepLogForCount = [...prevDepLog, ...currDepLog];
+      const count = Math.max(dep ? (dep.count || 0) : 0, mergedDepLogForCount.length);
       if (count === 0) return { count: 0, sessionLogs: [], totalSessionAbsentMs: 0 };
 
       // ① 教員端末時計のログを優先（端末間時計ずれなし）
-      // セッション離脱済み生徒は _departedTabLogs.sessionDepTeacherLog に退避済み
-      const rawTeacherLog = students[sid]?._sessionDepTeacherLog
-        || window._departedTabLogs?.[sid]?.sessionDepTeacherLog
-        || [];
+      // 過去セッション（_departedTabLogs）+ 現セッション分をマージ
+      const prevSessionDepLog = window._departedTabLogs?.[sid]?.sessionDepTeacherLog || [];
+      const currSessionDepLog = students[sid]?._sessionDepTeacherLog || [];
+      const rawTeacherLog = [...prevSessionDepLog, ...currSessionDepLog];
       if (rawTeacherLog.length > 0) {
         // onChildRemoved 二重発火で同じ leftAt が近接して記録される場合を除去
         const deduped = [];
